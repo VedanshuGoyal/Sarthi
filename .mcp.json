@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "flutter-mcp-toolkit": {
+      "type": "stdio",
+      "command": "/Users/friend/Dev/third_party/mcp_flutter/mcp_server_dart/build/flutter-mcp-toolkit-server",
+      "args": [
+        "--dart-vm-host=localhost",
+        "--dart-vm-port=63951",
+        "--resources",
+        "--images",
+        "--dynamics"
+      ],
+      "env": {}
+    }
+  }
+}

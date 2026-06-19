@@ -1,0 +1,39 @@
+name: driver_app
+description: "Sarthi Driver — the driver-facing ride-hailing app."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # --- State management ---
+  # Predictable, testable state across the app (per project guidelines).
+  flutter_riverpod: ^2.6.1
+
+  # --- Real-time transport ---
+  # WebSocket client used to receive ride offers and stream GPS to the Go backend.
+  web_socket_channel: ^3.0.1
+
+  # --- Location ---
+  # Foreground/background location tracking for the "Go Online" driver flow.
+  geolocator: ^13.0.2
+
+  # --- Maps ---
+  # Map UI for the home screen and active-job navigation. Maps_flutter == google_maps_flutter.
+  google_maps_flutter: ^2.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+  # Readable assertions for unit tests (per project guidelines).
+  checks: ^0.3.0
+
+flutter:
+  uses-material-design: true
