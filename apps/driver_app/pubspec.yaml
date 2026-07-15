@@ -11,6 +11,11 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
+  # --- Shared design system ---
+  # Ultramarine theme + reusable widgets common to both Sarthi apps.
+  sarthi_shared:
+    path: ../../shared
+
   # --- State management ---
   # Predictable, testable state across the app (per project guidelines).
   flutter_riverpod: ^2.6.1

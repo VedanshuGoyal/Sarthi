@@ -11,9 +11,18 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
+  # --- Shared design system ---
+  # Ultramarine theme + reusable widgets common to both Sarthi apps.
+  sarthi_shared:
+    path: ../../shared
+
   # --- State management ---
   # Predictable, testable state across the app (per project guidelines).
   flutter_riverpod: ^2.6.1
+
+  # --- REST transport ---
+  # HTTP client for auth/registration against the Go backend.
+  http: ^1.2.2
 
   # --- Real-time transport ---
   # WebSocket client: receive driver locations + ride-status updates from the Go backend.
@@ -30,6 +39,7 @@ dependencies:
   # --- MCP agent inspection (debug only) ---
   # Lets the flutter-mcp-toolkit server drive/inspect this app. No-op in release.
   mcp_toolkit: ^3.0.0
+  flutter_secure_storage: ^10.3.1
 
 dev_dependencies:
   flutter_test:
@@ -38,6 +48,9 @@ dev_dependencies:
 
   # Readable assertions for unit tests (per project guidelines).
   checks: ^0.3.0
+
+  # Virtual clock for deterministically testing timers (OTP resend cooldown).
+  fake_async: ^1.3.1
 
 flutter:
   uses-material-design: true
