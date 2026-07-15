@@ -6,6 +6,30 @@ package domain
 
 import "time"
 
+// User is a registered customer of the platform. It is persisted in PostgreSQL
+// (the source of truth for accounts) and created during phone-number
+// registration. DateOfBirth is stored as a calendar date; CreatedAt is set by
+// the database.
+type User struct {
+	ID          string    `json:"id"`
+	PhoneE164   string    `json:"phoneE164"`
+	Name        string    `json:"name"`
+	Email       string    `json:"email"`
+	DateOfBirth time.Time `json:"dateOfBirth"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// Session is an authenticated login: an opaque bearer token bound to a user.
+// PostgreSQL is the source of truth (so sessions survive a restart); the server
+// caches live sessions in memstore for fast validation. A token is valid until
+// ExpiresAt.
+type Session struct {
+	Token     string    `json:"token"`
+	UserID    string    `json:"userId"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 // DriverStatus is the availability of a driver for matching.
 type DriverStatus string
 
@@ -46,6 +70,18 @@ type Driver struct {
 	Vehicle  string       `json:"vehicle"`
 	Status   DriverStatus `json:"status"`
 	Location Location     `json:"location"`
+}
+
+// RecentPickup is a place a customer has used as a ride pickup, kept as a short
+// per-user history so the apps can offer it without a maps lookup. PostgreSQL is
+// the source of truth; each app mirrors it into on-device storage as an offline
+// cache. PlaceID is the map provider's opaque id (empty for a GPS-only point).
+type RecentPickup struct {
+	PlaceID string    `json:"placeId,omitempty"`
+	Address string    `json:"address"`
+	Lat     float64   `json:"lat"`
+	Lng     float64   `json:"lng"`
+	UsedAt  time.Time `json:"usedAt"`
 }
 
 // Ride is a single trip request and its full lifecycle. Completed rides are the
