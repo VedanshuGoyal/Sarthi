@@ -1,0 +1,27 @@
+name: sarthi
+
+# Melos manages the Flutter side of the monorepo: the two apps and the shared
+# design-system package. Run `dart pub global activate melos` once, then
+# `melos bootstrap` from the repo root to resolve every package (it wires the
+# `sarthi_shared` path dependency into both apps).
+packages:
+  - apps/**
+  - shared
+
+ignore:
+  - server/**
+
+command:
+  bootstrap:
+    # Resolve path dependencies via pubspec_overrides.yaml so the committed
+    # pubspecs stay clean.
+    usePubspecOverrides: true
+
+scripts:
+  analyze:
+    description: Analyze all Dart packages.
+    run: melos exec -- flutter analyze
+
+  test:
+    description: Run unit/widget tests across all packages.
+    run: melos exec --dir-exists=test -- flutter test

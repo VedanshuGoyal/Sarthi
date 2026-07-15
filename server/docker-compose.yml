@@ -1,0 +1,28 @@
+# Local Postgres for the Sarthi backend.
+#
+#   docker compose up -d
+#
+# On first boot Postgres runs every script in /docker-entrypoint-initdb.d, so we
+# mount the users migration there — the `users` table exists immediately. (This
+# init hook only runs on an empty data volume; re-apply migrations with the
+# `migrate`/`psql` commands in README.md after the DB already exists.)
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: sarthi
+      POSTGRES_PASSWORD: sarthi
+      POSTGRES_DB: sarthi
+    ports:
+      - "5432:5432"
+    volumes:
+      - sarthi_pgdata:/var/lib/postgresql/data
+      - ./migrations/0001_create_users.up.sql:/docker-entrypoint-initdb.d/0001_create_users.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sarthi -d sarthi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  sarthi_pgdata:

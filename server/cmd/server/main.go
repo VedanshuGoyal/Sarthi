@@ -1,0 +1,134 @@
+// Command server runs the Sarthi REST API: phone-number registration backed by
+// PostgreSQL. Real-time GPS/matchmaking (memstore, websockets) is wired
+// separately.
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/sarthi/server/internal/api"
+	"github.com/sarthi/server/internal/config"
+	"github.com/sarthi/server/internal/memstore"
+	"github.com/sarthi/server/internal/repository"
+	"github.com/sarthi/server/internal/service"
+	"github.com/sarthi/server/internal/sms/fast2sms"
+)
+
+func main() {
+	if err := run(); err != nil {
+		slog.Error("server exited", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	// Root context cancelled on SIGINT/SIGTERM for graceful shutdown.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	// Sessions: PostgreSQL is the durable source of truth; memstore is the hot
+	// cache used to validate tokens without a DB hit. Warm the cache from the DB
+	// so tokens issued before this restart keep working.
+	sessions := service.NewSessionService(
+		repository.NewSessionRepository(pool),
+		memstore.NewSessionCache(),
+	)
+	if n, err := sessions.Warm(ctx); err != nil {
+		return err
+	} else {
+		slog.Info("sessions: warmed cache from DB", "count", n)
+	}
+
+	// OTP abuse limits (resend cap, failed-verification cap, 30-min lockout) are
+	// Sarthi's own rules, enforced in memory regardless of the SMS provider.
+	authOpts := []service.Option{
+		service.WithTokenIssuer(sessions),
+		service.WithOTPLimiter(memstore.NewOTPGuard()),
+	}
+	if cfg.Fast2SMS.Enabled() {
+		authOpts = append(authOpts, service.WithOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
+		))
+		slog.Info("otp: Fast2SMS provider enabled")
+	} else {
+		slog.Warn("otp: no SMS provider configured; accepting dev OTP",
+			"devOTP", service.DevOTP)
+	}
+	authService := service.NewAuthService(repository.NewUserRepository(pool), authOpts...)
+
+	// Recent pickups: PostgreSQL is the source of truth; the apps cache their
+	// own copy on-device. Low-frequency, so no memstore cache here.
+	recentPickups := service.NewRecentPickupService(
+		repository.NewRecentPickupRepository(pool),
+	)
+
+	srv := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           api.NewRouter(authService, sessions, recentPickups),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	// Serve in the background; surface listen errors through a channel.
+	serveErr := make(chan error, 1)
+	go func() {
+		slog.Info("listening", "addr", cfg.Addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+		slog.Info("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// newPool opens and verifies a PostgreSQL connection pool.
+func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	poolCfg.MaxConns = 25
+	poolCfg.MinConns = 2
+	poolCfg.MaxConnLifetime = 5 * time.Minute
+	poolCfg.MaxConnIdleTime = time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
+}

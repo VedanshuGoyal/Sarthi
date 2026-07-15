@@ -132,3 +132,128 @@ commands from inside the app directory you're targeting.
   permission and falls back to `flutter_layer` capture (Flutter's own canvas)
   if that's not granted — `flutter_layer` is sufficient for UI inspection and
   is what worked here without any macOS permission grants.
+
+---
+
+# Backend & database (Go + PostgreSQL)
+
+The Go API in `server/` persists customer accounts (phone-number registration)
+to PostgreSQL — the source of truth. Real-time GPS/matchmaking stays in
+`internal/memstore`. Full API reference and curl examples live in
+`server/README.md`; this section covers local setup end-to-end.
+
+## One-time install (macOS / Homebrew)
+
+We run Postgres in Docker. On macOS the headless, GUI-free way to get a Docker
+daemon is **Colima** (Docker Desktop needs a GUI + privileged helper). `psql`
+comes from `libpq`.
+
+```bash
+brew install colima docker docker-compose libpq
+```
+
+`libpq` is keg-only (not symlinked onto `PATH`). Either expose it once:
+
+```bash
+brew link --force libpq
+# …or add it per-shell:
+export PATH="$(brew --prefix libpq)/bin:$PATH"
+```
+
+> Note: under a **non-default Homebrew prefix** (here `~/.homebrew`), `libpq`
+> builds from source (krb5 + PostgreSQL) — expect a few minutes. `colima`,
+> `docker`, and `docker-compose` are relocatable Go binaries and install from
+> bottles instantly.
+
+## Daily workflow
+
+```bash
+# 1. Start the Docker VM (first boot downloads a disk image; vz on Apple Silicon).
+colima start
+
+# 2. Start Postgres — the users table is auto-created on first boot from
+#    server/migrations/0001_create_users.up.sql (mounted into initdb.d).
+cd server && docker compose up -d        # or: docker-compose up -d
+
+# 3. Run the API.
+export DATABASE_URL='postgres://sarthi:sarthi@localhost:5432/sarthi?sslmode=disable'
+go run ./cmd/server                       # → listening on :8080
+```
+
+If you already have Postgres (no Docker), apply the migration directly:
+
+```bash
+psql "$DATABASE_URL" -f server/migrations/0001_create_users.up.sql
+```
+
+## Check all registered accounts
+
+```bash
+# Via the API:
+curl -s localhost:8080/users | python3 -m json.tool
+
+# Straight from the database:
+psql "$DATABASE_URL" -c \
+  "SELECT id, phone_e164, name, email, date_of_birth, created_at FROM users ORDER BY created_at DESC;"
+```
+
+## Point the Flutter app at the backend
+
+`apps/user_app` resolves the base URL per platform
+(`lib/core/config/api_config.dart`):
+
+- **web / desktop / iOS simulator** → `http://localhost:8080`
+- **Android emulator** → `http://10.0.2.2:8080` (host loopback)
+- override anywhere with `flutter run --dart-define=API_BASE_URL=http://host:8080`
+
+## Ola Maps (pickup-location step)
+
+The Round Trip pickup screen uses Ola Maps Places (OAuth 2.0 client
+credentials). Credentials load from a git-ignored `.env` at `apps/user_app/.env`
+(copy `.env.example` and fill it in):
+
+```bash
+cd apps/user_app
+cp .env.example .env      # then paste your OLA_MAPS_CLIENT_ID / _SECRET
+flutter run --dart-define-from-file=.env
+```
+
+`--dart-define-from-file` maps each `.env` key into the compile-time defines
+read by `lib/core/config/ola_maps_config.dart`. Without credentials the search
+field degrades to a "maps isn't set up" message rather than crashing.
+
+> ⚠️ A client secret embedded in a mobile build can be extracted. For
+> production, mint the token on the Go backend and point the app's
+> `tokenProvider` at it (see `lib/features/ride/data/location_repository.dart`).
+
+## Verified end-to-end (2026-06-27)
+
+`colima start` → `docker compose up -d` → `go run ./cmd/server`, then the
+`server/README.md` smoke test:
+
+| Step | Result |
+| --- | --- |
+| `POST /auth/otp` | `202` |
+| `POST /auth/otp/verify` wrong code | `401 {"error":"incorrect verification code"}` |
+| `POST /auth/otp/verify` `123456` | `200` |
+| `POST /auth/register` | `201` + persisted user (DB-assigned UUID) |
+| duplicate phone | `409 {"error":"phone number already registered"}` |
+| under-18 DOB | `400 {"error":"you must be at least 18 years old"}` |
+| `GET /users` / `SELECT … FROM users` | both list the registered rows |
+
+## Stopping / cleanup
+
+```bash
+cd server && docker compose down     # stop Postgres (add -v to wipe the data volume)
+colima stop                          # stop the Docker VM
+```
+
+## Known rough edges
+
+- `gen_random_uuid()` (used by the `users` PK default) is built into
+  PostgreSQL 13+; on older servers enable it with
+  `CREATE EXTENSION IF NOT EXISTS pgcrypto;`.
+- `GET /users` is intentionally **unauthenticated** for local development — put
+  it behind admin auth before deploying.
+- OTP is a fixed dev code (`123456`) until an SMS provider is integrated
+  (`service.AuthService.RequestOTP`).
