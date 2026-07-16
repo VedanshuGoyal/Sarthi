@@ -11,6 +11,7 @@ import 'domain/trip_type.dart';
 import 'ride_providers.dart';
 import 'view/pickup_location_screen.dart';
 import 'view/trip_type_selector.dart';
+import 'view/widgets/map_pin_card.dart';
 import 'view_model/pickup_selection_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
@@ -153,5 +154,56 @@ Widget pickupSelectedPreview() => _pickup(
     address: 'MG Road, Bengaluru, Karnataka',
     point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
     placeId: 'p1',
+  ),
+);
+
+// --- Map picker card -------------------------------------------------------
+// The card that docks over the map. Previewed on its own (away from the
+// platform map view) across the states the map step puts it through.
+
+/// Bottom-aligns the card over a neutral backdrop, as it sits on the map.
+Widget _pinCard(MapPinCard card) => ColoredBox(
+  color: const Color(0xFFB0BEC5),
+  child: Align(alignment: Alignment.bottomCenter, child: card),
+);
+
+@Preview(name: 'Pin — resolved', group: 'Map picker', theme: ridePreviewTheme)
+Widget mapPinResolvedPreview() => _pinCard(
+  const MapPinCard(
+    label: 'MG Road, Bengaluru, Karnataka',
+    isMoving: false,
+    isResolving: false,
+    canConfirm: true,
+  ),
+);
+
+@Preview(name: 'Pin — moving', group: 'Map picker', theme: ridePreviewTheme)
+Widget mapPinMovingPreview() => _pinCard(
+  const MapPinCard(
+    label: '',
+    isMoving: true,
+    isResolving: false,
+    canConfirm: false,
+  ),
+);
+
+@Preview(name: 'Pin — resolving', group: 'Map picker', theme: ridePreviewTheme)
+Widget mapPinResolvingPreview() => _pinCard(
+  const MapPinCard(
+    label: '12.9756, 77.6068',
+    isMoving: false,
+    isResolving: true,
+    canConfirm: false,
+  ),
+);
+
+@Preview(name: 'Pin — error', group: 'Map picker', theme: ridePreviewTheme)
+Widget mapPinErrorPreview() => _pinCard(
+  const MapPinCard(
+    label: '12.9756, 77.6068',
+    isMoving: false,
+    isResolving: false,
+    error: 'The maps service is unavailable right now. Please try again.',
+    canConfirm: false,
   ),
 );

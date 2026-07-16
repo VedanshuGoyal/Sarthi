@@ -157,6 +157,16 @@ class PickupSelectionViewModel extends ChangeNotifier {
     _applySelection(pickup);
   }
 
+  /// Adopts a pickup the customer pinned on the map. Already resolved to an
+  /// address + coordinates by the map step, so — like a recent — it needs no
+  /// further lookup; it just becomes the selection and fills the search field.
+  void selectFromMap(PickupLocation pickup) {
+    _debounceTimer?.cancel();
+    _searchSeq++;
+    _error = null;
+    _applySelection(pickup);
+  }
+
   /// Persists the current selection to recents. Best-effort: a failed save must
   /// not block the customer from using the pickup they just chose.
   Future<void> rememberSelected() async {

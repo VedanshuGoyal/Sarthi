@@ -27,9 +27,20 @@ DART_DEFINES=()
 if [ -f .env ]; then
   DART_DEFINES+=(--dart-define-from-file=.env)
   echo "🔑 Loading Ola Maps credentials from apps/user_app/.env"
+
+  # The Google Maps SDK key is a *native* setting (dart-defines can't reach the
+  # manifest/Info.plist). Android's Gradle reads .env directly; for iOS we
+  # mirror MAPS_API_KEY into a git-ignored xcconfig that Info.plist references.
+  MAPS_KEY="$(grep -E '^MAPS_API_KEY=' .env | cut -d= -f2- || true)"
+  printf 'MAPS_API_KEY=%s\n' "${MAPS_KEY}" > ios/Flutter/Maps.xcconfig
+  if [ -n "${MAPS_KEY}" ]; then
+    echo "🗺️  Google Maps key wired into the native build."
+  else
+    echo "⚠️  No MAPS_API_KEY in .env — the 'Select on map' step won't load tiles."
+  fi
 else
   echo "⚠️  No apps/user_app/.env — map search will show 'maps isn't set up'."
-  echo "   Copy .env.example to .env and add your Ola Maps credentials."
+  echo "   Copy .env.example to .env and add your Ola Maps + MAPS_API_KEY keys."
 fi
 
 echo "📦 Resolving dependencies..."
