@@ -10,8 +10,11 @@ class FakeLocationRepository extends LocationRepository {
   FakeLocationRepository({
     this.suggestions = const [],
     this.current,
+    this.currentPos,
+    this.reverseResult,
     this.autocompleteError,
     this.currentError,
+    this.reverseError,
     this.recents = const [],
   }) : super(tokenProvider: _noToken);
 
@@ -23,17 +26,30 @@ class FakeLocationRepository extends LocationRepository {
   /// What [currentLocation] resolves to when [currentError] is null.
   PickupLocation? current;
 
+  /// What [currentPoint] returns when [currentError] is null.
+  GeoPoint? currentPos;
+
+  /// What [reverseGeocode] resolves to when [reverseError] is null. When null a
+  /// pickup is synthesised from the point's coordinates.
+  PickupLocation? reverseResult;
+
   /// When set, [autocomplete] throws this instead of returning [suggestions].
   LocationException? autocompleteError;
 
-  /// When set, [currentLocation] throws this instead of returning [current].
+  /// When set, [currentLocation]/[currentPoint] throw this instead.
   LocationException? currentError;
+
+  /// When set, [reverseGeocode] throws this instead of resolving.
+  LocationException? reverseError;
 
   /// What [recentPickups] returns and what [rememberPickup] prepends to.
   List<PickupLocation> recents;
 
   /// Every query string passed to [autocomplete], in order.
   final List<String> queries = [];
+
+  /// Every point passed to [reverseGeocode], in order.
+  final List<GeoPoint> reverseGeocoded = [];
 
   /// Every pickup passed to [rememberPickup], in order.
   final List<PickupLocation> remembered = [];
@@ -59,6 +75,20 @@ class FakeLocationRepository extends LocationRepository {
           address: 'Current place, Bengaluru',
           point: GeoPoint(latitude: 12.9, longitude: 77.6),
         );
+  }
+
+  @override
+  Future<GeoPoint> currentPoint() async {
+    if (currentError != null) throw currentError!;
+    return currentPos ?? const GeoPoint(latitude: 12.9, longitude: 77.6);
+  }
+
+  @override
+  Future<PickupLocation> reverseGeocode(GeoPoint point) async {
+    reverseGeocoded.add(point);
+    if (reverseError != null) throw reverseError!;
+    return reverseResult ??
+        PickupLocation(address: 'Pinned place', point: point);
   }
 
   @override

@@ -133,6 +133,12 @@ class LocationRepository {
     return reverseGeocode(point);
   }
 
+  /// The device's raw coordinates, with no reverse-geocode round-trip — used to
+  /// centre the map picker on the user before they start panning. Throws a
+  /// [LocationPermissionException] / [LocationServiceDisabledException] when GPS
+  /// is unavailable, so callers can fall back to a default view.
+  Future<GeoPoint> currentPoint() => _positionFetcher();
+
   /// The locally cached recents — instant, offline, no network. Callers paint
   /// this immediately, then call [recentPickups] to refresh from the backend.
   Future<List<PickupLocation>> cachedRecents() => _recentsCache.read();

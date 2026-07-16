@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_controller.dart';
 import 'data/location_repository.dart';
 import 'data/recent_pickups_api.dart';
+import 'view_model/map_pickup_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
@@ -34,6 +35,15 @@ final locationRepositoryProvider = Provider<LocationRepository>((ref) {
 final pickupSelectionViewModelProvider =
     ChangeNotifierProvider.autoDispose<PickupSelectionViewModel>((ref) {
       return PickupSelectionViewModel(
+        repository: ref.watch(locationRepositoryProvider),
+      );
+    });
+
+/// The map-picker step's view model. `autoDispose` so each visit starts fresh,
+/// re-centred on the customer's current location.
+final mapPickupViewModelProvider =
+    ChangeNotifierProvider.autoDispose<MapPickupViewModel>((ref) {
+      return MapPickupViewModel(
         repository: ref.watch(locationRepositoryProvider),
       );
     });

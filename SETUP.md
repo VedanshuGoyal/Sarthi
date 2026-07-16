@@ -226,6 +226,31 @@ field degrades to a "maps isn't set up" message rather than crashing.
 > production, mint the token on the Go backend and point the app's
 > `tokenProvider` at it (see `lib/features/ride/data/location_repository.dart`).
 
+### Google Maps (the "Select on map" pin step)
+
+The pickup screen's **Select on map** option renders a Google map; the pin's
+coordinates are reverse-geocoded through the same Ola repository. The Google
+Maps **SDK key** is a *native* setting — `--dart-define` can't reach the Android
+manifest / iOS `Info.plist` — so it's read from `.env` at build time instead:
+
+```bash
+# apps/user_app/.env  (git-ignored)
+MAPS_API_KEY=AIza...your_key
+```
+
+- **Android** — `android/app/build.gradle.kts` reads `MAPS_API_KEY` from `.env`
+  (falling back to `local.properties`) and injects it into the manifest.
+- **iOS** — `scripts/run-user-app.sh` mirrors the key into a git-ignored
+  `ios/Flutter/Maps.xcconfig` that `Info.plist` references via `$(MAPS_API_KEY)`.
+  Building straight from Xcode? Run the script once (or create that file
+  manually) so the key is present.
+
+Enable **Maps SDK for Android** and **Maps SDK for iOS** in Google Cloud, then
+restrict the key to the app (Android package `com.sarthi.user_app` + your
+signing SHA-1). Without a key the app still runs — the map just shows blank
+tiles. (Web/`chrome` maps need the JS SDK in `web/index.html` and aren't wired
+yet.)
+
 ## Verified end-to-end (2026-06-27)
 
 `colima start` → `docker compose up -d` → `go run ./cmd/server`, then the

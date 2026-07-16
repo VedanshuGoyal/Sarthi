@@ -5,6 +5,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/pickup_selection_view_model.dart';
+import 'map_pickup_screen.dart';
 import 'widgets/current_location_button.dart';
 import 'widgets/pickup_suggestion_tile.dart';
 import 'widgets/recent_location_tile.dart';
@@ -53,6 +54,17 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     Navigator.of(context).pop(pickup);
   }
 
+  /// Opens the map picker; a pinned pickup comes back as the selection so the
+  /// customer can confirm it like any search result.
+  Future<void> _pickOnMap(PickupSelectionViewModel vm) async {
+    final pickup = await Navigator.of(context).push<PickupLocation>(
+      MaterialPageRoute(builder: (_) => const MapPickupScreen()),
+    );
+    if (pickup == null) return;
+    vm.selectFromMap(pickup);
+    _syncField(vm);
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(pickupSelectionViewModelProvider);
@@ -94,6 +106,21 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                       await vm.useCurrentLocation();
                       _syncField(vm);
                     },
+                  ),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: Icon(
+                      Icons.map_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                    title: Text(
+                      'Select on map',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: () => _pickOnMap(vm),
                   ),
                   const Divider(height: 1),
                   Expanded(child: _results(vm, theme)),

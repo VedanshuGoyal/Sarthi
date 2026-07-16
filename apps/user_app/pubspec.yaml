@@ -36,6 +36,10 @@ dependencies:
   # Map UI for destination search and live ride tracking. Maps_flutter == google_maps_flutter.
   google_maps_flutter: ^2.9.0
 
+  # On web the Google Maps JS SDK must be injected into the page; we do that from
+  # Dart (keyed off the .env MAPS_API_KEY) using package:web's DOM bindings.
+  web: ^1.1.1
+
   # --- MCP agent inspection (debug only) ---
   # Lets the flutter-mcp-toolkit server drive/inspect this app. No-op in release.
   mcp_toolkit: ^3.0.0
