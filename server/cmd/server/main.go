@@ -82,9 +82,12 @@ func run() error {
 		repository.NewRecentPickupRepository(pool),
 	)
 
+	// Confirmed bookings: log-only for now; persistence/matchmaking come later.
+	bookings := service.NewBookingService()
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(authService, sessions, recentPickups),
+		Handler:           api.NewRouter(authService, sessions, recentPickups, bookings),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

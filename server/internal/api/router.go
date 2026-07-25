@@ -15,9 +15,11 @@ func NewRouter(
 	auth *service.AuthService,
 	sessions *service.SessionService,
 	recents *service.RecentPickupService,
+	bookings *service.BookingService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
+	bk := NewBookingHandler(bookings)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -37,6 +39,9 @@ func NewRouter(
 	// Per-user pickup history for the ride-booking flow.
 	mux.HandleFunc("GET /me/recent-pickups", requireAuth(sessions, rp.List))
 	mux.HandleFunc("POST /me/recent-pickups", requireAuth(sessions, rp.Remember))
+
+	// Confirmed bookings from the app; recorded server-side (log-only for now).
+	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 
 	mux.HandleFunc("GET /users", h.ListUsers)
 
