@@ -8,17 +8,15 @@ void main() {
     test('starts with nothing selected', () {
       final vm = TripSelectionViewModel();
       check(vm.selectedType).isNull();
-      check(vm.hasSelection).isFalse();
     });
 
-    test('selecting a type flips hasSelection and notifies once', () {
+    test('selecting a type records it and notifies once', () {
       final vm = TripSelectionViewModel();
       var notifications = 0;
       vm.addListener(() => notifications++);
 
       vm.select(TripType.roundTrip);
       check(vm.selectedType).equals(TripType.roundTrip);
-      check(vm.hasSelection).isTrue();
       check(notifications).equals(1);
 
       // Re-selecting the same type is a no-op — no extra notification.
@@ -33,7 +31,6 @@ void main() {
     test('honours a pre-selected initial type', () {
       final vm = TripSelectionViewModel(initialType: TripType.multiStop);
       check(vm.selectedType).equals(TripType.multiStop);
-      check(vm.hasSelection).isTrue();
     });
   });
 }

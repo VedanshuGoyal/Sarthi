@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/config/google_maps_config.dart';
 import '../../../core/config/ola_maps_config.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
@@ -53,18 +54,27 @@ class LocationRepository {
     PositionFetcher? positionFetcher,
     RecentPickupsApi? recentsApi,
     RecentLocationsStorage? recentsCache,
+    String? routesBaseUrl,
+    String? routesApiKey,
     this._maxRecents = 7,
   }) : _client = client ?? http.Client(),
        _tokenProvider = tokenProvider ?? OlaMapsAuthenticator().accessToken,
        _baseUrl = baseUrl ?? OlaMapsConfig.baseUrl,
        _positionFetcher = positionFetcher ?? _devicePosition,
        _recentsApi = recentsApi ?? RecentPickupsApi(),
-       _recentsCache = recentsCache ?? SecureRecentLocationsStorage();
+       _recentsCache = recentsCache ?? SecureRecentLocationsStorage(),
+       _routesBaseUrl = routesBaseUrl ?? GoogleMapsConfig.routesBaseUrl,
+       _routesApiKey = routesApiKey ?? GoogleMapsConfig.apiKey;
 
   final http.Client _client;
   final AccessTokenProvider _tokenProvider;
   final String _baseUrl;
   final PositionFetcher _positionFetcher;
+
+  /// Google Routes API endpoint + key for drive-time estimates (the rest of the
+  /// repository talks to Ola Maps).
+  final String _routesBaseUrl;
+  final String _routesApiKey;
 
   /// Backend is the source of truth for recents; [_recentsCache] mirrors it for
   /// offline reads.
@@ -119,10 +129,139 @@ class LocationRepository {
     }
     // No street match (e.g. a remote point): fall back to the raw coordinates
     // so the user still gets a confirmable pickup rather than a dead end.
-    return PickupLocation(
-      address: point.toLatLngParam(),
-      point: point,
-    );
+    return PickupLocation(address: point.toLatLngParam(), point: point);
+  }
+
+  /// The driving time from [start] to [destination].
+  ///
+  /// With no [departureAt] the trip is treated as leaving about now and the
+  /// estimate comes from the Ola Maps Directions API — cheap, priced into the
+  /// existing Ola plan, based on current traffic. With a [departureAt] the
+  /// costlier Google Routes API predicts traffic for that departure; callers
+  /// should only pass one for departures too far out for current traffic to be
+  /// a good proxy (see `scheduling.isNearTermDeparture`). Throws a
+  /// [LocationException] when no route with a duration comes back.
+  Future<Duration> travelTime({
+    required GeoPoint start,
+    required GeoPoint destination,
+    DateTime? departureAt,
+  }) => departureAt == null
+      ? _olaTravelTime(start, destination)
+      : _googleTravelTime(start, destination, departureAt);
+
+  /// Current-traffic drive time via Ola Maps Directions. Sums the legs of the
+  /// first returned route.
+  Future<Duration> _olaTravelTime(GeoPoint start, GeoPoint destination) async {
+    // Ola's directions endpoint is a POST that carries its input in the query
+    // string; the body stays empty. The full endpoint, not `/basic`: only it
+    // models real driving speeds (`/basic` returns ~10 km/h averages, wildly
+    // overestimating drive times).
+    final json = await _requestJson('POST', '/routing/v1/directions', {
+      'origin': start.toLatLngParam(),
+      'destination': destination.toLatLngParam(),
+    });
+
+    final routes = json['routes'];
+    if (routes is List) {
+      for (final route in routes.whereType<Map<String, dynamic>>()) {
+        final legs = route['legs'];
+        if (legs is! List) continue;
+        var seconds = 0;
+        var found = false;
+        for (final leg in legs.whereType<Map<String, dynamic>>()) {
+          final duration = leg['duration'];
+          if (duration is num) {
+            seconds += duration.toInt();
+            found = true;
+          }
+        }
+        if (found) return Duration(seconds: seconds);
+      }
+    }
+    throw const LocationException('Unexpected response from the maps service.');
+  }
+
+  /// Traffic-aware drive time for a future departure, via the Google Routes
+  /// API (`computeRoutes`). The departure is only sent when it still lies in
+  /// the future, since Google rejects past departure times.
+  Future<Duration> _googleTravelTime(
+    GeoPoint start,
+    GeoPoint destination,
+    DateTime departureAt,
+  ) async {
+    if (_routesApiKey.isEmpty) {
+      throw const LocationException(
+        'Drive-time estimates are not set up on this build.',
+      );
+    }
+
+    final departure = departureAt.toUtc();
+    final json = await _postGoogleJson('/directions/v2:computeRoutes', {
+      'origin': _routesWaypoint(start),
+      'destination': _routesWaypoint(destination),
+      'travelMode': 'DRIVE',
+      'routingPreference': 'TRAFFIC_AWARE',
+      if (departure.isAfter(DateTime.now().toUtc()))
+        'departureTime': departure.toIso8601String(),
+    });
+
+    final routes = json['routes'];
+    if (routes is List) {
+      for (final route in routes.whereType<Map<String, dynamic>>()) {
+        final seconds = _parseGoogleDuration(route['duration']);
+        if (seconds != null) return Duration(seconds: seconds);
+      }
+    }
+    throw const LocationException('Unexpected response from the maps service.');
+  }
+
+  /// A Routes API waypoint literal for [point].
+  static Map<String, dynamic> _routesWaypoint(GeoPoint point) => {
+    'location': {
+      'latLng': {'latitude': point.latitude, 'longitude': point.longitude},
+    },
+  };
+
+  /// Routes API durations arrive as protobuf-style strings ("5100s"); null
+  /// when [value] isn't one.
+  static int? _parseGoogleDuration(Object? value) {
+    if (value is! String || !value.endsWith('s')) return null;
+    return int.tryParse(value.substring(0, value.length - 1));
+  }
+
+  /// POSTs [body] to the Google Routes API at [path], authorized with the API
+  /// key, asking only for route durations. Same failure mapping as the Ola
+  /// requests so callers see one exception type.
+  Future<Map<String, dynamic>> _postGoogleJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final http.Response response;
+    try {
+      response = await _client.post(
+        Uri.parse('$_routesBaseUrl$path'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _routesApiKey,
+          'X-Goog-FieldMask': 'routes.duration',
+        },
+        body: jsonEncode(body),
+      );
+    } catch (_) {
+      throw const LocationException(
+        "Can't reach the maps service. Check your connection and try again.",
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw LocationException(
+        'The maps service is unavailable right now. Please try again.',
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const LocationException('Unexpected response from the maps service.');
   }
 
   /// Reads the device's current position and reverse-geocodes it into a
@@ -195,9 +334,17 @@ class LocationRepository {
   }
 
   /// GETs [path] with [params], authorized with a fresh OAuth bearer token, and
-  /// returns the decoded JSON object. Centralises the "no creds / no network /
-  /// bad status" failure modes.
+  /// returns the decoded JSON object.
   Future<Map<String, dynamic>> _getJson(
+    String path,
+    Map<String, String> params,
+  ) => _requestJson('GET', path, params);
+
+  /// Sends [method] to [path] with [params] in the query string, authorized
+  /// with a fresh OAuth bearer token, and returns the decoded JSON object.
+  /// Centralises the "no creds / no network / bad status" failure modes.
+  Future<Map<String, dynamic>> _requestJson(
+    String method,
     String path,
     Map<String, String> params,
   ) async {
@@ -208,13 +355,13 @@ class LocationRepository {
     final uri = Uri.parse(
       '$_baseUrl$path',
     ).replace(queryParameters: params.isEmpty ? null : params);
+    final headers = {'Authorization': 'Bearer $token'};
 
     final http.Response response;
     try {
-      response = await _client.get(
-        uri,
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      response = method == 'POST'
+          ? await _client.post(uri, headers: headers)
+          : await _client.get(uri, headers: headers);
     } catch (_) {
       throw const LocationException(
         "Can't reach the maps service. Check your connection and try again.",
@@ -259,9 +406,6 @@ class LocationRepository {
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
-    return GeoPoint(
-      latitude: position.latitude,
-      longitude: position.longitude,
-    );
+    return GeoPoint(latitude: position.latitude, longitude: position.longitude);
   }
 }

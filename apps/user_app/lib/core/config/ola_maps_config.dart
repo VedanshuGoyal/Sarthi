@@ -46,5 +46,6 @@ abstract final class OlaMapsConfig {
 
   /// Whether both credentials are present, so callers can branch before making
   /// requests.
-  static bool get isConfigured => clientId.isNotEmpty && clientSecret.isNotEmpty;
+  static bool get isConfigured =>
+      clientId.isNotEmpty && clientSecret.isNotEmpty;
 }

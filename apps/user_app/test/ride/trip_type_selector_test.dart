@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
+import 'package:user_app/features/ride/domain/trip_type.dart';
 import 'package:user_app/features/ride/view/trip_type_selector.dart';
 
-Future<void> _pumpSelector(WidgetTester tester) async {
+Future<void> _pumpSelector(
+  WidgetTester tester, {
+  void Function(TripType type)? onSelected,
+}) async {
   await tester.pumpWidget(
-    const ProviderScope(
+    ProviderScope(
       child: MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(child: TripTypeSelector()),
+          body: SingleChildScrollView(
+            child: TripTypeSelector(onSelected: onSelected),
+          ),
         ),
       ),
     ),
@@ -17,41 +22,51 @@ Future<void> _pumpSelector(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('offers both trip options with the CTA disabled until a pick', (
+  testWidgets('offers every trip option with no separate confirm step', (
     WidgetTester tester,
   ) async {
     await _pumpSelector(tester);
 
     expect(find.text('Round Trip'), findsOneWidget);
     expect(find.text('Multi-Stop Trip'), findsOneWidget);
+    expect(find.text('One-Way Trip'), findsOneWidget);
 
-    // No selection yet → Continue is disabled.
-    final button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNull);
+    // Tap-and-go: there is no CTA button to press after picking.
+    expect(find.byType(FilledButton), findsNothing);
   });
 
-  testWidgets('picking an option enables the CTA', (
+  testWidgets('tapping an option fires the callback immediately', (
     WidgetTester tester,
   ) async {
-    await _pumpSelector(tester);
+    TripType? selected;
+    await _pumpSelector(tester, onSelected: (type) => selected = type);
 
     await tester.tap(find.text('Round Trip'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    final button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNotNull);
+    expect(selected, TripType.roundTrip);
   });
 
-  testWidgets('confirming a selection surfaces a summary snackbar', (
+  testWidgets('without a callback a tap surfaces the summary snackbar', (
     WidgetTester tester,
   ) async {
     await _pumpSelector(tester);
 
     await tester.tap(find.text('Multi-Stop Trip'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Continue'));
     await tester.pump(); // let the snackbar appear
 
     expect(find.text('Selected: Multi-Stop Trip'), findsOneWidget);
+  });
+
+  testWidgets('the One-Way option goes straight through as well', (
+    WidgetTester tester,
+  ) async {
+    TripType? selected;
+    await _pumpSelector(tester, onSelected: (type) => selected = type);
+
+    await tester.tap(find.text('One-Way Trip'));
+    await tester.pump();
+
+    expect(selected, TripType.oneWay);
   });
 }

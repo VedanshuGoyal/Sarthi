@@ -28,9 +28,9 @@ void main() {
       await vm.init();
 
       check(vm.isReady).isTrue();
-      check(vm.initialCenter).equals(
-        const GeoPoint(latitude: 12.97, longitude: 77.6),
-      );
+      check(
+        vm.initialCenter,
+      ).equals(const GeoPoint(latitude: 12.97, longitude: 77.6));
       check(vm.resolved?.address).equals('MG Road, Bengaluru');
       check(vm.canConfirm).isTrue();
     });
@@ -49,21 +49,24 @@ void main() {
       check(vm.error).isNull();
     });
 
-    test('panning drops the stale selection until the camera settles', () async {
-      final repo = FakeLocationRepository();
-      final vm = MapPickupViewModel(repository: repo)..init();
-      await Future<void>.value();
+    test(
+      'panning drops the stale selection until the camera settles',
+      () async {
+        final repo = FakeLocationRepository();
+        final vm = MapPickupViewModel(repository: repo)..init();
+        await Future<void>.value();
 
-      vm.onCameraMove(const GeoPoint(latitude: 1, longitude: 2));
-      check(vm.isMoving).isTrue();
-      check(vm.canConfirm).isFalse();
+        vm.onCameraMove(const GeoPoint(latitude: 1, longitude: 2));
+        check(vm.isMoving).isTrue();
+        check(vm.canConfirm).isFalse();
 
-      await vm.onCameraIdle();
-      check(vm.isMoving).isFalse();
-      check(vm.center).equals(const GeoPoint(latitude: 1, longitude: 2));
-      check(vm.resolved).isNotNull();
-      check(vm.canConfirm).isTrue();
-    });
+        await vm.onCameraIdle();
+        check(vm.isMoving).isFalse();
+        check(vm.center).equals(const GeoPoint(latitude: 1, longitude: 2));
+        check(vm.resolved).isNotNull();
+        check(vm.canConfirm).isTrue();
+      },
+    );
 
     test('a later settle wins over an in-flight earlier resolve', () async {
       // The seq guard means only the newest settle writes results.

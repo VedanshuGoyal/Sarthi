@@ -21,6 +21,8 @@ class SarthiTextField extends StatelessWidget {
     this.suffixIcon,
     this.autofocus = false,
     this.readOnly = false,
+    this.maxLines = 1,
+    this.minLines,
     this.onTap,
     this.onChanged,
     this.onSubmitted,
@@ -43,6 +45,11 @@ class SarthiTextField extends StatelessWidget {
   /// When true the field can't be typed into — pair with [onTap] for
   /// picker-style fields (e.g. a date of birth that opens a calendar).
   final bool readOnly;
+
+  /// Line bounds for multiline fields (e.g. a free-text note). Defaults to the
+  /// single-line behaviour of a plain [TextField].
+  final int? maxLines;
+  final int? minLines;
   final VoidCallback? onTap;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -67,6 +74,8 @@ class SarthiTextField extends StatelessWidget {
           inputFormatters: inputFormatters,
           autofocus: autofocus,
           readOnly: readOnly,
+          maxLines: maxLines,
+          minLines: minLines,
           onTap: onTap,
           onChanged: onChanged,
           onSubmitted: onSubmitted,

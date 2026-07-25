@@ -16,9 +16,6 @@ class TripSelectionViewModel extends ChangeNotifier {
   TripType? _selectedType;
   TripType? get selectedType => _selectedType;
 
-  /// True once the customer has picked a trip type — gates the CTA.
-  bool get hasSelection => _selectedType != null;
-
   /// Picks [type]. Tapping the already-selected option is a no-op so we don't
   /// churn listeners.
   void select(TripType type) {

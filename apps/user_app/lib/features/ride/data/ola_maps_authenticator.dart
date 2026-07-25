@@ -95,7 +95,9 @@ class OlaMapsAuthenticator {
     final expiresIn = decoded['expires_in'];
     final seconds = expiresIn is num ? expiresIn.toInt() : 3600;
     _token = token;
-    _expiresAt = _now().add(Duration(seconds: seconds)).subtract(_refreshLeeway);
+    _expiresAt = _now()
+        .add(Duration(seconds: seconds))
+        .subtract(_refreshLeeway);
     return token;
   }
 }

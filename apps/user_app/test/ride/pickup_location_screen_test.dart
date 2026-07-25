@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/place_suggestion.dart';
@@ -19,106 +18,29 @@ const _suggestion = PlaceSuggestion(
   point: GeoPoint(latitude: 12.97, longitude: 77.6),
 );
 
-/// Pumps the screen with the view model seeded into [start] state.
-Future<PickupLocation?> _pumpScreen(
-  WidgetTester tester, {
-  List<PlaceSuggestion> suggestions = const [],
-  PickupLocation? selected,
-  String query = '',
-  List<PickupLocation> recents = const [],
-}) async {
+/// Pumps the screen with the view model seeded into the given state and
+/// captures whatever the screen confirms.
+class _Harness {
   PickupLocation? confirmed;
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        locationRepositoryProvider.overrideWithValue(
-          FakeLocationRepository(recents: recents),
-        ),
-        pickupSelectionViewModelProvider.overrideWith(
-          (ref) => PickupSelectionViewModel(
-            repository: ref.watch(locationRepositoryProvider),
-            initialQuery: query,
-            initialSuggestions: suggestions,
-            initialSelected: selected,
-          ),
-        ),
-      ],
-      child: MaterialApp(
-        home: PickupLocationScreen(
-          onConfirmed: (_, pickup) => confirmed = pickup,
-        ),
-      ),
-    ),
-  );
-  return confirmed;
-}
+  final FakeLocationRepository repo;
 
-void main() {
-  testWidgets('confirm is disabled until a pickup is chosen', (tester) async {
-    await _pumpScreen(tester, suggestions: const [_suggestion], query: 'MG');
+  _Harness({List<PickupLocation> recents = const []})
+    : repo = FakeLocationRepository(recents: recents);
 
-    final button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNull);
-    expect(find.text('MG Road'), findsOneWidget);
-  });
-
-  testWidgets('tapping a suggestion selects it and enables confirm', (
-    tester,
-  ) async {
-    await _pumpScreen(tester, suggestions: const [_suggestion], query: 'MG');
-
-    await tester.tap(find.text('MG Road'));
-    await tester.pumpAndSettle();
-
-    final button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNotNull);
-  });
-
-  testWidgets('shows recent pickups when the field is empty', (tester) async {
-    await _pumpScreen(
-      tester,
-      recents: const [
-        PickupLocation(
-          address: 'Home, Koramangala',
-          point: GeoPoint(latitude: 12.93, longitude: 77.62),
-          placeId: 'r1',
-        ),
-      ],
-    );
-    // Let the async recents load settle and rebuild.
-    await tester.pumpAndSettle();
-
-    expect(find.text('Recent'), findsOneWidget);
-    expect(find.text('Home, Koramangala'), findsOneWidget);
-
-    // Confirm stays disabled until one is picked.
-    var button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNull);
-
-    await tester.tap(find.text('Home, Koramangala'));
-    await tester.pumpAndSettle();
-
-    button = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(button.onPressed, isNotNull);
-  });
-
-  testWidgets('confirming returns the chosen pickup', (tester) async {
-    PickupLocation? confirmed;
-    await tester.pumpWidget(
+  Future<void> pump(
+    WidgetTester tester, {
+    List<PlaceSuggestion> suggestions = const [],
+    String query = '',
+  }) {
+    return tester.pumpWidget(
       ProviderScope(
         overrides: [
-          locationRepositoryProvider.overrideWithValue(
-            FakeLocationRepository(),
-          ),
+          locationRepositoryProvider.overrideWithValue(repo),
           pickupSelectionViewModelProvider.overrideWith(
             (ref) => PickupSelectionViewModel(
               repository: ref.watch(locationRepositoryProvider),
-              initialQuery: _suggestion.address,
-              initialSelected: const PickupLocation(
-                address: 'MG Road, Bengaluru',
-                point: GeoPoint(latitude: 12.97, longitude: 77.6),
-                placeId: 'p1',
-              ),
+              initialQuery: query,
+              initialSuggestions: suggestions,
             ),
           ),
         ],
@@ -129,11 +51,70 @@ void main() {
         ),
       ),
     );
+  }
+}
 
-    await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Confirm pickup'));
-    await tester.pump();
+void main() {
+  testWidgets('renders results with no separate confirm button', (
+    tester,
+  ) async {
+    final harness = _Harness();
+    await harness.pump(tester, suggestions: const [_suggestion], query: 'MG');
 
-    expect(confirmed, isNotNull);
-    expect(confirmed!.address, 'MG Road, Bengaluru');
+    expect(find.text('MG Road'), findsOneWidget);
+    // Tap-and-go: choosing a result is the confirmation.
+    expect(find.byType(FilledButton), findsNothing);
+  });
+
+  testWidgets('tapping a suggestion confirms it immediately', (tester) async {
+    final harness = _Harness();
+    await harness.pump(tester, suggestions: const [_suggestion], query: 'MG');
+
+    await tester.tap(find.text('MG Road'));
+    await tester.pumpAndSettle();
+
+    expect(harness.confirmed, isNotNull);
+    expect(harness.confirmed!.address, 'MG Road, Bengaluru');
+    // The choice was also persisted to recents on the way out.
+    expect(harness.repo.remembered.map((p) => p.address), [
+      'MG Road, Bengaluru',
+    ]);
+  });
+
+  testWidgets('tapping a recent confirms it immediately', (tester) async {
+    const recent = PickupLocation(
+      address: 'Home, Koramangala',
+      point: GeoPoint(latitude: 12.93, longitude: 77.62),
+      placeId: 'r1',
+    );
+    final harness = _Harness(recents: const [recent]);
+    await harness.pump(tester);
+    // Let the async recents load settle and rebuild.
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recent'), findsOneWidget);
+
+    await tester.tap(find.text('Home, Koramangala'));
+    await tester.pumpAndSettle();
+
+    expect(harness.confirmed, isNotNull);
+    expect(harness.confirmed!.address, 'Home, Koramangala');
+  });
+
+  testWidgets('using the current location confirms once GPS resolves', (
+    tester,
+  ) async {
+    final harness = _Harness();
+    harness.repo.current = const PickupLocation(
+      address: 'My street, Bengaluru',
+      point: GeoPoint(latitude: 12.9, longitude: 77.6),
+    );
+    await harness.pump(tester);
+
+    await tester.tap(find.text('Use my current location'));
+    await tester.pumpAndSettle();
+
+    expect(harness.confirmed, isNotNull);
+    expect(harness.confirmed!.address, 'My street, Bengaluru');
   });
 }

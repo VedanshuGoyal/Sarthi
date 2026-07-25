@@ -25,6 +25,8 @@ LocationRepository _repo(
     client: client,
     tokenProvider: tokenProvider ?? (() async => 'test-token'),
     baseUrl: 'https://maps.test',
+    routesBaseUrl: 'https://routes.test',
+    routesApiKey: 'routes-key',
   );
 }
 
@@ -82,58 +84,71 @@ void main() {
       check(cache.saved.map((p) => p.address).toList()).deepEquals(['A', 'B']);
     });
 
-    test('cachedRecents reads the local cache without touching the backend', () async {
-      final cache = _MemoryRecentsStorage()
-        ..saved = [_pickup('Cached', placeId: 'c')];
-      final repo = LocationRepository(
-        recentsCache: cache,
-        // A client that fails the test if the backend is contacted at all.
-        recentsApi: _recentsApi(
-          MockClient((_) async => throw StateError('should not hit backend')),
-        ),
-      );
+    test(
+      'cachedRecents reads the local cache without touching the backend',
+      () async {
+        final cache = _MemoryRecentsStorage()
+          ..saved = [_pickup('Cached', placeId: 'c')];
+        final repo = LocationRepository(
+          recentsCache: cache,
+          // A client that fails the test if the backend is contacted at all.
+          recentsApi: _recentsApi(
+            MockClient((_) async => throw StateError('should not hit backend')),
+          ),
+        );
 
-      final result = await repo.cachedRecents();
-      check(result.map((p) => p.address).toList()).deepEquals(['Cached']);
-    });
+        final result = await repo.cachedRecents();
+        check(result.map((p) => p.address).toList()).deepEquals(['Cached']);
+      },
+    );
 
-    test('recentPickups falls back to the cache when the backend fails', () async {
-      final cache = _MemoryRecentsStorage()
-        ..saved = [_pickup('Cached', placeId: 'c')];
-      final repo = LocationRepository(
-        recentsCache: cache,
-        recentsApi: _recentsApi(MockClient((_) async => http.Response('x', 503))),
-      );
+    test(
+      'recentPickups falls back to the cache when the backend fails',
+      () async {
+        final cache = _MemoryRecentsStorage()
+          ..saved = [_pickup('Cached', placeId: 'c')];
+        final repo = LocationRepository(
+          recentsCache: cache,
+          recentsApi: _recentsApi(
+            MockClient((_) async => http.Response('x', 503)),
+          ),
+        );
 
-      final result = await repo.recentPickups();
-      check(result.map((p) => p.address).toList()).deepEquals(['Cached']);
-    });
+        final result = await repo.recentPickups();
+        check(result.map((p) => p.address).toList()).deepEquals(['Cached']);
+      },
+    );
 
-    test('rememberPickup posts to the backend and caches the response', () async {
-      final cache = _MemoryRecentsStorage();
-      Map<String, dynamic>? sent;
-      final repo = LocationRepository(
-        recentsCache: cache,
-        recentsApi: _recentsApi(
-          MockClient((req) async {
-            sent = jsonDecode(req.body) as Map<String, dynamic>;
-            return http.Response(_recentsBody(['A']), 200);
-          }),
-        ),
-      );
+    test(
+      'rememberPickup posts to the backend and caches the response',
+      () async {
+        final cache = _MemoryRecentsStorage();
+        Map<String, dynamic>? sent;
+        final repo = LocationRepository(
+          recentsCache: cache,
+          recentsApi: _recentsApi(
+            MockClient((req) async {
+              sent = jsonDecode(req.body) as Map<String, dynamic>;
+              return http.Response(_recentsBody(['A']), 200);
+            }),
+          ),
+        );
 
-      final result = await repo.rememberPickup(_pickup('A', placeId: 'a'));
+        final result = await repo.rememberPickup(_pickup('A', placeId: 'a'));
 
-      check(sent?['address']).equals('A');
-      check(result.map((p) => p.address).toList()).deepEquals(['A']);
-      check(cache.saved).length.equals(1);
-    });
+        check(sent?['address']).equals('A');
+        check(result.map((p) => p.address).toList()).deepEquals(['A']);
+        check(cache.saved).length.equals(1);
+      },
+    );
 
     test('rememberPickup offline de-dupes and caps into the cache', () async {
       final repo = LocationRepository(
         recentsCache: _MemoryRecentsStorage(),
         maxRecents: 2,
-        recentsApi: _recentsApi(MockClient((_) async => http.Response('x', 503))),
+        recentsApi: _recentsApi(
+          MockClient((_) async => http.Response('x', 503)),
+        ),
       );
 
       await repo.rememberPickup(_pickup('A', placeId: 'a'));
@@ -272,9 +287,150 @@ void main() {
         positionFetcher: () async =>
             throw const LocationPermissionException('denied'),
       );
+      await check(repo.currentLocation()).throws<LocationPermissionException>();
+    });
+  });
+
+  group('LocationRepository.travelTime', () {
+    const start = GeoPoint(latitude: 12.9756, longitude: 77.6068);
+    const destination = GeoPoint(latitude: 13.1986, longitude: 77.7066);
+
+    /// A one-route Routes API body with the given protobuf-style duration.
+    String routesBody(String duration) => jsonEncode({
+      'routes': [
+        {'duration': duration},
+      ],
+    });
+
+    test(
+      'no departure time: asks Ola and sums the first route\'s legs',
+      () async {
+        final captured = <http.Request>[];
+        final repo = _repo(
+          (_) => http.Response(
+            jsonEncode({
+              'routes': [
+                {
+                  'legs': [
+                    {'duration': 3600},
+                    {'duration': 1500},
+                  ],
+                },
+              ],
+            }),
+            200,
+          ),
+          captured: captured,
+        );
+
+        final eta = await repo.travelTime(
+          start: start,
+          destination: destination,
+        );
+
+        final request = captured.single;
+        check(request.method).equals('POST');
+        check(request.url.host).equals('maps.test');
+        check(request.url.path).equals('/routing/v1/directions');
+        check(request.url.queryParameters['origin']).equals('12.9756,77.6068');
+        check(
+          request.url.queryParameters['destination'],
+        ).equals('13.1986,77.7066');
+        check(request.headers['Authorization']).equals('Bearer test-token');
+
+        check(eta).equals(const Duration(hours: 1, minutes: 25));
+      },
+    );
+
+    test('a departure time routes to Google, traffic-aware', () async {
+      final captured = <http.Request>[];
+      final repo = _repo(
+        (_) => http.Response(routesBody('5100s'), 200),
+        captured: captured,
+      );
+
+      final departure = DateTime.now().add(const Duration(hours: 3));
+      final eta = await repo.travelTime(
+        start: start,
+        destination: destination,
+        departureAt: departure,
+      );
+
+      final request = captured.single;
+      check(request.method).equals('POST');
+      check(
+        request.url.toString(),
+      ).equals('https://routes.test/directions/v2:computeRoutes');
+      check(request.headers['X-Goog-Api-Key']).equals('routes-key');
+      check(request.headers['X-Goog-FieldMask']).equals('routes.duration');
+
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      check(body['travelMode']).equals('DRIVE');
+      check(body['routingPreference']).equals('TRAFFIC_AWARE');
+      check(body['departureTime']).equals(departure.toUtc().toIso8601String());
+      final origin = body['origin'] as Map<String, dynamic>;
+      final latLng =
+          (origin['location'] as Map<String, dynamic>)['latLng']
+              as Map<String, dynamic>;
+      check(latLng['latitude']).equals(12.9756);
+      check(latLng['longitude']).equals(77.6068);
+
+      check(eta).equals(const Duration(hours: 1, minutes: 25));
+    });
+
+    test('omits a past departure time (Google rejects them)', () async {
+      final captured = <http.Request>[];
+      final repo = _repo(
+        (_) => http.Response(routesBody('600s'), 200),
+        captured: captured,
+      );
+
+      await repo.travelTime(
+        start: start,
+        destination: destination,
+        departureAt: DateTime.now().subtract(const Duration(hours: 1)),
+      );
+
+      final body = jsonDecode(captured.single.body) as Map<String, dynamic>;
+      check(body.containsKey('departureTime')).isFalse();
+    });
+
+    test(
+      'throws when Google is needed but the key is not configured',
+      () async {
+        final repo = LocationRepository(
+          client: MockClient(
+            (_) async => http.Response(routesBody('600s'), 200),
+          ),
+          tokenProvider: () async => 'test-token',
+          baseUrl: 'https://maps.test',
+          routesBaseUrl: 'https://routes.test',
+          routesApiKey: '',
+        );
+        await check(
+          repo.travelTime(
+            start: start,
+            destination: destination,
+            departureAt: DateTime.now().add(const Duration(hours: 5)),
+          ),
+        ).throws<LocationException>();
+      },
+    );
+
+    test('throws when no route carries a duration', () async {
+      final repo = _repo(
+        (_) => http.Response(jsonEncode({'routes': <Object>[]}), 200),
+      );
       await check(
-        repo.currentLocation(),
-      ).throws<LocationPermissionException>();
+        repo.travelTime(start: start, destination: destination),
+      ).throws<LocationException>();
+    });
+
+    test('throws on a non-2xx response', () async {
+      final repo = _repo((_) => http.Response('nope', 403));
+      await check(
+        repo.travelTime(start: start, destination: destination),
+      ).throws<LocationException>();
     });
   });
 }

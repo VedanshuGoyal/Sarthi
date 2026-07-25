@@ -10,16 +10,29 @@ import 'widgets/current_location_button.dart';
 import 'widgets/pickup_suggestion_tile.dart';
 import 'widgets/recent_location_tile.dart';
 
-/// Step 2 of a Round Trip booking: choose where the driver picks you up.
+/// Choose a location: the Round Trip pickup by default, but reusable for any
+/// "pick a place" step (a Multi-Stop starting point or stop) via the labels.
 ///
 /// A search field (Ola Maps autocomplete) plus a "use my current location"
-/// shortcut (GPS + reverse-geocode). Watches [pickupSelectionViewModelProvider]
-/// and, on confirm, hands the chosen [PickupLocation] back via [onConfirmed].
-/// Body is width-capped and centred on large screens per the responsive guide.
+/// shortcut (GPS + reverse-geocode). Tapping any result — a suggestion, a
+/// recent, the GPS shortcut, or a map pin — is the whole decision: the choice
+/// is remembered and handed straight back via [onConfirmed], with no separate
+/// confirm step. Watches [pickupSelectionViewModelProvider]. Body is
+/// width-capped and centred on large screens per the responsive guide.
 class PickupLocationScreen extends ConsumerStatefulWidget {
-  const PickupLocationScreen({super.key, this.onConfirmed});
+  const PickupLocationScreen({
+    super.key,
+    this.title = 'Set pickup',
+    this.fieldLabel = 'Pickup location',
+    this.onConfirmed,
+  });
 
-  /// Invoked with the confirmed pickup when the CTA is tapped. Defaults to
+  /// The app-bar title and search-field label — overridden when the screen is
+  /// choosing something other than a Round Trip pickup.
+  final String title;
+  final String fieldLabel;
+
+  /// Invoked with the chosen pickup as soon as one is tapped. Defaults to
   /// popping the screen and returning the location to the previous route.
   final void Function(BuildContext context, PickupLocation pickup)? onConfirmed;
 
@@ -32,37 +45,42 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Seed the field with any pre-set query (previews/tests); afterwards the
+    // field is only ever edited by the user — every choice leaves the screen.
+    _controller.text = ref.read(pickupSelectionViewModelProvider).query;
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
-  /// Mirrors a programmatic pickup choice (suggestion tap / current location)
-  /// back into the text field without re-triggering a search.
-  void _syncField(PickupSelectionViewModel vm) {
-    if (_controller.text != vm.query) {
-      _controller.value = TextEditingValue(
-        text: vm.query,
-        selection: TextSelection.collapsed(offset: vm.query.length),
-      );
-    }
-  }
-
-  void _confirm(PickupLocation pickup) {
+  /// Completes the step with [pickup]: persists it to recents (best-effort)
+  /// and hands it back. A null [pickup] means the tap couldn't be resolved —
+  /// the view model has already surfaced why, so we stay put.
+  Future<void> _choose(
+    PickupSelectionViewModel vm,
+    PickupLocation? pickup,
+  ) async {
+    if (pickup == null) return;
+    await vm.rememberSelected();
+    if (!mounted) return;
     final onConfirmed = widget.onConfirmed;
     if (onConfirmed != null) return onConfirmed(context, pickup);
     Navigator.of(context).pop(pickup);
   }
 
-  /// Opens the map picker; a pinned pickup comes back as the selection so the
-  /// customer can confirm it like any search result.
+  /// Opens the map picker; a pinned pickup comes straight back as the chosen
+  /// location.
   Future<void> _pickOnMap(PickupSelectionViewModel vm) async {
     final pickup = await Navigator.of(context).push<PickupLocation>(
       MaterialPageRoute(builder: (_) => const MapPickupScreen()),
     );
-    if (pickup == null) return;
-    vm.selectFromMap(pickup);
-    _syncField(vm);
+    if (pickup == null || !mounted) return;
+    await _choose(vm, vm.selectFromMap(pickup));
   }
 
   @override
@@ -71,7 +89,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Set pickup')),
+      appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -82,7 +100,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SarthiTextField(
-                    label: 'Pickup location',
+                    label: widget.fieldLabel,
                     controller: _controller,
                     hintText: 'Search for a place',
                     autofocus: true,
@@ -102,10 +120,8 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                   const SizedBox(height: 8),
                   CurrentLocationButton(
                     isBusy: vm.isLocating,
-                    onPressed: () async {
-                      await vm.useCurrentLocation();
-                      _syncField(vm);
-                    },
+                    onPressed: () async =>
+                        _choose(vm, await vm.useCurrentLocation()),
                   ),
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 4),
@@ -124,17 +140,6 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                   ),
                   const Divider(height: 1),
                   Expanded(child: _results(vm, theme)),
-                  const SizedBox(height: 8),
-                  SarthiPrimaryButton(
-                    label: 'Confirm pickup',
-                    onPressed: vm.canConfirm
-                        ? () async {
-                            final pickup = vm.selected!;
-                            await vm.rememberSelected();
-                            if (context.mounted) _confirm(pickup);
-                          }
-                        : null,
-                  ),
                 ],
               ),
             ),
@@ -157,10 +162,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
           final suggestion = vm.suggestions[i];
           return PickupSuggestionTile(
             suggestion: suggestion,
-            onTap: () {
-              vm.selectSuggestion(suggestion);
-              _syncField(vm);
-            },
+            onTap: () => _choose(vm, vm.selectSuggestion(suggestion)),
           );
         },
       );
@@ -171,9 +173,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     }
     return Center(
       child: Text(
-        vm.canConfirm
-            ? 'Pickup set. Tap confirm to continue.'
-            : 'Search for your pickup, or use your current location.',
+        'Search for a place, or use your current location.',
         textAlign: TextAlign.center,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
@@ -205,10 +205,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
               final recent = vm.recents[i];
               return RecentLocationTile(
                 location: recent,
-                onTap: () {
-                  vm.selectRecent(recent);
-                  _syncField(vm);
-                },
+                onTap: () => _choose(vm, vm.selectRecent(recent)),
               );
             },
           ),

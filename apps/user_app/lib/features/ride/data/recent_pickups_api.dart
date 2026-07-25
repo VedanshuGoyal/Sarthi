@@ -44,7 +44,9 @@ class RecentPickupsApi {
 
   /// The user's recent pickups, newest first.
   Future<List<PickupLocation>> list() async {
-    final response = await _send(() => _client.get(_uri(), headers: _headers()));
+    final response = await _send(
+      () => _client.get(_uri(), headers: _headers()),
+    );
     return _parse(response);
   }
 
@@ -72,9 +74,7 @@ class RecentPickupsApi {
     };
   }
 
-  Future<http.Response> _send(
-    Future<http.Response> Function() run,
-  ) async {
+  Future<http.Response> _send(Future<http.Response> Function() run) async {
     final http.Response response;
     try {
       response = await run();

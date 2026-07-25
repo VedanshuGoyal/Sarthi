@@ -10,4 +10,7 @@ enum TripType {
 
   /// A single booking that visits several stops in sequence.
   multiStop,
+
+  /// A simple A-to-B drive: one starting point, one destination.
+  oneWay,
 }

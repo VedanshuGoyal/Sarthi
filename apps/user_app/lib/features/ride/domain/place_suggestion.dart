@@ -26,7 +26,9 @@ class PlaceSuggestion {
   /// Parses one entry from Ola Maps `/places/v1/autocomplete` `predictions[]`.
   factory PlaceSuggestion.fromOlaPrediction(Map<String, dynamic> json) {
     final structured = json['structured_formatting'];
-    final formatting = structured is Map<String, dynamic> ? structured : const {};
+    final formatting = structured is Map<String, dynamic>
+        ? structured
+        : const {};
     final description = json['description'] as String? ?? '';
     final main = formatting['main_text'] as String? ?? description;
     final secondary = formatting['secondary_text'] as String? ?? '';

@@ -14,18 +14,16 @@ import '../domain/place_suggestion.dart';
 /// never to HTTP or the GPS plugin — and debounces typing so a keystroke
 /// doesn't fire a request each character.
 class PickupSelectionViewModel extends ChangeNotifier {
-  /// [initialQuery], [initialSuggestions], and [initialSelected] are seams used
-  /// by previews and tests to render a given state without driving the async
-  /// flow; production code uses the defaults (empty, nothing selected).
+  /// [initialQuery] and [initialSuggestions] are seams used by previews and
+  /// tests to render a given state without driving the async flow; production
+  /// code uses the defaults (empty, nothing selected).
   PickupSelectionViewModel({
     required this._repository,
     this._debounce = const Duration(milliseconds: 500),
     String initialQuery = '',
     List<PlaceSuggestion> initialSuggestions = const [],
-    PickupLocation? initialSelected,
   }) : _query = initialQuery,
-       _suggestions = initialSuggestions,
-       _selected = initialSelected {
+       _suggestions = initialSuggestions {
     _loadRecents();
   }
 
@@ -62,10 +60,6 @@ class PickupSelectionViewModel extends ChangeNotifier {
 
   String? _error;
   String? get error => _error;
-
-  /// True once a pickup is chosen and its query text is still intact — gates
-  /// the confirm CTA. Editing the field after choosing clears the selection.
-  bool get canConfirm => _selected != null;
 
   /// Handles each keystroke in the search field: records the query, drops any
   /// stale selection, and (debounced) refreshes the suggestion list.
@@ -107,10 +101,11 @@ class PickupSelectionViewModel extends ChangeNotifier {
     }
   }
 
-  /// Confirms [suggestion] as the pickup. Ola predictions carry coordinates; a
-  /// prediction without them can't be pinned, so we ask the user to try another
+  /// Adopts [suggestion] as the pickup and returns it so the view can act on
+  /// the choice at once. Ola predictions carry coordinates; a prediction
+  /// without them can't be pinned, so we surface an error and return null
   /// rather than guess.
-  void selectSuggestion(PlaceSuggestion suggestion) {
+  PickupLocation? selectSuggestion(PlaceSuggestion suggestion) {
     _debounceTimer?.cancel();
     _searchSeq++; // stop any in-flight search from claiming the results
 
@@ -118,11 +113,11 @@ class PickupSelectionViewModel extends ChangeNotifier {
     if (point == null) {
       _error = "Couldn't pin that place. Try another result.";
       _notify();
-      return;
+      return null;
     }
 
     _error = null;
-    _applySelection(
+    return _applySelection(
       PickupLocation(
         address: suggestion.address,
         point: point,
@@ -131,17 +126,19 @@ class PickupSelectionViewModel extends ChangeNotifier {
     );
   }
 
-  /// Fills the pickup from the device's current GPS position.
-  Future<void> useCurrentLocation() async {
+  /// Resolves the pickup from the device's current GPS position; null when
+  /// locating fails (the failure is surfaced via [error]).
+  Future<PickupLocation?> useCurrentLocation() async {
     _debounceTimer?.cancel();
     _searchSeq++;
     _isLocating = true;
     _error = null;
     _notify();
     try {
-      _applySelection(await _repository.currentLocation());
+      return _applySelection(await _repository.currentLocation());
     } on LocationException catch (e) {
       _error = e.message;
+      return null;
     } finally {
       _isLocating = false;
       _notify();
@@ -150,21 +147,21 @@ class PickupSelectionViewModel extends ChangeNotifier {
 
   /// Picks a saved recent as the pickup. No network call — recents already
   /// carry their coordinates.
-  void selectRecent(PickupLocation pickup) {
+  PickupLocation selectRecent(PickupLocation pickup) {
     _debounceTimer?.cancel();
     _searchSeq++;
     _error = null;
-    _applySelection(pickup);
+    return _applySelection(pickup);
   }
 
   /// Adopts a pickup the customer pinned on the map. Already resolved to an
   /// address + coordinates by the map step, so — like a recent — it needs no
-  /// further lookup; it just becomes the selection and fills the search field.
-  void selectFromMap(PickupLocation pickup) {
+  /// further lookup.
+  PickupLocation selectFromMap(PickupLocation pickup) {
     _debounceTimer?.cancel();
     _searchSeq++;
     _error = null;
-    _applySelection(pickup);
+    return _applySelection(pickup);
   }
 
   /// Persists the current selection to recents. Best-effort: a failed save must
@@ -203,13 +200,14 @@ class PickupSelectionViewModel extends ChangeNotifier {
     }
   }
 
-  void _applySelection(PickupLocation location) {
+  PickupLocation _applySelection(PickupLocation location) {
     _selected = location;
     _query = location.address;
     _suggestions = const [];
     _isSearching = false;
     _isLocating = false;
     _notify();
+    return location;
   }
 
   /// Notifies listeners only while still mounted. This view model is

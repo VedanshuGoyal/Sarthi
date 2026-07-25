@@ -19,11 +19,11 @@ const _suggestion = PlaceSuggestion(
 
 void main() {
   group('PickupSelectionViewModel', () {
-    test('starts empty with nothing to confirm', () {
+    test('starts empty with nothing selected', () {
       final vm = PickupSelectionViewModel(repository: FakeLocationRepository());
       check(vm.query).isEmpty();
       check(vm.suggestions).isEmpty();
-      check(vm.canConfirm).isFalse();
+      check(vm.selected).isNull();
     });
 
     test('a long-enough query searches after the debounce', () {
@@ -76,14 +76,14 @@ void main() {
       });
     });
 
-    test('selecting a suggestion sets the pickup and enables confirm', () {
+    test('selecting a suggestion returns the resolved pickup', () {
       final vm = PickupSelectionViewModel(repository: FakeLocationRepository());
 
-      vm.selectSuggestion(_suggestion);
+      final pickup = vm.selectSuggestion(_suggestion);
 
-      check(vm.canConfirm).isTrue();
-      check(vm.selected?.address).equals('MG Road, Bengaluru');
-      check(vm.selected?.placeId).equals('p1');
+      check(pickup?.address).equals('MG Road, Bengaluru');
+      check(pickup?.placeId).equals('p1');
+      check(vm.selected).equals(pickup);
       check(vm.query).equals('MG Road, Bengaluru');
       check(vm.suggestions).isEmpty();
     });
@@ -91,28 +91,33 @@ void main() {
     test('editing the query after selecting clears the selection', () {
       final vm = PickupSelectionViewModel(repository: FakeLocationRepository());
       vm.selectSuggestion(_suggestion);
-      check(vm.canConfirm).isTrue();
+      check(vm.selected).isNotNull();
 
       vm.onQueryChanged('somewhere else');
-      check(vm.canConfirm).isFalse();
       check(vm.selected).isNull();
     });
 
-    test('a suggestion with no coordinates surfaces an error, not a pickup', () {
-      final vm = PickupSelectionViewModel(repository: FakeLocationRepository());
+    test(
+      'a suggestion with no coordinates surfaces an error, not a pickup',
+      () {
+        final vm = PickupSelectionViewModel(
+          repository: FakeLocationRepository(),
+        );
 
-      vm.selectSuggestion(
-        const PlaceSuggestion(
-          placeId: 'x',
-          primaryText: 'Nowhere',
-          secondaryText: '',
-          address: 'Nowhere',
-        ),
-      );
+        final pickup = vm.selectSuggestion(
+          const PlaceSuggestion(
+            placeId: 'x',
+            primaryText: 'Nowhere',
+            secondaryText: '',
+            address: 'Nowhere',
+          ),
+        );
 
-      check(vm.canConfirm).isFalse();
-      check(vm.error).isNotNull();
-    });
+        check(pickup).isNull();
+        check(vm.selected).isNull();
+        check(vm.error).isNotNull();
+      },
+    );
 
     test('current location fills the pickup from GPS', () {
       fakeAsync((async) {
@@ -124,13 +129,14 @@ void main() {
         );
         final vm = PickupSelectionViewModel(repository: repo);
 
-        vm.useCurrentLocation();
+        PickupLocation? pickup;
+        vm.useCurrentLocation().then((p) => pickup = p);
         check(vm.isLocating).isTrue();
 
         async.flushMicrotasks();
 
         check(vm.isLocating).isFalse();
-        check(vm.canConfirm).isTrue();
+        check(pickup?.address).equals('My street, Bengaluru');
         check(vm.query).equals('My street, Bengaluru');
       });
     });
@@ -164,9 +170,9 @@ void main() {
         point: GeoPoint(latitude: 12.9, longitude: 77.6),
         placeId: 'r1',
       );
-      vm.selectRecent(recent);
+      final pickup = vm.selectRecent(recent);
 
-      check(vm.canConfirm).isTrue();
+      check(pickup).equals(recent);
       check(vm.selected?.address).equals('Home, Bengaluru');
       check(vm.query).equals('Home, Bengaluru');
       check(repo.queries).isEmpty();
@@ -181,9 +187,9 @@ void main() {
         vm.rememberSelected();
         async.flushMicrotasks();
 
-        check(repo.remembered.map((p) => p.address).toList()).deepEquals([
-          'MG Road, Bengaluru',
-        ]);
+        check(
+          repo.remembered.map((p) => p.address).toList(),
+        ).deepEquals(['MG Road, Bengaluru']);
         check(vm.recents.first.address).equals('MG Road, Bengaluru');
       });
     });
@@ -195,11 +201,17 @@ void main() {
         );
         final vm = PickupSelectionViewModel(repository: repo);
 
-        vm.useCurrentLocation();
+        PickupLocation? pickup;
+        var resolved = false;
+        vm.useCurrentLocation().then((p) {
+          pickup = p;
+          resolved = true;
+        });
         async.flushMicrotasks();
 
         check(vm.isLocating).isFalse();
-        check(vm.canConfirm).isFalse();
+        check(resolved).isTrue();
+        check(pickup).isNull();
         check(vm.error).equals('Permission denied.');
       });
     });

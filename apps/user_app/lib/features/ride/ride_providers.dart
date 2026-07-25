@@ -1,9 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_controller.dart';
+import 'data/booking_repository.dart';
 import 'data/location_repository.dart';
 import 'data/recent_pickups_api.dart';
+import 'domain/one_way_trip.dart';
+import 'domain/pickup_location.dart';
+import 'view_model/booking_details_view_model.dart';
 import 'view_model/map_pickup_view_model.dart';
+import 'view_model/multi_stop_planner_view_model.dart';
+import 'view_model/one_way_details_view_model.dart';
+import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
@@ -30,6 +37,15 @@ final locationRepositoryProvider = Provider<LocationRepository>((ref) {
   );
 });
 
+/// The data seam for sending confirmed bookings to the backend, authenticated
+/// with the current session token (read on demand, like the recents API).
+/// Overridden in tests with a fake so no real request is made.
+final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
+  return BookingRepository(
+    tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
+  );
+});
+
 /// The pickup step's view model. `autoDispose` so a customer who backs out of
 /// the pickup screen starts a fresh search next time.
 final pickupSelectionViewModelProvider =
@@ -44,6 +60,52 @@ final pickupSelectionViewModelProvider =
 final mapPickupViewModelProvider =
     ChangeNotifierProvider.autoDispose<MapPickupViewModel>((ref) {
       return MapPickupViewModel(
+        repository: ref.watch(locationRepositoryProvider),
+      );
+    });
+
+/// The booking-details step's view model (hours, schedule, car, transmission).
+///
+/// A `family` keyed on the confirmed [PickupLocation] — the step's one input,
+/// known only at navigation time. `autoDispose` so backing out of the screen
+/// resets the choices to their defaults for the next visit.
+final bookingDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
+    .family<BookingDetailsViewModel, PickupLocation>((ref, pickup) {
+      return BookingDetailsViewModel(pickup: pickup);
+    });
+
+/// The Multi-Stop planner's view model (start time + the ordered stop drafts).
+///
+/// A `family` keyed on the confirmed starting [PickupLocation] — the step's one
+/// input, known only at navigation time. `autoDispose` so backing out of the
+/// planner discards the half-written plan for the next visit.
+final multiStopPlannerViewModelProvider = ChangeNotifierProvider.autoDispose
+    .family<MultiStopPlannerViewModel, PickupLocation>((ref, start) {
+      return MultiStopPlannerViewModel(start: start);
+    });
+
+/// The One-Way details step's view model (schedule + car type). Pure form
+/// state — no drive-time request is made until the review step.
+///
+/// A `family` keyed on the confirmed [OneWayRoute] — the step's one input,
+/// known only at navigation time. `autoDispose` so backing out of the screen
+/// resets the choices to their defaults for the next visit.
+final oneWayDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
+    .family<OneWayDetailsViewModel, OneWayRoute>((ref, route) {
+      return OneWayDetailsViewModel(route: route);
+    });
+
+/// The One-Way review step's view model (the drive-time estimate + confirm).
+///
+/// A `family` keyed on the [OneWayDraft] settled on the details step — the
+/// step's one input, known only at navigation time. The repository lets it
+/// fetch the route's traffic-aware driving time for the chosen start time —
+/// once, on entry — which becomes the trip's duration. `autoDispose` so
+/// backing out discards the estimate; revisiting fetches a fresh one.
+final oneWayReviewViewModelProvider = ChangeNotifierProvider.autoDispose
+    .family<OneWayReviewViewModel, OneWayDraft>((ref, draft) {
+      return OneWayReviewViewModel(
+        draft: draft,
         repository: ref.watch(locationRepositoryProvider),
       );
     });

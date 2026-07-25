@@ -28,4 +28,14 @@ class PickupLocation {
     point: GeoPoint.fromJson(json['point'] as Map<String, dynamic>),
     placeId: json['placeId'] as String?,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is PickupLocation &&
+      other.address == address &&
+      other.point == point &&
+      other.placeId == placeId;
+
+  @override
+  int get hashCode => Object.hash(address, point, placeId);
 }

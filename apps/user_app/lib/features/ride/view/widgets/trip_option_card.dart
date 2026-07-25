@@ -29,9 +29,7 @@ class TripOptionCard extends StatelessWidget {
 
     // Selected cards pick up the brand colour; unselected stay neutral.
     final borderColor = selected ? scheme.primary : scheme.outlineVariant;
-    final background = selected
-        ? SarthiColors.ultramarineWash
-        : scheme.surface;
+    final background = selected ? SarthiColors.ultramarineWash : scheme.surface;
     final iconColor = selected ? scheme.primary : scheme.onSurfaceVariant;
 
     return Material(
@@ -45,10 +43,7 @@ class TripOptionCard extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(SarthiTheme.radius),
-            border: Border.all(
-              color: borderColor,
-              width: selected ? 2 : 1,
-            ),
+            border: Border.all(color: borderColor, width: selected ? 2 : 1),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

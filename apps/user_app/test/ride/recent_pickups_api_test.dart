@@ -49,7 +49,9 @@ void main() {
 
       final request = captured.single;
       check(request.method).equals('GET');
-      check(request.url.toString()).equals('https://api.test/me/recent-pickups');
+      check(
+        request.url.toString(),
+      ).equals('https://api.test/me/recent-pickups');
       check(request.headers['Authorization']).equals('Bearer tok-1');
 
       check(result).length.equals(1);
