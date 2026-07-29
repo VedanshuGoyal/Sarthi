@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -6,8 +8,8 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../../core/config/google_maps_config.dart';
 import '../../../../core/maps/web_maps_loader.dart';
+import '../../../../core/theme/deep_signal/deep_signal.dart';
 import '../../domain/geo_point.dart';
-import 'vast_quiet/vast_quiet_theme.dart';
 
 /// A read-only overview map framing both ends of a route.
 ///
@@ -55,8 +57,12 @@ class _RouteMapState extends State<RouteMap> {
   BitmapDescriptor? _destIcon;
   bool _iconsRequested = false;
 
+  String? _mapStyle;
+  bool _styleRequested = false;
+
   static const _originAsset = 'assets/markers/pin_origin.png';
   static const _destinationAsset = 'assets/markers/pin_destination.png';
+  static const _mapStyleAsset = 'assets/map_styles/soft_map_style.json';
 
   static LatLng _toLatLng(GeoPoint p) => LatLng(p.latitude, p.longitude);
 
@@ -76,6 +82,19 @@ class _RouteMapState extends State<RouteMap> {
       _iconsRequested = true;
       _loadMarkerIcons(createLocalImageConfiguration(context));
     }
+    if (!_styleRequested) {
+      _styleRequested = true;
+      DefaultAssetBundle.of(context).loadString(_mapStyleAsset).then((style) {
+        if (mounted) {
+          setState(() {
+            _mapStyle = style;
+            _map?.setMapStyle(_mapStyle);
+          });
+        }
+      }).catchError((e) {
+        debugPrint('Failed to load map style: $e');
+      });
+    }
   }
 
   Future<void> _loadMapsSdk() async {
@@ -87,11 +106,63 @@ class _RouteMapState extends State<RouteMap> {
     }
   }
 
-  /// Decodes the two PNG pins from bundled assets. [config] carries the device
-  /// pixel ratio the plugin uses to select the matching density variant.
+  Future<BitmapDescriptor> _createPinMarker(Color color, {double devicePixelRatio = 1.0}) async {
+    final double width = 36 * devicePixelRatio;
+    final double height = 48 * devicePixelRatio;
+    
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+
+    final Paint stickPaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 2.5 * devicePixelRatio
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+      
+    final Paint shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..style = PaintingStyle.fill;
+      
+    final Paint ringPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+      
+    final Paint whiteFill = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+      
+    // 1. Draw the small shadow dot at the very bottom
+    final Offset groundPoint = Offset(width / 2, height - (2 * devicePixelRatio));
+    canvas.drawOval(Rect.fromCenter(center: groundPoint, width: 8 * devicePixelRatio, height: 4 * devicePixelRatio), shadowPaint);
+    
+    // 2. Draw the vertical stick (from center of head to ground point)
+    final Offset circleCenter = Offset(width / 2, width / 2);
+    canvas.drawLine(
+      circleCenter,
+      groundPoint,
+      stickPaint,
+    );
+
+    // 3. Draw the circular head
+    // Outer colored ring
+    canvas.drawCircle(circleCenter, 12.0 * devicePixelRatio, ringPaint);
+    // Inner white circle
+    canvas.drawCircle(circleCenter, 8.0 * devicePixelRatio, whiteFill);
+    // Center colored dot
+    canvas.drawCircle(circleCenter, 3.5 * devicePixelRatio, ringPaint);
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(width.toInt(), height.toInt());
+    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  /// Programmatically draws minimal UI markers matching the requested style.
   Future<void> _loadMarkerIcons(ImageConfiguration config) async {
-    final start = await BitmapDescriptor.asset(config, _originAsset);
-    final dest = await BitmapDescriptor.asset(config, _destinationAsset);
+    final dpr = config.devicePixelRatio ?? 2.0;
+    
+    final start = await _createPinMarker(const Color(0xFF1B8754), devicePixelRatio: dpr); // Rapido Green
+    final dest = await _createPinMarker(const Color(0xFFE2433B), devicePixelRatio: dpr); // Rapido Red
+    
     if (mounted) {
       setState(() {
         _startIcon = start;
@@ -120,8 +191,7 @@ class _RouteMapState extends State<RouteMap> {
       icon:
           _startIcon ??
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      // Both PNG pins and the fallback hued pins point down, so their tips sit
-      // at the bottom — the default (0.5, 1) anchor lands them on the point.
+      anchor: const Offset(0.5, 1.0),
       label: widget.startLabel,
     ),
     _pin(
@@ -130,13 +200,11 @@ class _RouteMapState extends State<RouteMap> {
       icon:
           _destIcon ??
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      anchor: const Offset(0.5, 1.0),
       label: widget.destinationLabel,
     ),
   };
 
-  /// Builds one route pin, as an [AdvancedMarker] when a Map ID is configured
-  /// and a legacy [Marker] otherwise. Keeping the two ends behind one builder
-  /// stops the marker class and [_advancedMarkers] from drifting apart.
   Marker _pin({
     required String id,
     required LatLng position,
@@ -148,24 +216,16 @@ class _RouteMapState extends State<RouteMap> {
     final infoWindow = label == null
         ? InfoWindow.noText
         : InfoWindow(title: label);
-    return _advancedMarkers
-        ? AdvancedMarker(
-            markerId: markerId,
-            position: position,
-            icon: icon,
-            anchor: anchor,
-            infoWindow: infoWindow,
-          )
-        : Marker(
-            markerId: markerId,
-            position: position,
-            icon: icon,
-            anchor: anchor,
-            infoWindow: infoWindow,
-          );
+    return Marker(
+      markerId: markerId,
+      position: position,
+      icon: icon,
+      anchor: anchor,
+      infoWindow: infoWindow,
+    );
   }
 
-  /// A dotted straight line joining the two ends. Not a driven route (no
+  /// A dashed straight line joining the two ends. Not a driven route (no
   /// Directions call) — just a visual tie between origin and destination.
   Set<Polyline> _lines(Color color) => {
     Polyline(
@@ -176,7 +236,7 @@ class _RouteMapState extends State<RouteMap> {
       geodesic: true,
       startCap: Cap.roundCap,
       endCap: Cap.roundCap,
-      patterns: [PatternItem.dot, PatternItem.gap(14)],
+      patterns: [PatternItem.dash(16), PatternItem.gap(12)],
     ),
   };
 
@@ -215,7 +275,8 @@ class _RouteMapState extends State<RouteMap> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(SarthiTheme.radius);
+    final tokens = DeepSignalTokens.of(context);
+    final radius = BorderRadius.circular(DeepSignalTokens.radius);
     return ClipRRect(
       borderRadius: radius,
       child: AspectRatio(
@@ -225,9 +286,8 @@ class _RouteMapState extends State<RouteMap> {
             : !_mapsReady
             ? _placeholder(const CircularProgressIndicator())
             : GoogleMap(
-                // Soft topographic base — a quieter backdrop for the route than
-                // the default roadmap, and it sits with the Vast Quiet theme.
-                mapType: MapType.terrain,
+                // Base map type — normal works best with JSON styling.
+                mapType: MapType.normal,
                 initialCameraPosition: CameraPosition(
                   target: LatLng(
                     (widget.start.latitude + widget.destination.latitude) / 2,
@@ -236,13 +296,10 @@ class _RouteMapState extends State<RouteMap> {
                   zoom: 11,
                 ),
                 markers: _markers,
-                // Advanced markers need a Map ID and a matching marker type;
-                // both stay null/legacy until one is configured.
-                markerType: _advancedMarkers
-                    ? GoogleMapMarkerType.advancedMarker
-                    : GoogleMapMarkerType.marker,
-                mapId: _advancedMarkers ? GoogleMapsConfig.mapId : null,
-                polylines: _lines(Theme.of(context).colorScheme.primary),
+                // Force legacy markers so the SDK accepts our local JSON styling
+                markerType: GoogleMapMarkerType.marker,
+                mapId: null,
+                polylines: _lines(tokens.accent),
                 // A static overview: no gestures, so the parent list scrolls
                 // freely and the frame the camera picks is what the user sees.
                 zoomGesturesEnabled: false,
@@ -254,6 +311,9 @@ class _RouteMapState extends State<RouteMap> {
                 myLocationButtonEnabled: false,
                 onMapCreated: (map) {
                   _map = map;
+                  if (_mapStyle != null) {
+                    map.setMapStyle(_mapStyle);
+                  }
                   _frameRoute(map);
                 },
               ),
@@ -264,7 +324,7 @@ class _RouteMapState extends State<RouteMap> {
   /// Neutral fill shown while the SDK loads or when it fails — sized by the
   /// same aspect ratio so the layout never jumps.
   Widget _placeholder(Widget child) => ColoredBox(
-    color: RideSurfaces.washOf(context),
+    color: DeepSignalTokens.of(context).skeleton,
     child: Center(child: child),
   );
 }

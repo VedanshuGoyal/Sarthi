@@ -64,3 +64,5 @@ flutter:
     # automatically as density variants of these declared assets.
     - assets/markers/pin_origin.png
     - assets/markers/pin_destination.png
+    - assets/map_styles/
+
