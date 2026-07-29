@@ -91,4 +91,42 @@ curl -s localhost:8080/users | jq
   shipping.
 - Migrations are versioned in `migrations/` and should be reviewed by a human
   before production (column types, indexing, constraints).
+
+## Deploying to a VPS
+
+One-time setup on a fresh Ubuntu VPS (Hetzner/DigitalOcean/etc.):
+
+```bash
+# On the VPS: install Docker.
+curl -fsSL https://get.docker.com | sh
+
+# Point DNS: create an A record for your domain -> the VPS's IP, then confirm
+# it resolves before starting Caddy (it needs this to issue a TLS cert):
+dig +short api.yourdomain.com
+```
+
+Ship the code and bring the stack up:
+
+```bash
+# From your machine: copy the server/ dir to the VPS (or just `git clone` the
+# repo there and cd into server/).
+rsync -av --exclude .git ./server/ user@your-vps:/opt/sarthi/server/
+
+# On the VPS, in /opt/sarthi/server:
+cp .env.prod.example .env.prod   # fill in DOMAIN, POSTGRES_PASSWORD, FAST2SMS_*
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+# Apply migrations against the running db container:
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec db \
+  psql -U sarthi -d sarthi -f - < migrations/0001_create_users.up.sql
+# repeat per migration file, in order (or install golang-migrate on the VPS
+# and point it at postgres://sarthi:$POSTGRES_PASSWORD@localhost:5432/sarthi).
+```
+
+Caddy handles TLS issuance/renewal and reverse-proxies both REST and WebSocket
+traffic to the `server` container — see `Caddyfile`. To ship a new version
+later: `git pull && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`.
+
+Before opening this up beyond your own testing: put `/users` behind auth (see
+note above), and add a periodic sweep for expired sessions.
 ```

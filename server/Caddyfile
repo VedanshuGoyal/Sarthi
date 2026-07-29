@@ -1,0 +1,5 @@
+{$DOMAIN} {
+	# Handles HTTP->HTTPS redirect, cert issuance/renewal, and WebSocket
+	# upgrades automatically — no extra config needed for either.
+	reverse_proxy server:8080
+}

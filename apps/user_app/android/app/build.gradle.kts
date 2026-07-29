@@ -21,6 +21,18 @@ val mapsApiKey: String =
         ?: mapsKeyFrom(rootProject.file("local.properties"))
         ?: ""
 
+// Release signing: reads android/key.properties (gitignored — never commit a
+// keystore or its passwords). Falls back to the debug key when the file is
+// absent, so a fresh checkout still builds; `flutter build apk --release`
+// for real distribution requires generating a keystore first, see
+// server/../README or `flutter build apk --release --help`.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+
 android {
     namespace = "com.sarthi.user_app"
     compileSdk = flutter.compileSdkVersion
@@ -45,11 +57,26 @@ android {
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Real release keystore once key.properties exists (see deploy docs);
+            // debug keys otherwise, so a fresh checkout still builds.
+            signingConfig = if (keystorePropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

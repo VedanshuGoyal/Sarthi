@@ -1,0 +1,55 @@
+# Production stack for a single VPS: Postgres + the Go server + Caddy
+# (automatic Let's Encrypt TLS, reverse-proxies to the server).
+#
+#   cp .env.prod.example .env.prod   # fill in real secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Caddy needs DOMAIN pointed at this VPS's IP (an A record) before it can
+# issue a certificate.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sarthi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sarthi
+    volumes:
+      - sarthi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sarthi -d sarthi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://sarthi:${POSTGRES_PASSWORD}@db:5432/sarthi?sslmode=disable
+      ADDR: :8080
+      FAST2SMS_API_KEY: ${FAST2SMS_API_KEY}
+      FAST2SMS_OTP_ID: ${FAST2SMS_OTP_ID}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+
+volumes:
+  sarthi_pgdata:
+  caddy_data:
+  caddy_config:
