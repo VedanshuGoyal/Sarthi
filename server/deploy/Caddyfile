@@ -1,0 +1,26 @@
+# Caddy config for the NATIVE (non-Docker) deployment.
+#
+# This is not the same file as ../Caddyfile, which targets the Docker Compose
+# stack. Two differences, both because there is no Docker network here:
+#
+#   ../Caddyfile (Docker)   reverse_proxy server:8080    <- compose service name
+#   this file    (native)   reverse_proxy localhost:8080 <- systemd unit on the host
+#
+# DOMAIN is still read from the environment, so this file stays free of any
+# specific hostname. setup-vps.sh writes it to /etc/sarthi/caddy.env and points
+# caddy.service at that file via a systemd drop-in.
+#
+# Caddy handles HTTP->HTTPS redirect, Let's Encrypt issuance/renewal, and
+# WebSocket upgrades automatically — none of that needs configuring.
+{$DOMAIN} {
+	reverse_proxy localhost:8080
+
+	# Access log, so requests are inspectable:
+	#   tail -f /var/log/caddy/sarthi.log | jq
+	log {
+		output file /var/log/caddy/sarthi.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

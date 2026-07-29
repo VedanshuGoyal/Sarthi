@@ -94,6 +94,15 @@ curl -s localhost:8080/users | jq
 
 ## Deploying to a VPS
 
+Two supported paths — pick one, they compete for ports :80, :443 and :5432:
+
+| Path | Use when |
+| ---- | -------- |
+| **[Native (scripted)](deploy/README.md)** — `sudo deploy/setup-vps.sh` | You want direct `psql`/`journalctl` access, or the box is small (≤1 GB RAM). One idempotent script does everything below automatically. |
+| **Docker Compose** (this section) | You want the runtime pinned in an image and the host left untouched. |
+
+### Docker Compose
+
 One-time setup on a fresh Ubuntu VPS (Hetzner/DigitalOcean/etc.):
 
 ```bash
