@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!-- The MOJUD launch screen, shown from the moment the process starts until
+     Flutter draws its first frame. Both the colour and the lockup have
+     `-night` variants, so this one file covers light and dark.
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+     It is composed to match `SplashScreen` in
+     `lib/features/splash/view/splash_screen.dart` — same canvas, same stacked
+     lockup — so the handover to Flutter is invisible.
+
+     Android 12+ ignores windowBackground for the launch screen and uses the
+     system splash API instead; see `values-v31/styles.xml`. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_background" />
+
+    <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@drawable/launch_logo" />
+    </item>
 </layer-list>

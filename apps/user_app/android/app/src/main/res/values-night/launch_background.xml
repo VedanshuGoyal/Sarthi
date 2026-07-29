@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deep Signal dark canvas — matches DeepSignalTokens.canvas. -->
+    <color name="launch_background">#04101C</color>
+</resources>

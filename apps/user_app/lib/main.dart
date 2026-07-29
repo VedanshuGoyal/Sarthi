@@ -2,25 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
 
+import 'core/brand/mojud_brand.dart';
 import 'core/theme/deep_signal/deep_signal_theme.dart';
 import 'core/theme/theme_mode_controller.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/home_screen.dart';
+import 'features/splash/view/splash_screen.dart';
 
-/// Entry point for the Sarthi customer app.
+/// Entry point for the MOJUD customer app.
 ///
 /// The app is bootstrapped through [MCPToolkitBinding] so the flutter-mcp-toolkit
 /// server can inspect and drive it during development. This binding is a no-op in
 /// release builds. [ProviderScope] is the Riverpod root for app-wide state.
 Future<void> main() async {
   await MCPToolkitBinding.instance.bootstrapFlutter(
-    runApp: () => runApp(const ProviderScope(child: SarthiUserApp())),
+    runApp: () => runApp(const ProviderScope(child: MojudUserApp())),
   );
 }
 
-class SarthiUserApp extends ConsumerWidget {
-  const SarthiUserApp({super.key});
+class MojudUserApp extends ConsumerWidget {
+  const MojudUserApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,7 +31,7 @@ class SarthiUserApp extends ConsumerWidget {
     // (see [ThemeModeToggle]).
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
-      title: 'Sarthi',
+      title: MojudBrand.name,
       theme: DeepSignalTheme.light(),
       darkTheme: DeepSignalTheme.dark(),
       themeMode: themeMode,
@@ -49,8 +51,7 @@ class _AppRoot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authControllerProvider);
     return session.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      loading: () => const SplashScreen(),
       // A storage read failure just means "not logged in" — start onboarding.
       error: (_, __) => const RegistrationScreen(),
       data: (session) => session != null

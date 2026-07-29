@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/brand/mojud_logo.dart';
 import '../../../core/theme/deep_signal/deep_signal.dart';
 import '../../../core/theme/deep_signal/deep_signal_gallery.dart';
 import '../../../core/theme/theme_mode_controller.dart';
@@ -232,7 +233,7 @@ class HomeScreen extends ConsumerWidget {
             extendBodyBehindAppBar: true,
             appBar: AppBar(
               backgroundColor: Colors.transparent,
-              title: const Text('Sarthi'),
+              title: const MojudLockup(markHeight: 22),
               actions: [
                 const ThemeModeToggle(),
                 IconButton(

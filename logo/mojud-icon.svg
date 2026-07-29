@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" role="img" aria-label="MOJUD">
+<g stroke="#1A1A1A" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<line x1="42" y1="22" x2="42" y2="122"/>
+<line x1="102" y1="22" x2="102" y2="122"/>
+<line x1="42" y1="22" x2="102" y2="72"/>
+<line x1="102" y1="22" x2="42" y2="72"/>
+<line x1="42" y1="72" x2="102" y2="122"/>
+<line x1="102" y1="72" x2="42" y2="122"/>
+</g>
+<circle cx="72" cy="72" r="5.5" fill="#CE9A3C"/>
+</svg>
