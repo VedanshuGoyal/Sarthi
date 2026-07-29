@@ -197,7 +197,7 @@ class _CenterPin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
+    final color = Theme.of(context).colorScheme.secondary;
     return IgnorePointer(
       child: Align(
         // Shift up half the icon so the pin's tip rests on the exact centre.

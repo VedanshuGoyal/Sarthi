@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import 'vast_quiet/vast_quiet_theme.dart';
+
 /// A selectable card presenting one trip option (icon, title, blurb).
 ///
 /// State-free per the reusable-widget guideline: it renders whether it is
@@ -29,7 +31,7 @@ class TripOptionCard extends StatelessWidget {
 
     // Selected cards pick up the brand colour; unselected stay neutral.
     final borderColor = selected ? scheme.primary : scheme.outlineVariant;
-    final background = selected ? SarthiColors.ultramarineWash : scheme.surface;
+    final background = selected ? RideSurfaces.washOf(context) : scheme.surface;
     final iconColor = selected ? scheme.primary : scheme.onSurfaceVariant;
 
     return Material(

@@ -5,7 +5,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 /// Entry point for the Sarthi driver app.
 ///
 /// [ProviderScope] is the Riverpod root for app-wide state. The driver app
-/// shares the ultramarine (#120A8F) design scheme with the customer app via
+/// shares the ultramarine (#7293F3) design scheme with the customer app via
 /// [SarthiTheme], so both feel like one product.
 void main() {
   runApp(const ProviderScope(child: SarthiDriverApp()));
@@ -18,7 +18,7 @@ class SarthiDriverApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sarthi Driver',
-      // Shared ultramarine (#120A8F) design scheme — common to both apps.
+      // Shared ultramarine (#7293F3) design scheme — common to both apps.
       // Light is white + ultramarine; dark follows the system setting.
       theme: SarthiTheme.light(),
       darkTheme: SarthiTheme.dark(),

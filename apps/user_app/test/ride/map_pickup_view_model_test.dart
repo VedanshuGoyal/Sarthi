@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
+import 'package:user_app/features/ride/domain/service_area.dart';
 import 'package:user_app/features/ride/view_model/map_pickup_view_model.dart';
 
 import '../support/fake_location_repository.dart';
@@ -17,10 +18,10 @@ void main() {
 
     test('init centres on the device fix and resolves its address', () async {
       final repo = FakeLocationRepository(
-        currentPos: const GeoPoint(latitude: 12.97, longitude: 77.6),
+        currentPos: const GeoPoint(latitude: 28.6315, longitude: 77.2167),
         reverseResult: const PickupLocation(
-          address: 'MG Road, Bengaluru',
-          point: GeoPoint(latitude: 12.97, longitude: 77.6),
+          address: 'Connaught Place, New Delhi',
+          point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
         ),
       );
       final vm = MapPickupViewModel(repository: repo);
@@ -30,8 +31,8 @@ void main() {
       check(vm.isReady).isTrue();
       check(
         vm.initialCenter,
-      ).equals(const GeoPoint(latitude: 12.97, longitude: 77.6));
-      check(vm.resolved?.address).equals('MG Road, Bengaluru');
+      ).equals(const GeoPoint(latitude: 28.6315, longitude: 77.2167));
+      check(vm.resolved?.address).equals('Connaught Place, New Delhi');
       check(vm.canConfirm).isTrue();
     });
 
@@ -56,13 +57,15 @@ void main() {
         final vm = MapPickupViewModel(repository: repo)..init();
         await Future<void>.value();
 
-        vm.onCameraMove(const GeoPoint(latitude: 1, longitude: 2));
+        vm.onCameraMove(const GeoPoint(latitude: 28.50, longitude: 77.30));
         check(vm.isMoving).isTrue();
         check(vm.canConfirm).isFalse();
 
         await vm.onCameraIdle();
         check(vm.isMoving).isFalse();
-        check(vm.center).equals(const GeoPoint(latitude: 1, longitude: 2));
+        check(
+          vm.center,
+        ).equals(const GeoPoint(latitude: 28.50, longitude: 77.30));
         check(vm.resolved).isNotNull();
         check(vm.canConfirm).isTrue();
       },
@@ -73,15 +76,15 @@ void main() {
       final repo = FakeLocationRepository(
         reverseResult: const PickupLocation(
           address: 'Second',
-          point: GeoPoint(latitude: 3, longitude: 4),
+          point: GeoPoint(latitude: 28.53, longitude: 77.39),
         ),
       );
       final vm = MapPickupViewModel(repository: repo);
       await vm.init();
 
-      vm.onCameraMove(const GeoPoint(latitude: 3, longitude: 4));
+      vm.onCameraMove(const GeoPoint(latitude: 28.53, longitude: 77.39));
       final first = vm.onCameraIdle();
-      vm.onCameraMove(const GeoPoint(latitude: 3, longitude: 4));
+      vm.onCameraMove(const GeoPoint(latitude: 28.53, longitude: 77.39));
       final second = vm.onCameraIdle();
       await Future.wait([first, second]);
 
@@ -99,6 +102,24 @@ void main() {
       check(vm.error).equals('maps down');
       check(vm.resolved).isNull();
       check(vm.canConfirm).isFalse();
+    });
+
+    test('a pin outside the service area blocks confirm with a notice', () async {
+      final repo = FakeLocationRepository(
+        reverseResult: const PickupLocation(
+          address: 'MG Road, Bengaluru',
+          point: GeoPoint(latitude: 12.97, longitude: 77.6),
+        ),
+      );
+      final vm = MapPickupViewModel(repository: repo);
+      await vm.init();
+
+      vm.onCameraMove(const GeoPoint(latitude: 12.97, longitude: 77.6));
+      await vm.onCameraIdle();
+
+      check(vm.resolved).isNull();
+      check(vm.canConfirm).isFalse();
+      check(vm.error).equals(ServiceArea.outsideMessage);
     });
 
     test('locateMe returns the current point for the camera', () async {

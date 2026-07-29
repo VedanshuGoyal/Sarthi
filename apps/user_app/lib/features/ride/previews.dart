@@ -6,7 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
+import 'domain/car.dart';
 import 'domain/car_type.dart';
 import 'domain/geo_point.dart';
 import 'domain/pickup_location.dart';
@@ -20,6 +22,8 @@ import 'view/one_way_details_screen.dart';
 import 'view/one_way_review_screen.dart';
 import 'view/pickup_location_screen.dart';
 import 'view/trip_type_selector.dart';
+import 'view/widgets/add_car_sheet.dart';
+import 'view/widgets/car_selector_field.dart';
 import 'view/widgets/fare_summary.dart';
 import 'view/widgets/map_pin_card.dart';
 import 'view/widgets/time_slot_picker.dart';
@@ -28,6 +32,7 @@ import 'view_model/multi_stop_planner_view_model.dart';
 import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
+import 'view_model/saved_cars_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
 /// Shared Sarthi theme applied to every ride-flow preview.
@@ -99,24 +104,24 @@ class _PreviewLocationRepository extends LocationRepository {
 const _sampleSuggestions = [
   PlaceSuggestion(
     placeId: 'p1',
-    primaryText: 'MG Road',
-    secondaryText: 'Bengaluru, Karnataka',
-    address: 'MG Road, Bengaluru, Karnataka',
-    point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+    primaryText: 'Connaught Place',
+    secondaryText: 'New Delhi, Delhi',
+    address: 'Connaught Place, New Delhi, Delhi',
+    point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
   ),
   PlaceSuggestion(
     placeId: 'p2',
-    primaryText: 'MG Road Metro Station',
-    secondaryText: 'Trinity Circle, Bengaluru',
-    address: 'MG Road Metro Station, Trinity Circle, Bengaluru',
-    point: GeoPoint(latitude: 12.9757, longitude: 77.6199),
+    primaryText: 'Rajiv Chowk Metro Station',
+    secondaryText: 'Connaught Place, New Delhi',
+    address: 'Rajiv Chowk Metro Station, Connaught Place, New Delhi',
+    point: GeoPoint(latitude: 28.6328, longitude: 77.2197),
   ),
   PlaceSuggestion(
     placeId: 'p3',
-    primaryText: 'Mahatma Gandhi Road',
-    secondaryText: 'Shivaji Nagar, Bengaluru',
-    address: 'Mahatma Gandhi Road, Shivaji Nagar, Bengaluru',
-    point: GeoPoint(latitude: 12.9820, longitude: 77.6050),
+    primaryText: 'Connaught Circus',
+    secondaryText: 'Barakhamba Road, New Delhi',
+    address: 'Connaught Circus, Barakhamba Road, New Delhi',
+    point: GeoPoint(latitude: 28.6304, longitude: 77.2211),
   ),
 ];
 
@@ -146,13 +151,13 @@ Widget _pickup({
 
 const _sampleRecents = [
   PickupLocation(
-    address: 'Home — 4th Block, Koramangala, Bengaluru',
-    point: GeoPoint(latitude: 12.9352, longitude: 77.6245),
+    address: 'Home — Block C, Vasant Kunj, New Delhi',
+    point: GeoPoint(latitude: 28.5245, longitude: 77.1588),
     placeId: 'r1',
   ),
   PickupLocation(
-    address: 'Kempegowda International Airport, Bengaluru',
-    point: GeoPoint(latitude: 13.1986, longitude: 77.7066),
+    address: 'Indira Gandhi International Airport, New Delhi',
+    point: GeoPoint(latitude: 28.5562, longitude: 77.1000),
     placeId: 'r2',
   ),
 ];
@@ -165,7 +170,7 @@ Widget pickupRecentsPreview() => _pickup(recents: _sampleRecents);
 
 @Preview(name: 'With results', group: 'Pickup', theme: ridePreviewTheme)
 Widget pickupResultsPreview() =>
-    _pickup(query: 'MG Road', suggestions: _sampleSuggestions);
+    _pickup(query: 'Connaught Place', suggestions: _sampleSuggestions);
 
 // --- Map picker card -------------------------------------------------------
 // The card that docks over the map. Previewed on its own (away from the
@@ -180,7 +185,7 @@ Widget _pinCard(MapPinCard card) => ColoredBox(
 @Preview(name: 'Pin — resolved', group: 'Map picker', theme: ridePreviewTheme)
 Widget mapPinResolvedPreview() => _pinCard(
   const MapPinCard(
-    label: 'MG Road, Bengaluru, Karnataka',
+    label: 'Connaught Place, New Delhi, Delhi',
     isMoving: false,
     isResolving: false,
     canConfirm: true,
@@ -200,7 +205,7 @@ Widget mapPinMovingPreview() => _pinCard(
 @Preview(name: 'Pin — resolving', group: 'Map picker', theme: ridePreviewTheme)
 Widget mapPinResolvingPreview() => _pinCard(
   const MapPinCard(
-    label: '12.9756, 77.6068',
+    label: '28.6315, 77.2167',
     isMoving: false,
     isResolving: true,
     canConfirm: false,
@@ -210,7 +215,7 @@ Widget mapPinResolvingPreview() => _pinCard(
 @Preview(name: 'Pin — error', group: 'Map picker', theme: ridePreviewTheme)
 Widget mapPinErrorPreview() => _pinCard(
   const MapPinCard(
-    label: '12.9756, 77.6068',
+    label: '28.6315, 77.2167',
     isMoving: false,
     isResolving: false,
     error: 'The maps service is unavailable right now. Please try again.',
@@ -218,32 +223,60 @@ Widget mapPinErrorPreview() => _pinCard(
   ),
 );
 
+// --- Saved cars ------------------------------------------------------------
+// The customer's cars offered on every booking step's "which car?" dropdown.
+
+const _carSedan = Car(
+  id: 'c1',
+  registration: 'DL01AB1234',
+  type: CarType.sedan,
+  transmission: Transmission.manual,
+);
+
+const _carSuv = Car(
+  id: 'c2',
+  registration: 'DL05MN0007',
+  type: CarType.suv,
+  transmission: Transmission.automatic,
+);
+
+const _sampleCars = [_carSedan, _carSuv];
+
+/// Seeds the shared saved-cars view model with a canned list so booking-step
+/// previews render without a network call. The repository is never invoked —
+/// the seeded state skips [SavedCarsViewModel.load].
+Override _savedCars({List<Car> cars = _sampleCars}) =>
+    savedCarsViewModelProvider.overrideWith(
+      (ref) =>
+          SavedCarsViewModel(repository: CarsRepository(), initialCars: cars),
+    );
+
 // --- Booking details step --------------------------------------------------
 // The Round Trip "how long / when / which car" step. Each preview seeds the
 // view model's state directly via a family override, so states render in
 // isolation without tapping through the pickers.
 
 const _bookingPickup = PickupLocation(
-  address: 'MG Road, Bengaluru, Karnataka',
-  point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+  address: 'Connaught Place, New Delhi, Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
   placeId: 'p1',
 );
 
 Widget _booking({
   int hours = 2,
   DateTime? scheduledAt,
-  CarType? carType,
-  Transmission transmission = Transmission.automatic,
+  Car? car,
+  List<Car> cars = _sampleCars,
 }) {
   return ProviderScope(
     overrides: [
+      _savedCars(cars: cars),
       bookingDetailsViewModelProvider.overrideWith(
         (ref, pickup) => BookingDetailsViewModel(
           pickup: pickup,
           initialHours: hours,
           initialScheduledAt: scheduledAt,
-          initialCarType: carType,
-          initialTransmission: transmission,
+          initialCar: car,
         ),
       ),
     ],
@@ -251,19 +284,22 @@ Widget _booking({
   );
 }
 
+@Preview(
+  name: 'No saved cars',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
+Widget bookingNoCarsPreview() => _booking(cars: const []);
+
 @Preview(name: 'Empty', group: 'Booking details', theme: ridePreviewTheme)
 Widget bookingEmptyPreview() => _booking();
 
 @Preview(name: 'Car chosen', group: 'Booking details', theme: ridePreviewTheme)
-Widget bookingCarChosenPreview() => _booking(hours: 4, carType: CarType.sedan);
+Widget bookingCarChosenPreview() => _booking(hours: 4, car: _carSedan);
 
 @Preview(name: 'Ready', group: 'Booking details', theme: ridePreviewTheme)
-Widget bookingReadyPreview() => _booking(
-  hours: 6,
-  scheduledAt: DateTime(2026, 7, 18, 9, 30),
-  carType: CarType.suv,
-  transmission: Transmission.manual,
-);
+Widget bookingReadyPreview() =>
+    _booking(hours: 6, scheduledAt: DateTime(2026, 7, 18, 9, 30), car: _carSuv);
 
 // --- Multi-Stop planner ----------------------------------------------------
 // The "write the driver's day" step. Each preview seeds the view model's stop
@@ -287,8 +323,8 @@ Widget _planner({DateTime? scheduledAt, List<StopDraft>? stops}) {
 const _plannerStopOne = StopDraft(
   id: 0,
   location: PickupLocation(
-    address: 'Apollo Pharmacy, Indiranagar, Bengaluru',
-    point: GeoPoint(latitude: 12.9719, longitude: 77.6412),
+    address: 'Apollo Pharmacy, Lajpat Nagar, New Delhi',
+    point: GeoPoint(latitude: 28.5677, longitude: 77.2433),
     placeId: 's1',
   ),
   task: 'Collect the prescription refill under the name Sharma.',
@@ -297,8 +333,8 @@ const _plannerStopOne = StopDraft(
 const _plannerStopTwo = StopDraft(
   id: 1,
   location: PickupLocation(
-    address: 'Passport Seva Kendra, Lalbagh Road, Bengaluru',
-    point: GeoPoint(latitude: 12.9581, longitude: 77.5850),
+    address: 'Passport Seva Kendra, Bhikaji Cama Place, New Delhi',
+    point: GeoPoint(latitude: 28.5679, longitude: 77.1859),
     placeId: 's2',
   ),
   task: 'Drop the signed forms at counter 4.',
@@ -374,24 +410,20 @@ Widget plannerTimeConflictPreview() => _planner(
 // state directly via a family override, so states render in isolation.
 
 const _oneWayDestination = PickupLocation(
-  address: 'Kempegowda International Airport, Bengaluru',
-  point: GeoPoint(latitude: 13.1986, longitude: 77.7066),
+  address: 'Indira Gandhi International Airport, New Delhi',
+  point: GeoPoint(latitude: 28.5562, longitude: 77.1000),
   placeId: 'r2',
 );
 
-Widget _oneWay({
-  DateTime? scheduledAt,
-  CarType? carType,
-  Transmission transmission = Transmission.automatic,
-}) {
+Widget _oneWay({DateTime? scheduledAt, Car? car}) {
   return ProviderScope(
     overrides: [
+      _savedCars(),
       oneWayDetailsViewModelProvider.overrideWith(
         (ref, route) => OneWayDetailsViewModel(
           route: route,
           initialScheduledAt: scheduledAt,
-          initialCarType: carType,
-          initialTransmission: transmission,
+          initialCar: car,
         ),
       ),
     ],
@@ -402,15 +434,16 @@ Widget _oneWay({
   );
 }
 
-@Preview(name: 'Awaiting a car', group: 'One-Way details', theme: ridePreviewTheme)
+@Preview(
+  name: 'Awaiting a car',
+  group: 'One-Way details',
+  theme: ridePreviewTheme,
+)
 Widget oneWayAwaitingCarPreview() => _oneWay();
 
 @Preview(name: 'Ready', group: 'One-Way details', theme: ridePreviewTheme)
-Widget oneWayReadyPreview() => _oneWay(
-  scheduledAt: DateTime(2026, 7, 20, 9, 30),
-  carType: CarType.sedan,
-  transmission: Transmission.manual,
-);
+Widget oneWayReadyPreview() =>
+    _oneWay(scheduledAt: DateTime(2026, 7, 20, 9, 30), car: _carSedan);
 
 // --- One-Way review --------------------------------------------------------
 // The One-Way "estimated trip time" step that follows the details form. The
@@ -434,8 +467,7 @@ Widget _oneWayReview({Duration? travelTime, LocationRepository? repository}) {
         start: _bookingPickup,
         destination: _oneWayDestination,
         scheduledAt: DateTime(2026, 7, 20, 9, 30),
-        carType: CarType.sedan,
-        transmission: Transmission.manual,
+        car: _carSedan,
       ),
     ),
   );
@@ -521,3 +553,58 @@ Widget fareStandardPreview() => _fare(const FareSummary(fare: 340, hours: 3));
 
 @Preview(name: 'Luxury', group: 'Fare summary', theme: ridePreviewTheme)
 Widget fareLuxuryPreview() => _fare(const FareSummary(fare: 440, hours: 3));
+
+// --- Car selector ----------------------------------------------------------
+// The saved-car dropdown the booking steps share, across its states.
+
+/// Preview seams: picks/taps go nowhere outside a live booking step.
+void ignoreCar(Car car) {}
+void ignoreTap() {}
+
+/// Frames the field as it sits in a "Which car?" section.
+Widget _carSelector({
+  List<Car> cars = _sampleCars,
+  Car? selected,
+  bool isLoading = false,
+  bool loadFailed = false,
+}) => Padding(
+  padding: const EdgeInsets.all(24),
+  child: Align(
+    alignment: Alignment.topCenter,
+    child: CarSelectorField(
+      cars: cars,
+      selected: selected,
+      isLoading: isLoading,
+      loadFailed: loadFailed,
+      onSelected: ignoreCar,
+      onAddCar: ignoreTap,
+      onRetry: ignoreTap,
+    ),
+  ),
+);
+
+@Preview(name: 'Loading', group: 'Car selector', theme: ridePreviewTheme)
+Widget carSelectorLoadingPreview() => _carSelector(isLoading: true);
+
+@Preview(name: 'Load failed', group: 'Car selector', theme: ridePreviewTheme)
+Widget carSelectorFailedPreview() => _carSelector(loadFailed: true);
+
+@Preview(name: 'No cars yet', group: 'Car selector', theme: ridePreviewTheme)
+Widget carSelectorEmptyPreview() => _carSelector(cars: const []);
+
+@Preview(name: 'Car picked', group: 'Car selector', theme: ridePreviewTheme)
+Widget carSelectorPickedPreview() => _carSelector(selected: _carSedan);
+
+// --- Add-car sheet ---------------------------------------------------------
+// The "add a car" form, as the car selector opens it. The saved-cars view
+// model is seeded so the sheet renders without a network; saving from a
+// preview would hit the stub repository and simply fail.
+
+@Preview(name: 'Add a car', group: 'Car selector', theme: ridePreviewTheme)
+Widget addCarSheetPreview() => ProviderScope(
+  overrides: [_savedCars()],
+  child: const Align(
+    alignment: Alignment.bottomCenter,
+    child: Material(child: AddCarSheet()),
+  ),
+);

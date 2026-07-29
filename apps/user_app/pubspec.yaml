@@ -44,6 +44,7 @@ dependencies:
   # Lets the flutter-mcp-toolkit server drive/inspect this app. No-op in release.
   mcp_toolkit: ^3.0.0
   flutter_secure_storage: ^10.3.1
+  google_fonts: ^8.2.0
 
 dev_dependencies:
   flutter_test:
@@ -58,3 +59,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # Route-overview map pins. 2.0x/ and 3.0x/ siblings are picked up
+    # automatically as density variants of these declared assets.
+    - assets/markers/pin_origin.png
+    - assets/markers/pin_destination.png

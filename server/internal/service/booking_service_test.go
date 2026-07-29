@@ -1,47 +1,79 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log/slog"
-	"strings"
 	"testing"
+
+	"github.com/sarthi/server/internal/domain"
 )
 
-func TestBookingService_Record(t *testing.T) {
-	// Capture the default logger's output — the log line *is* the behaviour
-	// under test while bookings are record-only.
-	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+// fakeBookingStore records the last insert and returns a canned booking, or a
+// preset error.
+type fakeBookingStore struct {
+	insertHit bool
+	got       domain.Booking
+	err       error
+}
 
-	svc := NewBookingService()
-	err := svc.Record(context.Background(), "u1", " roundTrip ", map[string]any{
+func (f *fakeBookingStore) Insert(_ context.Context, userID, tripType string, details map[string]any) (domain.Booking, error) {
+	if f.err != nil {
+		return domain.Booking{}, f.err
+	}
+	f.insertHit = true
+	f.got = domain.Booking{
+		ID:       "bk-1",
+		UserID:   userID,
+		TripType: tripType,
+		Details:  details,
+	}
+	return f.got, nil
+}
+
+func TestBookingService_Record_persists(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := NewBookingService(store)
+
+	// A leading/trailing space on the trip type is trimmed before storing.
+	got, err := svc.Record(context.Background(), "u1", " roundTrip ", map[string]any{
 		"hours": 4,
 		"fare":  440,
 	})
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
-
-	logged := buf.String()
-	for _, want := range []string{"booking confirmed", "userId=u1", "tripType=roundTrip", "hours:4"} {
-		if !strings.Contains(logged, want) {
-			t.Errorf("log %q missing %q", logged, want)
-		}
+	if !store.insertHit {
+		t.Fatal("expected Insert to be called")
+	}
+	if store.got.TripType != "roundTrip" {
+		t.Errorf("stored tripType = %q, want roundTrip", store.got.TripType)
+	}
+	if got.ID != "bk-1" {
+		t.Errorf("returned booking id = %q, want bk-1", got.ID)
 	}
 }
 
-func TestBookingService_Record_Invalid(t *testing.T) {
-	svc := NewBookingService()
+func TestBookingService_Record_rejectsInvalid(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := NewBookingService(store)
 	details := map[string]any{"hours": 4}
 
-	if err := svc.Record(context.Background(), "u1", "  ", details); !errors.Is(err, ErrInvalidBooking) {
+	if _, err := svc.Record(context.Background(), "u1", "  ", details); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("blank tripType: err = %v, want ErrInvalidBooking", err)
 	}
-	if err := svc.Record(context.Background(), "u1", "roundTrip", nil); !errors.Is(err, ErrInvalidBooking) {
+	if _, err := svc.Record(context.Background(), "u1", "roundTrip", nil); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("nil details: err = %v, want ErrInvalidBooking", err)
+	}
+	if store.insertHit {
+		t.Error("Insert must not be called for an invalid booking")
+	}
+}
+
+func TestBookingService_Record_propagatesStoreError(t *testing.T) {
+	wantErr := errors.New("db down")
+	svc := NewBookingService(&fakeBookingStore{err: wantErr})
+
+	if _, err := svc.Record(context.Background(), "u1", "oneWay", map[string]any{"a": 1}); !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }

@@ -9,6 +9,8 @@ import '../view_model/multi_stop_planner_view_model.dart';
 import 'pickup_location_screen.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/stop_card.dart';
+import 'widgets/ride_theme.dart';
+import 'widgets/vast_quiet/vast_quiet.dart';
 import 'widgets/time_slot_picker.dart';
 
 /// Step 3 of a Multi-Stop trip: write the driver's plan for the day.
@@ -127,7 +129,9 @@ class _MultiStopPlannerScreenState
     final vm = ref.watch(multiStopPlannerViewModelProvider(widget.start));
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return Theme(
+      data: rideSurfaceTheme(context),
+      child: Scaffold(
       appBar: AppBar(title: const Text('Plan your trip')),
       body: SafeArea(
         child: Center(
@@ -220,6 +224,7 @@ class _MultiStopPlannerScreenState
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -267,7 +272,7 @@ class _StartSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: SarthiColors.ultramarineWash,
+        color: RideSurfaces.washOf(context),
         borderRadius: BorderRadius.circular(SarthiTheme.radius),
       ),
       child: Row(

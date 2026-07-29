@@ -8,6 +8,7 @@ import '../../../core/config/ola_maps_config.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
 import '../domain/place_suggestion.dart';
+import '../domain/service_area.dart';
 import 'ola_maps_authenticator.dart';
 import 'recent_locations_storage.dart';
 import 'recent_pickups_api.dart';
@@ -86,7 +87,12 @@ class LocationRepository {
   static const int minQueryLength = 4;
 
   /// Suggests places matching [input]. [near] biases results toward the user's
-  /// area when known. Returns an empty list for too-short queries.
+  /// area; absent, results are biased to the service-area centre so nearby
+  /// Delhi-NCR places rank first. Returns an empty list for too-short queries.
+  ///
+  /// Predictions we can already tell sit outside the [ServiceArea] are dropped
+  /// here; ones without coordinates pass through and are re-checked when the
+  /// customer selects them.
   Future<List<PlaceSuggestion>> autocomplete(
     String input, {
     GeoPoint? near,
@@ -96,7 +102,7 @@ class LocationRepository {
 
     final json = await _getJson('/places/v1/autocomplete', {
       'input': query,
-      if (near != null) 'location': near.toLatLngParam(),
+      'location': (near ?? ServiceArea.center).toLatLngParam(),
     });
 
     final predictions = json['predictions'];
@@ -105,6 +111,7 @@ class LocationRepository {
         .whereType<Map<String, dynamic>>()
         .map(PlaceSuggestion.fromOlaPrediction)
         .where((s) => s.placeId.isNotEmpty)
+        .where((s) => s.point == null || ServiceArea.contains(s.point!))
         .toList(growable: false);
   }
 

@@ -38,19 +38,22 @@ void main() {
       check(vm.user!.dateOfBirth).equals(DateTime(2000, 1, 1));
     });
 
-    test('an already-registered number logs in and skips the profile step', () async {
-      final vm = _makeVm(registeredPhones: {'+919876543210'});
-      vm.onPhoneChanged('9876543210');
-      await vm.submitPhone();
-      check(vm.step).equals(RegistrationStep.otp);
+    test(
+      'an already-registered number logs in and skips the profile step',
+      () async {
+        final vm = _makeVm(registeredPhones: {'+919876543210'});
+        vm.onPhoneChanged('9876543210');
+        await vm.submitPhone();
+        check(vm.step).equals(RegistrationStep.otp);
 
-      // Correct OTP on a known number → straight to done, logged in.
-      await vm.submitOtp(AuthRepository.devOtp);
-      check(vm.step).equals(RegistrationStep.done);
-      check(vm.user).isNotNull();
-      check(vm.token).equals('tok-existing');
-      check(vm.errorText).isNull();
-    });
+        // Correct OTP on a known number → straight to done, logged in.
+        await vm.submitOtp(AuthRepository.devOtp);
+        check(vm.step).equals(RegistrationStep.done);
+        check(vm.user).isNotNull();
+        check(vm.token).equals('tok-existing');
+        check(vm.errorText).isNull();
+      },
+    );
 
     test('a new number issues a token after registering', () async {
       final vm = _makeVm();
@@ -202,31 +205,36 @@ void main() {
       });
     });
 
-    test('invalidates the OTP after five wrong codes and forces a restart', () async {
-      final vm = _makeVm();
-      vm.onPhoneChanged('9876543210');
-      await vm.submitPhone();
+    test(
+      'invalidates the OTP after five wrong codes and forces a restart',
+      () async {
+        final vm = _makeVm();
+        vm.onPhoneChanged('9876543210');
+        await vm.submitPhone();
 
-      for (var i = 0; i < RegistrationViewModel.maxOtpAttempts; i++) {
-        check(vm.isOtpInvalidated).isFalse();
+        for (var i = 0; i < RegistrationViewModel.maxOtpAttempts; i++) {
+          check(vm.isOtpInvalidated).isFalse();
+          await vm.submitOtp('000000');
+        }
+
+        check(vm.isOtpInvalidated).isTrue();
+        check(vm.canResend).isFalse();
+        check(vm.otpAttemptsRemaining).equals(0);
+
+        // Further submissions are ignored while the code is dead.
         await vm.submitOtp('000000');
-      }
+        check(vm.step).equals(RegistrationStep.otp);
 
-      check(vm.isOtpInvalidated).isTrue();
-      check(vm.canResend).isFalse();
-      check(vm.otpAttemptsRemaining).equals(0);
+        // Restarting the flow clears the invalidation.
+        vm.back();
+        check(vm.step).equals(RegistrationStep.phone);
+        check(vm.isOtpInvalidated).isFalse();
+        check(
+          vm.otpAttemptsRemaining,
+        ).equals(RegistrationViewModel.maxOtpAttempts);
 
-      // Further submissions are ignored while the code is dead.
-      await vm.submitOtp('000000');
-      check(vm.step).equals(RegistrationStep.otp);
-
-      // Restarting the flow clears the invalidation.
-      vm.back();
-      check(vm.step).equals(RegistrationStep.phone);
-      check(vm.isOtpInvalidated).isFalse();
-      check(vm.otpAttemptsRemaining).equals(RegistrationViewModel.maxOtpAttempts);
-
-      vm.dispose();
-    });
+        vm.dispose();
+      },
+    );
   });
 }

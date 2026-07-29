@@ -1,6 +1,7 @@
 import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
+import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/one_way_trip.dart';
@@ -36,16 +37,20 @@ class _FakeLocationRepository extends LocationRepository {
 
 OneWayDraft _draft({DateTime? scheduledAt}) => (
   start: const PickupLocation(
-    address: 'MG Road, Bengaluru',
-    point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+    address: 'Connaught Place, New Delhi',
+    point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
   ),
   destination: const PickupLocation(
-    address: 'Kempegowda International Airport, Bengaluru',
-    point: GeoPoint(latitude: 13.1986, longitude: 77.7066),
+    address: 'Indira Gandhi International Airport, New Delhi',
+    point: GeoPoint(latitude: 28.5562, longitude: 77.1000),
   ),
   scheduledAt: scheduledAt ?? DateTime(2026, 7, 25, 10, 30),
-  carType: CarType.sedan,
-  transmission: Transmission.automatic,
+  car: const Car(
+    id: 'c1',
+    registration: 'DL01AB1234',
+    type: CarType.sedan,
+    transmission: Transmission.automatic,
+  ),
 );
 
 void main() {
@@ -102,8 +107,10 @@ void main() {
       final json = vm.trip!.toJson();
       check(json['scheduledAt']).equals('2026-07-30T09:30:00.000');
       check(json['estimatedTravelMinutes']).equals(120);
-      check(json['carType']).equals('sedan');
-      check(json['transmission']).equals('automatic');
+      final car = json['car'] as Map<String, dynamic>;
+      check(car['registration']).equals('DL01AB1234');
+      check(car['carType']).equals('sedan');
+      check(car['transmission']).equals('automatic');
     });
 
     test('a failed estimate blocks confirm and can be retried', () async {
@@ -138,7 +145,7 @@ void main() {
       check(repo.departures).isEmpty();
       check(vm.canConfirm).isTrue();
       check(vm.trip!.estimatedTravelTime).equals(const Duration(minutes: 45));
-      check(vm.trip!.start.address).equals('MG Road, Bengaluru');
+      check(vm.trip!.start.address).equals('Connaught Place, New Delhi');
     });
   });
 }

@@ -71,8 +71,7 @@ class OneWayReviewViewModel extends ChangeNotifier {
           destination: draft.destination,
           scheduledAt: draft.scheduledAt,
           estimatedTravelTime: _travelTime!,
-          carType: draft.carType,
-          transmission: draft.transmission,
+          car: draft.car,
         )
       : null;
 

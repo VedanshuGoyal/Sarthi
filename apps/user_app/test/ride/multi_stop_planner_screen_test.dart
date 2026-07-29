@@ -11,18 +11,18 @@ import 'package:user_app/features/ride/view/widgets/stop_card.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
 
 const _start = PickupLocation(
-  address: 'MG Road, Bengaluru',
-  point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
 );
 
 const _pharmacy = PickupLocation(
-  address: 'Apollo Pharmacy, Indiranagar',
-  point: GeoPoint(latitude: 12.9719, longitude: 77.6412),
+  address: 'Apollo Pharmacy, Lajpat Nagar',
+  point: GeoPoint(latitude: 28.5677, longitude: 77.2433),
 );
 
 const _office = PickupLocation(
-  address: 'Passport Seva Kendra, Lalbagh Road',
-  point: GeoPoint(latitude: 12.9581, longitude: 77.5850),
+  address: 'Passport Seva Kendra, Bhikaji Cama Place, New Delhi',
+  point: GeoPoint(latitude: 28.5679, longitude: 77.1859),
 );
 
 final _nineAm = DateTime(2026, 7, 18, 9);
@@ -81,7 +81,7 @@ void main() {
   ) async {
     await _pump(tester);
 
-    expect(find.text('MG Road, Bengaluru'), findsOneWidget); // start echo
+    expect(find.text('Connaught Place, New Delhi'), findsOneWidget); // start echo
     expect(find.text('Stop 1'), findsOneWidget);
     expect(find.text('Choose location'), findsOneWidget);
     expect(find.text('Select date'), findsOneWidget); // no leave-by yet
@@ -200,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(received, isNotNull);
-    expect(received!.start.address, 'MG Road, Bengaluru');
+    expect(received!.start.address, 'Connaught Place, New Delhi');
     expect(received!.stops.length, 2);
     expect(received!.stops[0].task, 'Collect the refill');
     expect(received!.endsAt, DateTime(2026, 7, 18, 12, 15));

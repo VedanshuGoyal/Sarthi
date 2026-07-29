@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 
+import 'core/theme/deep_signal/deep_signal_theme.dart';
+import 'core/theme/theme_mode_controller.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/home_screen.dart';
@@ -18,18 +19,20 @@ Future<void> main() async {
   );
 }
 
-class SarthiUserApp extends StatelessWidget {
+class SarthiUserApp extends ConsumerWidget {
   const SarthiUserApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The Deep Signal two-mode design language. The mode follows the OS setting
+    // (ThemeMode.system) until the user overrides it with the in-app toggle
+    // (see [ThemeModeToggle]).
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'Sarthi',
-      // Shared ultramarine (#120A8F) design scheme — common to both apps.
-      // Pinned to light for now regardless of the system setting.
-      theme: SarthiTheme.light(),
-      darkTheme: SarthiTheme.dark(),
-      themeMode: ThemeMode.light,
+      theme: DeepSignalTheme.light(),
+      darkTheme: DeepSignalTheme.dark(),
+      themeMode: themeMode,
       home: const _AppRoot(),
     );
   }

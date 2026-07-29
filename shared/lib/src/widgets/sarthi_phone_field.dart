@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../theme/sarthi_colors.dart';
-
 /// A phone-number entry field with a fixed `+91` (India) country prefix.
 ///
 /// Sarthi currently onboards only Indian numbers, so the country code is shown
@@ -70,7 +68,11 @@ class SarthiPhoneField extends StatelessWidget {
                     countryCode,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: SarthiColors.ultramarine,
+                      // Derive from the ambient theme so the prefix matches
+                      // whatever design language wraps the field (Deep Signal
+                      // ink in user_app, ultramarine in driver_app) rather than
+                      // a hardcoded brand colour.
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                   const SizedBox(width: 6),

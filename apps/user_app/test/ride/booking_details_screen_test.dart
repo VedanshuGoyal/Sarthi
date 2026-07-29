@@ -2,17 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+import 'package:user_app/features/ride/data/cars_repository.dart';
+import 'package:user_app/features/ride/domain/car.dart';
+import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/round_trip_booking.dart';
+import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/booking_details_screen.dart';
 import 'package:user_app/features/ride/view_model/booking_details_view_model.dart';
+import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
 
 const _pickup = PickupLocation(
-  address: 'MG Road, Bengaluru',
-  point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
 );
+
+const _sedan = Car(
+  id: 'c1',
+  registration: 'DL01AB1234',
+  type: CarType.sedan,
+  transmission: Transmission.manual,
+);
+
+const _luxury = Car(
+  id: 'c2',
+  registration: 'DL53LX9000',
+  type: CarType.luxury,
+  transmission: Transmission.automatic,
+);
+
+/// Seeds the saved-car dropdown so no network request is made. The repository
+/// is never invoked — the seeded state skips the load.
+Override _savedCars({List<Car> cars = const [_sedan, _luxury]}) =>
+    savedCarsViewModelProvider.overrideWith(
+      (ref) =>
+          SavedCarsViewModel(repository: CarsRepository(), initialCars: cars),
+    );
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -26,6 +53,7 @@ Future<void> _pump(
 
   return tester.pumpWidget(
     ProviderScope(
+      overrides: [_savedCars()],
       child: MaterialApp(
         home: BookingDetailsScreen(
           pickup: _pickup,
@@ -43,16 +71,35 @@ void main() {
     await _pump(tester);
 
     // Every requested control is on screen.
-    expect(find.text('MG Road, Bengaluru'), findsOneWidget); // pickup echo
-    // The car dropdown awaits a pick; the gearbox defaults to automatic.
-    expect(find.text('Select car type'), findsOneWidget);
-    expect(find.text('Automatic'), findsOneWidget);
+    expect(find.text('Connaught Place, New Delhi'), findsOneWidget); // pickup echo
+    // The saved-car dropdown awaits a pick, with the add-car entry point.
+    expect(find.text('Select your car'), findsOneWidget);
+    expect(find.text('Add a car'), findsOneWidget);
     // No "Select date/time" placeholder — the schedule is pre-filled.
     expect(find.text('Select date'), findsNothing);
     expect(find.text('Select time'), findsNothing);
 
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNull);
+  });
+
+  testWidgets('with no saved cars, the dropdown gives way to the add prompt', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [_savedCars(cars: const [])],
+        child: const MaterialApp(home: BookingDetailsScreen(pickup: _pickup)),
+      ),
+    );
+
+    expect(find.text('Select your car'), findsNothing);
+    expect(find.textContaining('No saved cars yet'), findsOneWidget);
+    expect(find.text('Add a car'), findsOneWidget);
   });
 
   testWidgets('the hours stepper increments the shown duration', (
@@ -66,7 +113,7 @@ void main() {
     expect(find.text('3'), findsOneWidget);
   });
 
-  testWidgets('the fare updates as hours and car type change', (tester) async {
+  testWidgets('the fare updates as hours and car change', (tester) async {
     // A fixed midday start keeps the shown fares clear of the after-10pm charge.
     tester.view.physicalSize = const Size(1200, 2600);
     tester.view.devicePixelRatio = 1.0;
@@ -75,6 +122,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          _savedCars(),
           bookingDetailsViewModelProvider.overrideWith(
             (ref, pickup) => BookingDetailsViewModel(
               pickup: pickup,
@@ -94,10 +142,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('₹340'), findsOneWidget);
 
-    // Luxury re-prices the same 3 hours at the premium rate (330 + 110).
-    await tester.tap(find.text('Select car type'));
+    // The luxury car re-prices the same 3 hours at the premium rate (330 + 110).
+    await tester.tap(find.text('Select your car'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Luxury').last);
+    await tester.tap(find.text('DL53LX9000 · Luxury · Automatic').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('₹440'), findsOneWidget);
   });
@@ -113,22 +161,22 @@ void main() {
     expect(find.textContaining('Prices may vary'), findsOneWidget);
   });
 
-  testWidgets('picking a car type enables confirm', (tester) async {
+  testWidgets('picking a saved car enables confirm', (tester) async {
     await _pump(tester);
 
     // Disabled up front (no car), prompting for one.
-    expect(find.text('Choose a car type to continue.'), findsOneWidget);
+    expect(find.text('Choose your car to continue.'), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,
     );
 
-    await tester.tap(find.text('Select car type'));
+    await tester.tap(find.text('Select your car'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('SUV').last);
+    await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Choose a car type to continue.'), findsNothing);
+    expect(find.text('Choose your car to continue.'), findsNothing);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNotNull,
@@ -144,6 +192,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          _savedCars(),
           bookingDetailsViewModelProvider.overrideWith(
             (ref, pickup) => BookingDetailsViewModel(
               pickup: pickup,
@@ -171,10 +220,10 @@ void main() {
     RoundTripBooking? received;
     await _pump(tester, onOk: (b) => received = b);
 
-    // The schedule is pre-filled, so a car type is all that's needed.
-    await tester.tap(find.text('Select car type'));
+    // The schedule is pre-filled, so a car is all that's needed.
+    await tester.tap(find.text('Select your car'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Sedan').last);
+    await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -183,7 +232,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(received, isNotNull);
-    expect(received!.pickup.address, 'MG Road, Bengaluru');
+    expect(received!.pickup.address, 'Connaught Place, New Delhi');
+    expect(received!.car, _sedan);
     expect(received!.scheduledAt.isAfter(DateTime.now()), isTrue);
   });
 }

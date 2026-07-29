@@ -12,10 +12,10 @@ import '../support/fake_location_repository.dart';
 
 const _suggestion = PlaceSuggestion(
   placeId: 'p1',
-  primaryText: 'MG Road',
-  secondaryText: 'Bengaluru',
-  address: 'MG Road, Bengaluru',
-  point: GeoPoint(latitude: 12.97, longitude: 77.6),
+  primaryText: 'Connaught Place',
+  secondaryText: 'New Delhi',
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
 );
 
 /// Pumps the screen with the view model seeded into the given state and
@@ -59,32 +59,32 @@ void main() {
     tester,
   ) async {
     final harness = _Harness();
-    await harness.pump(tester, suggestions: const [_suggestion], query: 'MG');
+    await harness.pump(tester, suggestions: const [_suggestion], query: 'Connaught');
 
-    expect(find.text('MG Road'), findsOneWidget);
+    expect(find.text('Connaught Place'), findsOneWidget);
     // Tap-and-go: choosing a result is the confirmation.
     expect(find.byType(FilledButton), findsNothing);
   });
 
   testWidgets('tapping a suggestion confirms it immediately', (tester) async {
     final harness = _Harness();
-    await harness.pump(tester, suggestions: const [_suggestion], query: 'MG');
+    await harness.pump(tester, suggestions: const [_suggestion], query: 'Connaught');
 
-    await tester.tap(find.text('MG Road'));
+    await tester.tap(find.text('Connaught Place'));
     await tester.pumpAndSettle();
 
     expect(harness.confirmed, isNotNull);
-    expect(harness.confirmed!.address, 'MG Road, Bengaluru');
+    expect(harness.confirmed!.address, 'Connaught Place, New Delhi');
     // The choice was also persisted to recents on the way out.
     expect(harness.repo.remembered.map((p) => p.address), [
-      'MG Road, Bengaluru',
+      'Connaught Place, New Delhi',
     ]);
   });
 
   testWidgets('tapping a recent confirms it immediately', (tester) async {
     const recent = PickupLocation(
-      address: 'Home, Koramangala',
-      point: GeoPoint(latitude: 12.93, longitude: 77.62),
+      address: 'Home, Saket',
+      point: GeoPoint(latitude: 28.5355, longitude: 77.3910),
       placeId: 'r1',
     );
     final harness = _Harness(recents: const [recent]);
@@ -94,11 +94,11 @@ void main() {
 
     expect(find.text('Recent'), findsOneWidget);
 
-    await tester.tap(find.text('Home, Koramangala'));
+    await tester.tap(find.text('Home, Saket'));
     await tester.pumpAndSettle();
 
     expect(harness.confirmed, isNotNull);
-    expect(harness.confirmed!.address, 'Home, Koramangala');
+    expect(harness.confirmed!.address, 'Home, Saket');
   });
 
   testWidgets('using the current location confirms once GPS resolves', (
@@ -106,8 +106,8 @@ void main() {
   ) async {
     final harness = _Harness();
     harness.repo.current = const PickupLocation(
-      address: 'My street, Bengaluru',
-      point: GeoPoint(latitude: 12.9, longitude: 77.6),
+      address: 'My street, New Delhi',
+      point: GeoPoint(latitude: 28.6139, longitude: 77.2090),
     );
     await harness.pump(tester);
 
@@ -115,6 +115,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(harness.confirmed, isNotNull);
-    expect(harness.confirmed!.address, 'My street, Bengaluru');
+    expect(harness.confirmed!.address, 'My street, New Delhi');
   });
 }

@@ -15,10 +15,12 @@ func NewRouter(
 	auth *service.AuthService,
 	sessions *service.SessionService,
 	recents *service.RecentPickupService,
+	cars *service.CarService,
 	bookings *service.BookingService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
+	cr := NewCarHandler(cars)
 	bk := NewBookingHandler(bookings)
 
 	mux := http.NewServeMux()
@@ -40,6 +42,12 @@ func NewRouter(
 	mux.HandleFunc("GET /me/recent-pickups", requireAuth(sessions, rp.List))
 	mux.HandleFunc("POST /me/recent-pickups", requireAuth(sessions, rp.Remember))
 
+	// The customer's saved cars, picked from a dropdown when booking and
+	// managed from the profile screen.
+	mux.HandleFunc("GET /me/cars", requireAuth(sessions, cr.List))
+	mux.HandleFunc("POST /me/cars", requireAuth(sessions, cr.Add))
+	mux.HandleFunc("DELETE /me/cars/{id}", requireAuth(sessions, cr.Delete))
+
 	// Confirmed bookings from the app; recorded server-side (log-only for now).
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 
@@ -59,7 +67,7 @@ func withCORS(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}

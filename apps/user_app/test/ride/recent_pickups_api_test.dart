@@ -33,7 +33,7 @@ void main() {
             'recents': [
               {
                 'placeId': 'p1',
-                'address': 'MG Road, Bengaluru',
+                'address': 'Connaught Place, New Delhi',
                 'lat': 12.97,
                 'lng': 77.6,
                 'usedAt': '2026-07-16T00:00:00Z',
@@ -55,7 +55,7 @@ void main() {
       check(request.headers['Authorization']).equals('Bearer tok-1');
 
       check(result).length.equals(1);
-      check(result.single.address).equals('MG Road, Bengaluru');
+      check(result.single.address).equals('Connaught Place, New Delhi');
       check(result.single.placeId).equals('p1');
       check(result.single.point.latitude).equals(12.97);
     });

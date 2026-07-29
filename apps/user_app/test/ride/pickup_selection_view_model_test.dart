@@ -5,12 +5,23 @@ import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/place_suggestion.dart';
+import 'package:user_app/features/ride/domain/service_area.dart';
 import 'package:user_app/features/ride/view_model/pickup_selection_view_model.dart';
 
 import '../support/fake_location_repository.dart';
 
 const _suggestion = PlaceSuggestion(
   placeId: 'p1',
+  primaryText: 'Connaught Place',
+  secondaryText: 'New Delhi',
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
+);
+
+/// A place well outside the Delhi-NCR service area (Bengaluru), for the
+/// refusal path.
+const _outsideSuggestion = PlaceSuggestion(
+  placeId: 'p2',
   primaryText: 'MG Road',
   secondaryText: 'Bengaluru',
   address: 'MG Road, Bengaluru',
@@ -81,11 +92,21 @@ void main() {
 
       final pickup = vm.selectSuggestion(_suggestion);
 
-      check(pickup?.address).equals('MG Road, Bengaluru');
+      check(pickup?.address).equals('Connaught Place, New Delhi');
       check(pickup?.placeId).equals('p1');
       check(vm.selected).equals(pickup);
-      check(vm.query).equals('MG Road, Bengaluru');
+      check(vm.query).equals('Connaught Place, New Delhi');
       check(vm.suggestions).isEmpty();
+    });
+
+    test('a suggestion outside the service area is refused', () {
+      final vm = PickupSelectionViewModel(repository: FakeLocationRepository());
+
+      final pickup = vm.selectSuggestion(_outsideSuggestion);
+
+      check(pickup).isNull();
+      check(vm.selected).isNull();
+      check(vm.error).equals(ServiceArea.outsideMessage);
     });
 
     test('editing the query after selecting clears the selection', () {
@@ -123,8 +144,8 @@ void main() {
       fakeAsync((async) {
         final repo = FakeLocationRepository(
           current: const PickupLocation(
-            address: 'My street, Bengaluru',
-            point: GeoPoint(latitude: 12.9, longitude: 77.6),
+            address: 'My street, New Delhi',
+            point: GeoPoint(latitude: 28.6139, longitude: 77.2090),
           ),
         );
         final vm = PickupSelectionViewModel(repository: repo);
@@ -136,8 +157,8 @@ void main() {
         async.flushMicrotasks();
 
         check(vm.isLocating).isFalse();
-        check(pickup?.address).equals('My street, Bengaluru');
-        check(vm.query).equals('My street, Bengaluru');
+        check(pickup?.address).equals('My street, New Delhi');
+        check(vm.query).equals('My street, New Delhi');
       });
     });
 
@@ -146,8 +167,8 @@ void main() {
         final repo = FakeLocationRepository(
           recents: const [
             PickupLocation(
-              address: 'Home, Bengaluru',
-              point: GeoPoint(latitude: 12.9, longitude: 77.6),
+              address: 'Home, New Delhi',
+              point: GeoPoint(latitude: 28.6139, longitude: 77.2090),
               placeId: 'r1',
             ),
           ],
@@ -157,7 +178,7 @@ void main() {
         async.flushMicrotasks();
 
         check(vm.recents).length.equals(1);
-        check(vm.recents.single.address).equals('Home, Bengaluru');
+        check(vm.recents.single.address).equals('Home, New Delhi');
       });
     });
 
@@ -166,15 +187,15 @@ void main() {
       final vm = PickupSelectionViewModel(repository: repo);
 
       const recent = PickupLocation(
-        address: 'Home, Bengaluru',
-        point: GeoPoint(latitude: 12.9, longitude: 77.6),
+        address: 'Home, New Delhi',
+        point: GeoPoint(latitude: 28.6139, longitude: 77.2090),
         placeId: 'r1',
       );
       final pickup = vm.selectRecent(recent);
 
       check(pickup).equals(recent);
-      check(vm.selected?.address).equals('Home, Bengaluru');
-      check(vm.query).equals('Home, Bengaluru');
+      check(vm.selected?.address).equals('Home, New Delhi');
+      check(vm.query).equals('Home, New Delhi');
       check(repo.queries).isEmpty();
     });
 
@@ -189,8 +210,8 @@ void main() {
 
         check(
           repo.remembered.map((p) => p.address).toList(),
-        ).deepEquals(['MG Road, Bengaluru']);
-        check(vm.recents.first.address).equals('MG Road, Bengaluru');
+        ).deepEquals(['Connaught Place, New Delhi']);
+        check(vm.recents.first.address).equals('Connaught Place, New Delhi');
       });
     });
 

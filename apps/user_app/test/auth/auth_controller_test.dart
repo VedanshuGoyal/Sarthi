@@ -58,8 +58,9 @@ void main() {
       check(loaded).isNotNull();
       check(loaded!.token).equals('saved-token');
       // Synchronous, in-memory reads are available once loaded.
-      check(container.read(authControllerProvider.notifier).token)
-          .equals('saved-token');
+      check(
+        container.read(authControllerProvider.notifier).token,
+      ).equals('saved-token');
     });
 
     test('starts logged out when storage is empty', () async {

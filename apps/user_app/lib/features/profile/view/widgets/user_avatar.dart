@@ -30,10 +30,7 @@ class UserAvatar extends StatelessWidget {
       foregroundColor: scheme.onPrimaryContainer,
       child: Text(
         initials(name),
-        style: TextStyle(
-          fontSize: radius * 0.8,
-          fontWeight: FontWeight.w700,
-        ),
+        style: TextStyle(fontSize: radius * 0.8, fontWeight: FontWeight.w700),
       ),
     );
   }

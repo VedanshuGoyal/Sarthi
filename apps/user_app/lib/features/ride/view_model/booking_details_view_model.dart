@@ -1,17 +1,18 @@
 import 'package:flutter/foundation.dart';
 
-import '../domain/car_type.dart';
+import '../domain/car.dart';
 import '../domain/pickup_location.dart';
 import '../domain/round_trip_booking.dart';
 import '../domain/round_trip_fare.dart';
 import '../domain/scheduling.dart' as scheduling;
-import '../domain/transmission.dart';
 
-/// Drives Round Trip's "booking details" step (hours, schedule, car, gearbox).
+/// Drives Round Trip's "booking details" step (hours, schedule, which car).
 ///
 /// A [ChangeNotifier] per the MVVM guideline: it owns the transient form state
 /// for a single [pickup] and exposes command methods the view calls. It holds
-/// no business logic and never touches widgets, the network, or storage.
+/// no business logic and never touches widgets, the network, or storage — the
+/// saved-car *list* lives in the saved-cars view model; this one only holds
+/// which car was picked.
 class BookingDetailsViewModel extends ChangeNotifier {
   /// [pickup] is the confirmed location from the previous step. The `initial*`
   /// seams let previews and tests start in a given state without tapping
@@ -20,12 +21,10 @@ class BookingDetailsViewModel extends ChangeNotifier {
     required this.pickup,
     int initialHours = 2,
     DateTime? initialScheduledAt,
-    CarType? initialCarType,
-    Transmission initialTransmission = Transmission.automatic,
+    Car? initialCar,
   }) : _hours = initialHours.clamp(minHours, maxHours),
        _scheduledAt = initialScheduledAt ?? defaultScheduledAt(),
-       _carType = initialCarType,
-       _transmission = initialTransmission;
+       _car = initialCar;
 
   final PickupLocation pickup;
 
@@ -47,20 +46,19 @@ class BookingDetailsViewModel extends ChangeNotifier {
   DateTime _scheduledAt;
   DateTime get scheduledAt => _scheduledAt;
 
-  CarType? _carType;
-  CarType? get carType => _carType;
+  Car? _car;
 
-  Transmission _transmission;
-  Transmission get transmission => _transmission;
+  /// The saved car picked for this trip; null until the customer picks one.
+  Car? get car => _car;
 
   bool get canDecrementHours => _hours > minHours;
   bool get canIncrementHours => _hours < maxHours;
 
-  /// The tariff for the current selection. Until a car type is picked we preview
-  /// the standard rate; choosing luxury re-prices at the premium rate.
-  RoundTripTariff get _tariff => _carType == null
+  /// The tariff for the current selection. Until a car is picked we preview
+  /// the standard rate; choosing a luxury car re-prices at the premium rate.
+  RoundTripTariff get _tariff => _car == null
       ? RoundTripTariff.standard
-      : RoundTripTariff.forCarType(_carType!);
+      : RoundTripTariff.forCarType(_car!.type);
 
   /// The base fare (whole rupees) for the current [hours] under the applicable
   /// tariff, before any late-night surcharge.
@@ -72,7 +70,7 @@ class BookingDetailsViewModel extends ChangeNotifier {
       nightSurchargeFor(scheduledAt: _scheduledAt, hours: _hours);
 
   /// The estimated total fare (whole rupees): [baseFare] plus [nightSurcharge].
-  /// Updates as the customer changes the hours, start time, or car type.
+  /// Updates as the customer changes the hours, start time, or car.
   int get fare => baseFare + nightSurcharge;
 
   /// Sets the hire duration, clamped to [[minHours], [maxHours]]. A no-op when
@@ -94,22 +92,16 @@ class BookingDetailsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectCarType(CarType type) {
-    if (_carType == type) return;
-    _carType = type;
+  void selectCar(Car car) {
+    if (_car == car) return;
+    _car = car;
     notifyListeners();
   }
 
-  void selectTransmission(Transmission value) {
-    if (_transmission == value) return;
-    _transmission = value;
-    notifyListeners();
-  }
-
-  /// True once every required choice is made — gates the CTA. Hours, the start
-  /// time, and transmission always have a value (the schedule is pre-filled);
-  /// only the car type must still be chosen.
-  bool get canConfirm => _carType != null;
+  /// True once every required choice is made — gates the CTA. Hours and the
+  /// start time always have a value (the schedule is pre-filled); only the car
+  /// must still be chosen.
+  bool get canConfirm => _car != null;
 
   /// The assembled request, or null until [canConfirm].
   RoundTripBooking? get booking => canConfirm
@@ -117,8 +109,7 @@ class BookingDetailsViewModel extends ChangeNotifier {
           pickup: pickup,
           hours: _hours,
           scheduledAt: _scheduledAt,
-          carType: _carType!,
-          transmission: _transmission,
+          car: _car!,
           fare: fare,
         )
       : null;

@@ -72,15 +72,15 @@ class FakeLocationRepository extends LocationRepository {
     if (currentError != null) throw currentError!;
     return current ??
         const PickupLocation(
-          address: 'Current place, Bengaluru',
-          point: GeoPoint(latitude: 12.9, longitude: 77.6),
+          address: 'Current place, New Delhi',
+          point: GeoPoint(latitude: 28.6139, longitude: 77.2090),
         );
   }
 
   @override
   Future<GeoPoint> currentPoint() async {
     if (currentError != null) throw currentError!;
-    return currentPos ?? const GeoPoint(latitude: 12.9, longitude: 77.6);
+    return currentPos ?? const GeoPoint(latitude: 28.6139, longitude: 77.2090);
   }
 
   @override

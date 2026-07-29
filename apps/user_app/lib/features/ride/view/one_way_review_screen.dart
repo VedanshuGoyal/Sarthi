@@ -5,8 +5,10 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../domain/one_way_trip.dart';
 import '../ride_providers.dart';
 import '../view_model/one_way_review_view_model.dart';
-import 'widgets/car_options_fields.dart';
+import 'widgets/car_selector_field.dart';
 import 'widgets/route_summary.dart';
+import 'widgets/ride_theme.dart';
+import 'widgets/vast_quiet/vast_quiet.dart';
 
 /// The final One-Way step: the estimated trip time for the settled plan.
 ///
@@ -51,7 +53,9 @@ class OneWayReviewScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final l10n = MaterialLocalizations.of(context);
 
-    return Scaffold(
+    return Theme(
+      data: rideSurfaceTheme(context),
+      child: Scaffold(
       appBar: AppBar(title: const Text('Review trip')),
       body: SafeArea(
         child: Center(
@@ -85,9 +89,7 @@ class OneWayReviewScreen extends ConsumerWidget {
                             _PlanLine(
                               icon: Icons.directions_car_outlined,
                               label: 'Car',
-                              value:
-                                  '${CarOptionsFields.carTypeLabel(draft.carType)}'
-                                  ' · ${CarOptionsFields.transmissionLabel(draft.transmission)}',
+                              value: CarSelectorField.carLabel(draft.car),
                             ),
                           ],
                         ),
@@ -134,6 +136,7 @@ class OneWayReviewScreen extends ConsumerWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -205,7 +208,7 @@ class _TravelTimeEstimate extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: SarthiColors.ultramarineWash,
+        color: RideSurfaces.washOf(context),
         borderRadius: BorderRadius.circular(SarthiTheme.radius),
       ),
       child: content,

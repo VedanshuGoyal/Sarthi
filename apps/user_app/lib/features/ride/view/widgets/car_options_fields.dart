@@ -4,12 +4,13 @@ import '../../domain/car_type.dart';
 import '../../domain/transmission.dart';
 import 'option_dropdown.dart';
 
-/// The car-type and transmission dropdowns every booking step shares:
+/// The car-type and transmission dropdowns of the add-car form:
 /// side-by-side on wide viewports, stacked on phones.
 ///
 /// State-free per the reusable-widget guideline: it renders the current picks
-/// and emits changes; the parent owns the choice. Round Trip and One-Way use
-/// this same pair so the "which car?" question always looks identical.
+/// and emits changes; the parent owns the choice. Booking steps no longer show
+/// this pair directly — they offer the saved-car dropdown (CarSelectorField),
+/// and this widget describes a car once, when it is added.
 class CarOptionsFields extends StatelessWidget {
   const CarOptionsFields({
     super.key,

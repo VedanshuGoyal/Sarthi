@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:user_app/features/ride/data/booking_repository.dart';
+import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/one_way_trip.dart';
@@ -13,17 +14,23 @@ import 'package:user_app/features/ride/domain/round_trip_booking.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
 
 const _pickup = PickupLocation(
-  address: 'MG Road, Bengaluru',
-  point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
   placeId: 'p1',
+);
+
+const _sedan = Car(
+  id: 'c1',
+  registration: 'DL01AB1234',
+  type: CarType.sedan,
+  transmission: Transmission.automatic,
 );
 
 final _booking = RoundTripBooking(
   pickup: _pickup,
   hours: 4,
   scheduledAt: DateTime(2026, 7, 20, 9, 15),
-  carType: CarType.sedan,
-  transmission: Transmission.automatic,
+  car: _sedan,
   fare: 440,
 );
 
@@ -67,7 +74,11 @@ void main() {
       check(details['scheduledAt']).equals('2026-07-20T09:15:00.000');
       check(
         (details['pickup'] as Map<String, dynamic>)['address'],
-      ).equals('MG Road, Bengaluru');
+      ).equals('Connaught Place, New Delhi');
+      final car = details['car'] as Map<String, dynamic>;
+      check(car['registration']).equals('DL01AB1234');
+      check(car['carType']).equals('sedan');
+      check(car['transmission']).equals('automatic');
     },
   );
 
@@ -84,8 +95,7 @@ void main() {
         destination: _pickup,
         scheduledAt: DateTime(2026, 7, 20, 9, 15),
         estimatedTravelTime: const Duration(hours: 1, minutes: 25),
-        carType: CarType.suv,
-        transmission: Transmission.manual,
+        car: _sedan,
       ),
     );
 

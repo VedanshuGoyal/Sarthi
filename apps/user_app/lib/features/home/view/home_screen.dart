@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/deep_signal/deep_signal.dart';
+import '../../../core/theme/deep_signal/deep_signal_gallery.dart';
+import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
@@ -18,6 +21,8 @@ import '../../ride/view/multi_stop_planner_screen.dart';
 import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
+import '../../ride/view/widgets/ride_theme.dart';
+import '../../ride/view/widgets/vast_quiet/vast_quiet.dart';
 
 /// Landing screen shown after a customer finishes registering.
 ///
@@ -111,7 +116,7 @@ class HomeScreen extends ConsumerWidget {
               SnackBar(
                 content: Text(
                   'Round Trip booked: $hours ${hours == 1 ? 'hour' : 'hours'}, '
-                  '${booking.carType.name} · ${booking.transmission.name}.'
+                  'in your ${booking.car.registration}.'
                   '${sent ? '' : _notSentNote}',
                 ),
               ),
@@ -192,7 +197,7 @@ class HomeScreen extends ConsumerWidget {
               SnackBar(
                 content: Text(
                   'One-Way Trip booked: ~${trip.estimatedTravelTime.inMinutes}'
-                  ' min, ${trip.carType.name} · ${trip.transmission.name} '
+                  ' min, in your ${trip.car.registration} '
                   'to ${trip.destination.address}.'
                   '${sent ? '' : _notSentNote}',
                 ),
@@ -204,53 +209,113 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final firstName = user.name.split(' ').first;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sarthi'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              icon: UserAvatar(name: user.name, radius: 16),
-              tooltip: 'Your profile',
-              onPressed: () => _openProfile(context, ref),
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Hi $firstName, how can we drive you?',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
+    final tokens = DeepSignalTokens.of(context);
+    // The trip chooser is the entry to the ride flow. It follows the app-wide
+    // Deep Signal theme so it flips light/dark with the rest of the app, with a
+    // mode-appropriate ride wash layered on so TripOptionCard's selected tint
+    // reads in both modes (it resolves its wash through RideSurfaces).
+    final rideTheme = rideSurfaceTheme(context);
+    // The painted mountain scene is a light paper composition; in dark mode we
+    // drop it and let the canvas stand rather than showing a light band.
+    final showBackdrop = !tokens.isDark;
+
+    return Theme(
+      data: rideTheme,
+      child: Builder(
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Scaffold(
+            // The mountain scene runs up behind a transparent app bar, so the
+            // peaks fill the top of the screen rather than being clipped by a
+            // solid bar.
+            extendBodyBehindAppBar: true,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              title: const Text('Sarthi'),
+              actions: [
+                const ThemeModeToggle(),
+                IconButton(
+                  icon: const Icon(Icons.palette_outlined),
+                  tooltip: 'Deep Signal cards',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const DeepSignalGalleryScreen(),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Pick a trip type to get started.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: IconButton(
+                    icon: UserAvatar(name: user.name, radius: 16),
+                    tooltip: 'Your profile',
+                    onPressed: () => _openProfile(context, ref),
                   ),
-                  const SizedBox(height: 28),
-                  TripTypeSelector(
-                    onSelected: (type) => _onTripSelected(context, ref, type),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-        ),
+            body: LayoutBuilder(
+              builder: (context, constraints) {
+                // The scene occupies the top of the viewport and fades into the
+                // canvas; clamp it so it stays a header band on tall screens and
+                // doesn't swallow short ones. The greeting is offset to sit over
+                // the lower cloud, clear of the dark peaks, where ink text reads.
+                final sceneHeight = showBackdrop
+                    ? (constraints.maxHeight * 0.42).clamp(220.0, 360.0)
+                    : 0.0;
+                final topInset = showBackdrop
+                    ? sceneHeight * 0.62
+                    : MediaQuery.of(context).padding.top + kToolbarHeight + 12;
+                return Stack(
+                  children: [
+                    if (showBackdrop)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: sceneHeight,
+                        child: const VastQuietBackdrop(),
+                      ),
+                    SafeArea(
+                      top: false,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 640),
+                          child: SingleChildScrollView(
+                            padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Hi $firstName, how can we drive you?',
+                                  style: theme.textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Pick a trip type to get started.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 28),
+                                TripTypeSelector(
+                                  onSelected: (type) =>
+                                      _onTripSelected(context, ref, type),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }

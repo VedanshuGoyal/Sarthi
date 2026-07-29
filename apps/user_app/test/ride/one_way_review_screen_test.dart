@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
+import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/one_way_trip.dart';
@@ -37,16 +38,20 @@ class _FakeLocationRepository extends LocationRepository {
 
 final _draft = (
   start: const PickupLocation(
-    address: 'MG Road, Bengaluru',
-    point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+    address: 'Connaught Place, New Delhi',
+    point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
   ),
   destination: const PickupLocation(
-    address: 'Kempegowda International Airport, Bengaluru',
-    point: GeoPoint(latitude: 13.1986, longitude: 77.7066),
+    address: 'Indira Gandhi International Airport, New Delhi',
+    point: GeoPoint(latitude: 28.5562, longitude: 77.1000),
   ),
   scheduledAt: DateTime(2026, 7, 20, 9, 30),
-  carType: CarType.sedan,
-  transmission: Transmission.manual,
+  car: const Car(
+    id: 'c1',
+    registration: 'DL01AB1234',
+    type: CarType.sedan,
+    transmission: Transmission.manual,
+  ),
 );
 
 /// Pumps the review screen with the view model seeded to [travelTime], or
@@ -94,13 +99,13 @@ void main() {
       onOk: (t) => received = t,
     );
 
-    expect(find.text('MG Road, Bengaluru'), findsOneWidget);
+    expect(find.text('Connaught Place, New Delhi'), findsOneWidget);
     expect(
-      find.text('Kempegowda International Airport, Bengaluru'),
+      find.text('Indira Gandhi International Airport, New Delhi'),
       findsOneWidget,
     );
     // The settled choices are echoed read-only — no pickers or dropdowns.
-    expect(find.text('Sedan · Manual'), findsOneWidget);
+    expect(find.text('DL01AB1234 · Sedan · Manual'), findsOneWidget);
     expect(find.byType(DropdownMenu), findsNothing);
     expect(find.text('About 1 h 25 min'), findsOneWidget);
 
@@ -111,9 +116,11 @@ void main() {
 
     expect(received, isNotNull);
     expect(received!.scheduledAt, DateTime(2026, 7, 20, 9, 30));
-    expect(received!.carType, CarType.sedan);
-    expect(received!.transmission, Transmission.manual);
-    expect(received!.estimatedTravelTime, const Duration(hours: 1, minutes: 25));
+    expect(received!.car, _draft.car);
+    expect(
+      received!.estimatedTravelTime,
+      const Duration(hours: 1, minutes: 25),
+    );
   });
 
   testWidgets('shows progress while the estimate is fetched and blocks '

@@ -28,12 +28,15 @@ class SarthiPrimaryButton extends StatelessWidget {
     return FilledButton(
       onPressed: isLoading ? null : onPressed,
       child: isLoading
-          ? const SizedBox(
+          ? SizedBox(
               height: 22,
               width: 22,
               child: CircularProgressIndicator(
                 strokeWidth: 2.4,
-                color: Colors.white,
+                // Match the button's foreground so the spinner stays visible on
+                // the filled surface in every theme (a hardcoded white vanished
+                // on Deep Signal's near-white dark-mode button).
+                color: Theme.of(context).colorScheme.onPrimary,
               ),
             )
           : Text(label),

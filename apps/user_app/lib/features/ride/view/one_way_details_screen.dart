@@ -7,15 +7,19 @@ import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/one_way_details_view_model.dart';
 import 'one_way_review_screen.dart';
-import 'widgets/car_options_fields.dart';
+import 'widgets/add_car_sheet.dart';
+import 'widgets/car_selector_field.dart';
+import 'widgets/route_map.dart';
 import 'widgets/route_summary.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
+import 'widgets/ride_theme.dart';
 
 /// The One-Way "trip details" step: when to go and which car.
 ///
 /// Given the confirmed [start] and [destination], the customer picks a start
-/// date/time and the car type/transmission — with no drive-time lookups while
+/// date/time and one of their saved cars (adding a car inline when needed) —
+/// with no drive-time lookups while
 /// they change their mind. Continuing pushes [OneWayReviewScreen], which
 /// fetches the estimate once for the settled departure and owns the final
 /// confirmation; the confirmed [OneWayTrip] is then handed back via
@@ -75,14 +79,31 @@ class OneWayDetailsScreen extends ConsumerWidget {
     Navigator.of(context).pop(trip);
   }
 
+  /// Opens the add-car sheet and selects whatever car it saved.
+  Future<void> _addCar(BuildContext context, WidgetRef ref) async {
+    final car = await showAddCarSheet(context);
+    if (car == null || !context.mounted) return;
+    ref
+        .read(
+          oneWayDetailsViewModelProvider((
+            start: start,
+            destination: destination,
+          )),
+        )
+        .selectCar(car);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(
       oneWayDetailsViewModelProvider((start: start, destination: destination)),
     );
+    final savedCars = ref.watch(savedCarsViewModelProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return Theme(
+      data: rideSurfaceTheme(context),
+      child: Scaffold(
       appBar: AppBar(title: const Text('Trip details')),
       body: SafeArea(
         child: Center(
@@ -98,6 +119,13 @@ class OneWayDetailsScreen extends ConsumerWidget {
                         startAddress: vm.start.address,
                         destinationAddress: vm.destination.address,
                       ),
+                      const SizedBox(height: 12),
+                      RouteMap(
+                        start: vm.start.point,
+                        destination: vm.destination.point,
+                        startLabel: vm.start.address,
+                        destinationLabel: vm.destination.address,
+                      ),
                       const SizedBox(height: 24),
                       _Section(
                         title: 'When?',
@@ -111,12 +139,15 @@ class OneWayDetailsScreen extends ConsumerWidget {
                       const SizedBox(height: 24),
                       _Section(
                         title: 'Which car?',
-                        subtitle: 'Pick the car type and gearbox.',
-                        child: CarOptionsFields(
-                          carType: vm.carType,
-                          transmission: vm.transmission,
-                          onCarTypeChanged: vm.selectCarType,
-                          onTransmissionChanged: vm.selectTransmission,
+                        subtitle: 'The driver drives your car — pick one.',
+                        child: CarSelectorField(
+                          cars: savedCars.cars,
+                          selected: vm.car,
+                          isLoading: savedCars.isLoading,
+                          loadFailed: savedCars.loadFailed,
+                          onSelected: vm.selectCar,
+                          onRetry: savedCars.load,
+                          onAddCar: () => _addCar(context, ref),
                         ),
                       ),
                     ],
@@ -131,7 +162,7 @@ class OneWayDetailsScreen extends ConsumerWidget {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            'Choose a car type to continue.',
+                            'Choose your car to continue.',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
@@ -151,6 +182,7 @@ class OneWayDetailsScreen extends ConsumerWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../data/location_repository.dart';
 import '../domain/pickup_location.dart';
 import '../domain/place_suggestion.dart';
+import '../domain/service_area.dart';
 
 /// Drives the "set your pickup" step.
 ///
@@ -104,7 +105,8 @@ class PickupSelectionViewModel extends ChangeNotifier {
   /// Adopts [suggestion] as the pickup and returns it so the view can act on
   /// the choice at once. Ola predictions carry coordinates; a prediction
   /// without them can't be pinned, so we surface an error and return null
-  /// rather than guess.
+  /// rather than guess. A place outside the [ServiceArea] is refused the same
+  /// way.
   PickupLocation? selectSuggestion(PlaceSuggestion suggestion) {
     _debounceTimer?.cancel();
     _searchSeq++; // stop any in-flight search from claiming the results
@@ -116,8 +118,7 @@ class PickupSelectionViewModel extends ChangeNotifier {
       return null;
     }
 
-    _error = null;
-    return _applySelection(
+    return _selectWithinArea(
       PickupLocation(
         address: suggestion.address,
         point: point,
@@ -135,7 +136,7 @@ class PickupSelectionViewModel extends ChangeNotifier {
     _error = null;
     _notify();
     try {
-      return _applySelection(await _repository.currentLocation());
+      return _selectWithinArea(await _repository.currentLocation());
     } on LocationException catch (e) {
       _error = e.message;
       return null;
@@ -146,22 +147,35 @@ class PickupSelectionViewModel extends ChangeNotifier {
   }
 
   /// Picks a saved recent as the pickup. No network call — recents already
-  /// carry their coordinates.
-  PickupLocation selectRecent(PickupLocation pickup) {
+  /// carry their coordinates. Null when the recent lies outside the
+  /// [ServiceArea] (e.g. a place saved before the area was narrowed).
+  PickupLocation? selectRecent(PickupLocation pickup) {
     _debounceTimer?.cancel();
     _searchSeq++;
-    _error = null;
-    return _applySelection(pickup);
+    return _selectWithinArea(pickup);
   }
 
   /// Adopts a pickup the customer pinned on the map. Already resolved to an
-  /// address + coordinates by the map step, so — like a recent — it needs no
-  /// further lookup.
-  PickupLocation selectFromMap(PickupLocation pickup) {
+  /// address + coordinates by the map step (which itself blocks out-of-area
+  /// pins), so — like a recent — it needs no further lookup; the area check is
+  /// re-applied defensively. Null when out of area.
+  PickupLocation? selectFromMap(PickupLocation pickup) {
     _debounceTimer?.cancel();
     _searchSeq++;
+    return _selectWithinArea(pickup);
+  }
+
+  /// Adopts [location] as the selection when it's inside the [ServiceArea];
+  /// otherwise leaves the selection untouched, surfaces [ServiceArea.outsideMessage]
+  /// and returns null. The single gate every pickup source passes through.
+  PickupLocation? _selectWithinArea(PickupLocation location) {
+    if (!ServiceArea.contains(location.point)) {
+      _error = ServiceArea.outsideMessage;
+      _notify();
+      return null;
+    }
     _error = null;
-    return _applySelection(pickup);
+    return _applySelection(location);
   }
 
   /// Persists the current selection to recents. Best-effort: a failed save must

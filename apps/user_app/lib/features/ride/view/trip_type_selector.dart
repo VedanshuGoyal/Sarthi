@@ -27,6 +27,12 @@ class TripTypeSelector extends ConsumerWidget {
   /// Presentation for each [TripType], in display order.
   static const _options = <(TripType, IconData, String, String)>[
     (
+      TripType.oneWay,
+      Icons.arrow_right_alt,
+      'One-Way Trip',
+      'A single drive from your starting point to a destination.',
+    ),
+    (
       TripType.roundTrip,
       Icons.sync_alt,
       'Round Trip',
@@ -37,12 +43,6 @@ class TripTypeSelector extends ConsumerWidget {
       Icons.alt_route,
       'Multi-Stop Trip',
       'One booking that visits several stops in sequence.',
-    ),
-    (
-      TripType.oneWay,
-      Icons.arrow_right_alt,
-      'One-Way Trip',
-      'A single drive from your starting point to a destination.',
     ),
   ];
 

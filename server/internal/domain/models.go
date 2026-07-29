@@ -84,6 +84,51 @@ type RecentPickup struct {
 	UsedAt  time.Time `json:"usedAt"`
 }
 
+// CarType is the class of car a customer can register and book with.
+type CarType string
+
+const (
+	CarTypeHatchback CarType = "hatchback"
+	CarTypeSedan     CarType = "sedan"
+	CarTypeSUV       CarType = "suv"
+	CarTypeLuxury    CarType = "luxury"
+)
+
+// CarTransmission is the gearbox of a customer's car, which decides what a
+// driver must be able to drive.
+type CarTransmission string
+
+const (
+	TransmissionAutomatic CarTransmission = "automatic"
+	TransmissionManual    CarTransmission = "manual"
+)
+
+// Car is a customer's saved car. Sarthi drivers drive the customer's own car,
+// so a booking picks one of these instead of re-describing the car each trip.
+// PostgreSQL is the source of truth. Registration is the normalised plate
+// (uppercase, separators stripped, e.g. "KA01AB1234").
+type Car struct {
+	ID           string          `json:"id"`
+	Registration string          `json:"registration"`
+	CarType      CarType         `json:"carType"`
+	Transmission CarTransmission `json:"transmission"`
+	CreatedAt    time.Time       `json:"createdAt"`
+}
+
+// Booking is a confirmed trip request submitted from the customer app. Until
+// matchmaking and the ride pipeline exist, PostgreSQL is the source of truth
+// for what the customer asked for. TripType is "roundTrip", "oneWay" or
+// "multiStop"; Details is the schemaless per-trip-type payload the app sent,
+// persisted verbatim as JSONB so the pipeline can be designed against real
+// bookings.
+type Booking struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"userId"`
+	TripType  string         `json:"tripType"`
+	Details   map[string]any `json:"details"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
 // Ride is a single trip request and its full lifecycle. Completed rides are the
 // source of truth for financials, so monetary amounts are stored as integer
 // minor units (cents) to avoid floating-point drift.

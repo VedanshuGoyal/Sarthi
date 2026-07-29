@@ -48,21 +48,25 @@ void main() {
       ).throws<OtpInvalidatedException>();
     });
 
-    test('otp_resend_locked maps to OtpResendLockedException with retryAfter', () async {
-      final repo = AuthRepository(
-        client: _clientReturning(429, {
-          'error': 'too many code requests; try again in 30 minutes or restart',
-          'code': 'otp_resend_locked',
-          'retryAfterSeconds': 1800,
-        }),
-      );
+    test(
+      'otp_resend_locked maps to OtpResendLockedException with retryAfter',
+      () async {
+        final repo = AuthRepository(
+          client: _clientReturning(429, {
+            'error':
+                'too many code requests; try again in 30 minutes or restart',
+            'code': 'otp_resend_locked',
+            'retryAfterSeconds': 1800,
+          }),
+        );
 
-      final error = await _capture(repo.resendOtp('+919876543210'));
-      check(error)
-          .isA<OtpResendLockedException>()
-          .has((e) => e.retryAfter, 'retryAfter')
-          .equals(const Duration(seconds: 1800));
-    });
+        final error = await _capture(repo.resendOtp('+919876543210'));
+        check(error)
+            .isA<OtpResendLockedException>()
+            .has((e) => e.retryAfter, 'retryAfter')
+            .equals(const Duration(seconds: 1800));
+      },
+    );
 
     test('an unrecognised error falls back to a plain AuthException', () async {
       final repo = AuthRepository(
@@ -71,7 +75,9 @@ void main() {
 
       final error = await _capture(repo.resendOtp('+919876543210'));
       // A bare AuthException, not one of the OTP subtypes.
-      check(error).isA<AuthException>().has((e) => e.message, 'message').equals('boom');
+      check(
+        error,
+      ).isA<AuthException>().has((e) => e.message, 'message').equals('boom');
       check(error).not((it) => it.isA<OtpResendLockedException>());
     });
   });

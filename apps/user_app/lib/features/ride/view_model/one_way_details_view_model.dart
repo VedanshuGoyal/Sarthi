@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
 
-import '../domain/car_type.dart';
+import '../domain/car.dart';
 import '../domain/one_way_trip.dart';
 import '../domain/pickup_location.dart';
 import '../domain/scheduling.dart' as scheduling;
-import '../domain/transmission.dart';
 
 /// Drives the One-Way "trip details" step (when the trip starts, which car).
 ///
@@ -13,7 +12,9 @@ import '../domain/transmission.dart';
 /// deliberately makes no drive-time request — the customer settles the start
 /// time and car freely here, and only the review step that follows spends an
 /// API call, once, on the departure they actually chose. The step is done when
-/// a car type is picked; [draft] then carries the choices forward.
+/// a saved car is picked; [draft] then carries the choices forward. The
+/// saved-car *list* lives in the saved-cars view model; this one only holds
+/// which car was picked.
 class OneWayDetailsViewModel extends ChangeNotifier {
   /// [route] is the start/destination pair from the previous steps. The
   /// `initial*` seams let previews and tests start in a given state without
@@ -21,11 +22,9 @@ class OneWayDetailsViewModel extends ChangeNotifier {
   OneWayDetailsViewModel({
     required this.route,
     DateTime? initialScheduledAt,
-    CarType? initialCarType,
-    Transmission initialTransmission = Transmission.automatic,
+    Car? initialCar,
   }) : _scheduledAt = initialScheduledAt ?? scheduling.defaultScheduledAt(),
-       _carType = initialCarType,
-       _transmission = initialTransmission;
+       _car = initialCar;
 
   final OneWayRoute route;
 
@@ -42,27 +41,20 @@ class OneWayDetailsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  CarType? _carType;
-  CarType? get carType => _carType;
+  Car? _car;
 
-  void selectCarType(CarType type) {
-    if (_carType == type) return;
-    _carType = type;
-    notifyListeners();
-  }
+  /// The saved car picked for this trip; null until the customer picks one.
+  Car? get car => _car;
 
-  Transmission _transmission;
-  Transmission get transmission => _transmission;
-
-  void selectTransmission(Transmission value) {
-    if (_transmission == value) return;
-    _transmission = value;
+  void selectCar(Car car) {
+    if (_car == car) return;
+    _car = car;
     notifyListeners();
   }
 
   /// True once every required choice is made — gates the CTA. The start time
-  /// and transmission always have a value, so only a car type must be chosen.
-  bool get canContinue => _carType != null;
+  /// always has a value, so only a car must be chosen.
+  bool get canContinue => _car != null;
 
   /// The choices to hand to the review step, or null until [canContinue].
   OneWayDraft? get draft => canContinue
@@ -70,8 +62,7 @@ class OneWayDetailsViewModel extends ChangeNotifier {
           start: start,
           destination: destination,
           scheduledAt: _scheduledAt,
-          carType: _carType!,
-          transmission: _transmission,
+          car: _car!,
         )
       : null;
 }

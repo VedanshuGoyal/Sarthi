@@ -9,6 +9,7 @@ import 'package:user_app/features/ride/data/recent_locations_storage.dart';
 import 'package:user_app/features/ride/data/recent_pickups_api.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
+import 'package:user_app/features/ride/domain/service_area.dart';
 
 /// Builds a repository over a [MockClient] that records the last request and
 /// replies with [responder]. [tokenProvider] defaults to a canned token.
@@ -41,7 +42,7 @@ class _MemoryRecentsStorage implements RecentLocationsStorage {
 
 PickupLocation _pickup(String address, {String? placeId}) => PickupLocation(
   address: address,
-  point: const GeoPoint(latitude: 12.9, longitude: 77.6),
+  point: const GeoPoint(latitude: 28.6139, longitude: 77.2090),
   placeId: placeId,
 );
 
@@ -170,13 +171,13 @@ void main() {
             'predictions': [
               {
                 'place_id': 'p1',
-                'description': 'MG Road, Bengaluru',
+                'description': 'Connaught Place, New Delhi',
                 'structured_formatting': {
-                  'main_text': 'MG Road',
-                  'secondary_text': 'Bengaluru',
+                  'main_text': 'Connaught Place',
+                  'secondary_text': 'New Delhi',
                 },
                 'geometry': {
-                  'location': {'lat': 12.97, 'lng': 77.6},
+                  'location': {'lat': 28.6315, 'lng': 77.2167},
                 },
               },
             ],
@@ -193,10 +194,44 @@ void main() {
       check(request.url.queryParameters['input']).equals('MG Road');
       check(request.url.queryParameters).not((q) => q.containsKey('api_key'));
       check(request.headers['Authorization']).equals('Bearer test-token');
+      // With no explicit bias, search is biased to the service-area centre.
+      check(
+        request.url.queryParameters['location'],
+      ).equals(ServiceArea.center.toLatLngParam());
 
       check(results).length.equals(1);
-      check(results.single.primaryText).equals('MG Road');
-      check(results.single.point?.latitude).equals(12.97);
+      check(results.single.primaryText).equals('Connaught Place');
+      check(results.single.point?.latitude).equals(28.6315);
+    });
+
+    test('drops predictions outside the service area', () async {
+      final repo = _repo(
+        (_) => http.Response(
+          jsonEncode({
+            'predictions': [
+              {
+                'place_id': 'far',
+                'description': 'MG Road, Bengaluru',
+                'geometry': {
+                  'location': {'lat': 12.97, 'lng': 77.6},
+                },
+              },
+              {
+                'place_id': 'near',
+                'description': 'India Gate, New Delhi',
+                'geometry': {
+                  'location': {'lat': 28.6129, 'lng': 77.2295},
+                },
+              },
+            ],
+          }),
+          200,
+        ),
+      );
+
+      final results = await repo.autocomplete('Road');
+
+      check(results.map((s) => s.placeId).toList()).deepEquals(['near']);
     });
 
     test('returns empty for a too-short query without a request', () async {
@@ -229,7 +264,10 @@ void main() {
         (_) => http.Response(
           jsonEncode({
             'results': [
-              {'formatted_address': '12 MG Road, Bengaluru', 'place_id': 'p9'},
+              {
+                'formatted_address': '12 Connaught Place, New Delhi',
+                'place_id': 'p9',
+              },
             ],
           }),
           200,
@@ -238,11 +276,13 @@ void main() {
       );
 
       final pickup = await repo.reverseGeocode(
-        const GeoPoint(latitude: 12.97, longitude: 77.6),
+        const GeoPoint(latitude: 28.6315, longitude: 77.2167),
       );
 
-      check(captured.single.url.queryParameters['latlng']).equals('12.97,77.6');
-      check(pickup.address).equals('12 MG Road, Bengaluru');
+      check(
+        captured.single.url.queryParameters['latlng'],
+      ).equals('28.6315,77.2167');
+      check(pickup.address).equals('12 Connaught Place, New Delhi');
       check(pickup.placeId).equals('p9');
     });
 
@@ -265,7 +305,7 @@ void main() {
           (_) async => http.Response(
             jsonEncode({
               'results': [
-                {'formatted_address': 'Home, Bengaluru'},
+                {'formatted_address': 'Home, New Delhi'},
               ],
             }),
             200,
@@ -274,11 +314,11 @@ void main() {
         tokenProvider: () async => 'test-token',
         baseUrl: 'https://maps.test',
         positionFetcher: () async =>
-            const GeoPoint(latitude: 12.9, longitude: 77.6),
+            const GeoPoint(latitude: 28.6139, longitude: 77.2090),
       );
 
       final pickup = await repo.currentLocation();
-      check(pickup.address).equals('Home, Bengaluru');
+      check(pickup.address).equals('Home, New Delhi');
     });
 
     test('propagates a permission failure from the fetcher', () async {
@@ -292,8 +332,8 @@ void main() {
   });
 
   group('LocationRepository.travelTime', () {
-    const start = GeoPoint(latitude: 12.9756, longitude: 77.6068);
-    const destination = GeoPoint(latitude: 13.1986, longitude: 77.7066);
+    const start = GeoPoint(latitude: 28.6315, longitude: 77.2167);
+    const destination = GeoPoint(latitude: 28.5562, longitude: 77.1);
 
     /// A one-route Routes API body with the given protobuf-style duration.
     String routesBody(String duration) => jsonEncode({
@@ -332,10 +372,10 @@ void main() {
         check(request.method).equals('POST');
         check(request.url.host).equals('maps.test');
         check(request.url.path).equals('/routing/v1/directions');
-        check(request.url.queryParameters['origin']).equals('12.9756,77.6068');
+        check(request.url.queryParameters['origin']).equals('28.6315,77.2167');
         check(
           request.url.queryParameters['destination'],
-        ).equals('13.1986,77.7066');
+        ).equals('28.5562,77.1');
         check(request.headers['Authorization']).equals('Bearer test-token');
 
         check(eta).equals(const Duration(hours: 1, minutes: 25));
@@ -372,8 +412,8 @@ void main() {
       final latLng =
           (origin['location'] as Map<String, dynamic>)['latLng']
               as Map<String, dynamic>;
-      check(latLng['latitude']).equals(12.9756);
-      check(latLng['longitude']).equals(77.6068);
+      check(latLng['latitude']).equals(28.6315);
+      check(latLng['longitude']).equals(77.2167);
 
       check(eta).equals(const Duration(hours: 1, minutes: 25));
     });

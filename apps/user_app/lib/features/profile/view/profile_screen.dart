@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../auth/domain/auth_user.dart';
+import 'widgets/saved_cars_section.dart';
 import 'widgets/user_avatar.dart';
 
-/// The customer's account page: who Sarthi thinks they are, plus the way out.
+/// The customer's account page: who Sarthi thinks they are, their saved cars,
+/// plus the way out.
 ///
-/// Render-only per the widget guideline: it displays the [AuthUser] it is
-/// given and emits [onLogout] — the owner handles session teardown and
-/// navigation. Editing profile details is a later feature; today the fields
-/// are read-only. Body is width-capped and centred on large screens per the
-/// responsive guide.
+/// It displays the [AuthUser] it is given and emits [onLogout] — the owner
+/// handles session teardown and navigation. The saved-cars block manages
+/// itself through the shared saved-cars view model. Editing profile details is
+/// a later feature; today those fields are read-only. Body is width-capped and
+/// centred on large screens per the responsive guide.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key, required this.user, this.onLogout});
 
@@ -75,6 +77,8 @@ class ProfileScreen extends StatelessWidget {
                   label: 'Date of birth',
                   value: _formatDate(user.dateOfBirth),
                 ),
+                const SizedBox(height: 24),
+                const SavedCarsSection(),
                 if (onLogout != null) ...[
                   const SizedBox(height: 32),
                   OutlinedButton.icon(

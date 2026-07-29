@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../data/location_repository.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
+import '../domain/service_area.dart';
 
 /// Drives the "pin your spot on the map" step.
 ///
@@ -27,11 +28,9 @@ class MapPickupViewModel extends ChangeNotifier {
   final LocationRepository _repository;
 
   /// Fallback camera target when the device location is unknown or refused —
-  /// a country-level view of India, matching the service area.
-  static const GeoPoint defaultCenter = GeoPoint(
-    latitude: 22.5937,
-    longitude: 78.9629,
-  );
+  /// the centre of the served area (Delhi NCR), so the picker opens on a spot
+  /// the customer can actually book from.
+  static const GeoPoint defaultCenter = ServiceArea.center;
 
   /// Guards against out-of-order reverse-geocodes: only the newest resolve may
   /// write, so a slow earlier request can't clobber a faster later one.
@@ -140,8 +139,15 @@ class MapPickupViewModel extends ChangeNotifier {
     try {
       final pickup = await _repository.reverseGeocode(point);
       if (seq != _resolveSeq) return; // superseded by a newer settle
-      _resolved = pickup;
-      _error = null;
+      if (!ServiceArea.contains(pickup.point)) {
+        // Pinned outside Delhi NCR: no confirmable pickup, but the customer can
+        // keep panning back into the served area.
+        _resolved = null;
+        _error = ServiceArea.outsideMessage;
+      } else {
+        _resolved = pickup;
+        _error = null;
+      }
     } on LocationException catch (e) {
       if (seq != _resolveSeq) return;
       _resolved = null;

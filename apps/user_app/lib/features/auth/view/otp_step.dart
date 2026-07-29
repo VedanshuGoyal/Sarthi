@@ -97,7 +97,8 @@ class _OtpStepState extends ConsumerState<OtpStep> {
     // Resend cap hit: locked until the countdown clears, or restart now.
     if (vm.isResendLocked) {
       return _Notice(
-        message: 'Too many code requests. Try again in '
+        message:
+            'Too many code requests. Try again in '
             '${_formatCountdown(vm.resendCountdown)}, or start over.',
         actionLabel: 'Start over',
         onAction: vm.isLoading ? null : vm.back,

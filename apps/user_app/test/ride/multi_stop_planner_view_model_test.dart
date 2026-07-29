@@ -5,18 +5,18 @@ import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
 
 const _start = PickupLocation(
-  address: 'MG Road, Bengaluru',
-  point: GeoPoint(latitude: 12.9756, longitude: 77.6068),
+  address: 'Connaught Place, New Delhi',
+  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
 );
 
 const _pharmacy = PickupLocation(
-  address: 'Apollo Pharmacy, Indiranagar',
-  point: GeoPoint(latitude: 12.9719, longitude: 77.6412),
+  address: 'Apollo Pharmacy, Lajpat Nagar',
+  point: GeoPoint(latitude: 28.5677, longitude: 77.2433),
 );
 
 const _office = PickupLocation(
-  address: 'Passport Seva Kendra, Lalbagh Road',
-  point: GeoPoint(latitude: 12.9581, longitude: 77.5850),
+  address: 'Passport Seva Kendra, Bhikaji Cama Place, New Delhi',
+  point: GeoPoint(latitude: 28.5679, longitude: 77.1859),
 );
 
 final _nineAm = DateTime(2026, 7, 18, 9);

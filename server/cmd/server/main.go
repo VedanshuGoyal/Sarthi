@@ -82,12 +82,17 @@ func run() error {
 		repository.NewRecentPickupRepository(pool),
 	)
 
-	// Confirmed bookings: log-only for now; persistence/matchmaking come later.
-	bookings := service.NewBookingService()
+	// Saved cars: the customer's own cars a driver is hired to drive, picked
+	// from a dropdown when booking. PostgreSQL is the source of truth.
+	cars := service.NewCarService(repository.NewCarRepository(pool))
+
+	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
+	// what the customer asked for. Matchmaking comes later.
+	bookings := service.NewBookingService(repository.NewBookingRepository(pool))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(authService, sessions, recentPickups, bookings),
+		Handler:           api.NewRouter(authService, sessions, recentPickups, cars, bookings),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

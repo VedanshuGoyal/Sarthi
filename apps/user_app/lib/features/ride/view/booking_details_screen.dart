@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../domain/car_type.dart';
 import '../domain/pickup_location.dart';
 import '../domain/round_trip_booking.dart';
-import '../domain/transmission.dart';
 import '../ride_providers.dart';
 import '../view_model/booking_details_view_model.dart';
-import 'widgets/car_options_fields.dart';
+import 'widgets/add_car_sheet.dart';
+import 'widgets/car_selector_field.dart';
 import 'widgets/fare_summary.dart';
+import 'widgets/ride_theme.dart';
+import 'widgets/vast_quiet/vast_quiet.dart';
 import 'widgets/hours_selector.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
@@ -17,8 +18,8 @@ import 'widgets/time_slot_picker.dart';
 /// Step 3 of a Round Trip booking: how long, when, and what kind of car.
 ///
 /// Given the confirmed [pickup], the customer picks the hire duration, a start
-/// date/time, and a [CarType] and [Transmission] from the same compact
-/// dropdowns One-Way uses. On confirm the assembled
+/// date/time, and one of their saved cars from the same dropdown One-Way uses
+/// (adding a car inline when needed). On confirm the assembled
 /// [RoundTripBooking] is handed back via [onConfirmed]. State lives in
 /// [bookingDetailsViewModelProvider], keyed on the pickup; this view only
 /// renders it and drives the date/time pickers.
@@ -90,12 +91,22 @@ class BookingDetailsScreen extends ConsumerWidget {
     );
   }
 
+  /// Opens the add-car sheet and selects whatever car it saved.
+  Future<void> _addCar(BuildContext context, WidgetRef ref) async {
+    final car = await showAddCarSheet(context);
+    if (car == null || !context.mounted) return;
+    ref.read(bookingDetailsViewModelProvider(pickup)).selectCar(car);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(bookingDetailsViewModelProvider(pickup));
+    final savedCars = ref.watch(savedCarsViewModelProvider);
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return Theme(
+      data: rideSurfaceTheme(context),
+      child: Scaffold(
       appBar: AppBar(title: const Text('Trip details')),
       body: SafeArea(
         child: Center(
@@ -135,12 +146,15 @@ class BookingDetailsScreen extends ConsumerWidget {
                       const SizedBox(height: 24),
                       _Section(
                         title: 'Which car?',
-                        subtitle: 'Pick the car type and gearbox.',
-                        child: CarOptionsFields(
-                          carType: vm.carType,
-                          transmission: vm.transmission,
-                          onCarTypeChanged: vm.selectCarType,
-                          onTransmissionChanged: vm.selectTransmission,
+                        subtitle: 'The driver drives your car — pick one.',
+                        child: CarSelectorField(
+                          cars: savedCars.cars,
+                          selected: vm.car,
+                          isLoading: savedCars.isLoading,
+                          loadFailed: savedCars.loadFailed,
+                          onSelected: vm.selectCar,
+                          onRetry: savedCars.load,
+                          onAddCar: () => _addCar(context, ref),
                         ),
                       ),
                     ],
@@ -164,7 +178,7 @@ class BookingDetailsScreen extends ConsumerWidget {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            'Choose a car type to continue.',
+                            'Choose your car to continue.',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
@@ -185,6 +199,7 @@ class BookingDetailsScreen extends ConsumerWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -202,7 +217,7 @@ class _PickupSummary extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: SarthiColors.ultramarineWash,
+        color: RideSurfaces.washOf(context),
         borderRadius: BorderRadius.circular(SarthiTheme.radius),
       ),
       child: Row(

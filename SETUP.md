@@ -251,6 +251,28 @@ signing SHA-1). Without a key the app still runs — the map just shows blank
 tiles. (Web/`chrome` maps need the JS SDK in `web/index.html` and aren't wired
 yet.)
 
+#### Advanced markers (optional)
+
+The route-overview map (`RouteMap`) can render Google's **advanced markers** —
+higher-performance pins with richer styling — instead of legacy markers. They
+require a **cloud Map ID** (Google Cloud console → *Maps → Map management*).
+Create one **per platform you target** (Map type *Android* and/or *iOS*; *and*
+a *JavaScript* Map ID if you also run the web build), then pass it as a define.
+Unlike `MAPS_API_KEY`, the Map ID reaches the map through the plugin at
+runtime, so `--dart-define` *does* carry it to Android and iOS:
+
+```bash
+# apps/user_app/.env  (git-ignored) — consumed by --dart-define-from-file
+MAPS_MAP_ID=your_map_id
+```
+
+When set, `RouteMap` builds `AdvancedMarker`s on a Map-ID'd map; when unset it
+transparently falls back to legacy markers, so the Map ID is optional and
+nothing breaks without it. Requirements: Android needs the upgraded map
+renderer (default since Maps SDK 18.2.0, which the plugin already uses); on the
+web this also replaces the deprecated `google.maps.Marker` and clears its
+console warning.
+
 ## Verified end-to-end (2026-06-27)
 
 `colima start` → `docker compose up -d` → `go run ./cmd/server`, then the

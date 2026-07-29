@@ -19,11 +19,18 @@ func NewBookingHandler(svc *service.BookingService) *BookingHandler {
 }
 
 // bookingRequest is the POST body for a confirmed booking. Details is kept
-// schemaless on purpose: the service only records it for now, and each trip
-// type carries a different shape.
+// schemaless on purpose: it is stored verbatim as JSONB, and each trip type
+// carries a different shape.
 type bookingRequest struct {
 	TripType string         `json:"tripType"`
 	Details  map[string]any `json:"details"`
+}
+
+// bookingResponse confirms a stored booking, naming the id the app can use to
+// refer to it once ride tracking exists.
+type bookingResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // Submit handles POST /me/bookings.
@@ -34,7 +41,7 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details)
+	booking, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details)
 	if errors.Is(err, service.ErrInvalidBooking) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -43,5 +50,5 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not record booking")
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "received"})
+	writeJSON(w, http.StatusAccepted, bookingResponse{ID: booking.ID, Status: "received"})
 }

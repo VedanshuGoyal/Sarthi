@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_controller.dart';
 import 'data/booking_repository.dart';
+import 'data/cars_api.dart';
+import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'data/recent_pickups_api.dart';
 import 'domain/one_way_trip.dart';
@@ -12,6 +14,7 @@ import 'view_model/multi_stop_planner_view_model.dart';
 import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
+import 'view_model/saved_cars_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
 /// The trip-type chooser's view model.
@@ -45,6 +48,27 @@ final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });
+
+/// The data seam for the customer's saved cars: on-device storage first, the
+/// backend (authenticated with the current session token, read on demand like
+/// the recents API) only for changes or an empty cache. Overridden in previews
+/// and tests with a fake so no real request or platform storage is touched.
+final carsRepositoryProvider = Provider<CarsRepository>((ref) {
+  return CarsRepository(
+    api: CarsApi(
+      tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
+    ),
+  );
+});
+
+/// The saved-cars view model, shared by the booking steps' dropdown and the
+/// profile screen's "My cars" list. Loads the (locally mirrored) list as soon
+/// as a screen needs it; `autoDispose` drops it once no screen is listening.
+final savedCarsViewModelProvider =
+    ChangeNotifierProvider.autoDispose<SavedCarsViewModel>((ref) {
+      return SavedCarsViewModel(repository: ref.watch(carsRepositoryProvider))
+        ..load();
+    });
 
 /// The pickup step's view model. `autoDispose` so a customer who backs out of
 /// the pickup screen starts a fresh search next time.
