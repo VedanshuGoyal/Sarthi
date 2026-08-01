@@ -27,8 +27,8 @@ set -euo pipefail
 # Go must satisfy the `go` directive in go.mod; Ubuntu's apt ships an older one,
 # so it is installed from the official tarball instead.
 GO_VERSION="1.26.5"
-# Matches the postgres:17 image pinned in docker-compose.prod.yml, so the two
-# deployment paths do not drift apart.
+# Matches the postgres:17 image used for local development in
+# ../docker-compose.yml, so dev and production do not drift apart.
 PG_VERSION="17"
 
 # --- Paths -------------------------------------------------------------------

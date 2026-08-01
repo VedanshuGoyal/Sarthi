@@ -1,27 +1,18 @@
-# Native VPS deployment
+# VPS deployment
 
 Scripted setup for running the backend **directly on an Ubuntu 24.04 VPS** —
-no Docker. This is an alternative to the Compose stack in
-`../docker-compose.prod.yml`; pick one, not both (they compete for :80, :443
-and :5432).
+Go, PostgreSQL and Caddy under systemd, no container runtime.
 
 ```
 Internet ──▶ Caddy :80/:443 ──▶ sarthi-server :8080 ──▶ PostgreSQL 17 :5432
              (Let's Encrypt)     (systemd, user `sarthi`)  (localhost only)
 ```
 
-## Why choose this over Docker
-
-|                    | Native (this dir)                            | Docker (`../docker-compose.prod.yml`)  |
-| ------------------ | -------------------------------------------- | -------------------------------------- |
-| Inspecting the DB  | `sudo -u postgres psql sarthi`                | `docker compose exec db psql ...`      |
-| Logs               | `journalctl -u sarthi -f`                     | `docker compose logs -f server`        |
-| Rebuild            | `go build` + restart (seconds)                | image rebuild                          |
-| Memory overhead    | none                                          | daemon + 3 containers (~150–250 MB)    |
-| Reproducibility    | depends on the host                           | pinned in the image                    |
-
-Native wins on visibility and on small boxes (≤1 GB RAM). Docker wins on
-reproducibility and on hosts you do not want to modify.
+This is the only deployment path. Docker is used **for local development
+only** (`../docker-compose.yml` runs Postgres on your Mac); there is no
+container runtime on the VPS. Chosen for visibility — `psql` and `journalctl`
+work directly — and because on a small box the Docker daemon's overhead is a
+meaningful fraction of available RAM.
 
 ## Prerequisites
 
@@ -70,7 +61,7 @@ sudo ./setup-vps.sh migrations        # apply new migrations
 | Phase        | What it does                                                              |
 | ------------ | ------------------------------------------------------------------------- |
 | `go`         | Installs Go (pinned) to `/usr/local/go`; apt's is too old for `go.mod`     |
-| `postgres`   | Adds the PGDG repo, installs PostgreSQL 17 (matches the Docker image tag)  |
+| `postgres`   | Adds the PGDG repo, installs PostgreSQL 17 (matches the local dev image)   |
 | `database`   | Creates/updates the `sarthi` role + database, verifies TCP auth            |
 | `migrations` | Replays `../migrations/*.up.sql` in order                                  |
 | `build`      | `go build` → `/opt/sarthi/bin/sarthi-server`                               |

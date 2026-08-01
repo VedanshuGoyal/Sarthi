@@ -3,10 +3,24 @@
 Go REST API for phone-number registration, backed by PostgreSQL (the source of
 truth for accounts). Real-time GPS/matchmaking lives in `internal/memstore`.
 
-## Run it
+## Run it (local development)
+
+Local development uses Docker for Postgres only — the Go server runs on the
+host. (Production is different: the VPS runs everything natively, no Docker —
+see [Deploying to a VPS](#deploying-to-a-vps).)
+
+The one-liner, which starts Postgres, waits for it, applies every migration and
+then runs the server:
 
 ```bash
-# 1. Start Postgres (creates the `users` table on first boot).
+./scripts/run-backend.sh
+# → listening on :8080
+```
+
+Or by hand:
+
+```bash
+# 1. Start Postgres (creates the full schema on first boot).
 docker compose up -d
 
 # 2. Point the server at it and run.
@@ -14,6 +28,13 @@ export DATABASE_URL='postgres://sarthi:sarthi@localhost:5432/sarthi?sslmode=disa
 go run ./cmd/server
 # → listening on :8080
 ```
+
+On macOS the Docker daemon comes from Colima — see [SETUP.md](../SETUP.md).
+
+The compose file seeds the schema via Postgres' init hook, which only fires on
+an **empty** data volume. If you already have a DB and a new migration lands,
+use `./scripts/run-backend.sh` (it replays all of them, idempotently) or apply
+it by hand as below.
 
 ### SMS OTP (Fast2SMS)
 
@@ -94,48 +115,32 @@ curl -s localhost:8080/users | jq
 
 ## Deploying to a VPS
 
-Two supported paths — pick one, they compete for ports :80, :443 and :5432:
-
-| Path | Use when |
-| ---- | -------- |
-| **[Native (scripted)](deploy/README.md)** — `sudo deploy/setup-vps.sh` | You want direct `psql`/`journalctl` access, or the box is small (≤1 GB RAM). One idempotent script does everything below automatically. |
-| **Docker Compose** (this section) | You want the runtime pinned in an image and the host left untouched. |
-
-### Docker Compose
-
-One-time setup on a fresh Ubuntu VPS (Hetzner/DigitalOcean/etc.):
+**No Docker in production.** The VPS runs Go, PostgreSQL 17 and Caddy directly
+under systemd; Docker is a local-development convenience only. Everything is
+scripted and idempotent:
 
 ```bash
-# On the VPS: install Docker.
-curl -fsSL https://get.docker.com | sh
-
-# Point DNS: create an A record for your domain -> the VPS's IP, then confirm
-# it resolves before starting Caddy (it needs this to issue a TLS cert):
-dig +short api.yourdomain.com
-```
-
-Ship the code and bring the stack up:
-
-```bash
-# From your machine: copy the server/ dir to the VPS (or just `git clone` the
-# repo there and cd into server/).
-rsync -av --exclude .git ./server/ user@your-vps:/opt/sarthi/server/
-
-# On the VPS, in /opt/sarthi/server:
+# On a fresh Ubuntu 24.04 box, with a DNS A record already pointing at it:
+git clone git@github.com:VedanshuGoyal/Sarthi.git
+cd Sarthi/server
 cp .env.prod.example .env.prod   # fill in DOMAIN, POSTGRES_PASSWORD, FAST2SMS_*
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-
-# Apply migrations against the running db container:
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec db \
-  psql -U sarthi -d sarthi -f - < migrations/0001_create_users.up.sql
-# repeat per migration file, in order (or install golang-migrate on the VPS
-# and point it at postgres://sarthi:$POSTGRES_PASSWORD@localhost:5432/sarthi).
+sudo deploy/setup-vps.sh
 ```
 
-Caddy handles TLS issuance/renewal and reverse-proxies both REST and WebSocket
-traffic to the `server` container — see `Caddyfile`. To ship a new version
-later: `git pull && docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build`.
+That provisions Go, Postgres, the database, migrations, the `sarthi` systemd
+unit, Caddy (Let's Encrypt TLS, REST + WebSocket), and the firewall — then
+health-checks the result and prints your `API_BASE_URL`.
+
+To ship a new version afterwards:
+
+```bash
+sudo deploy/redeploy.sh --pull   # builds, swaps, health-checks, auto-rollback
+```
+
+Re-running `setup-vps.sh` is the intended way to apply a config change, and
+individual phases can be run by name (`sudo deploy/setup-vps.sh migrations`).
+
+Full runbook, operational commands and gotchas: **[deploy/README.md](deploy/README.md)**.
 
 Before opening this up beyond your own testing: put `/users` behind auth (see
 note above), and add a periodic sweep for expired sessions.
-```

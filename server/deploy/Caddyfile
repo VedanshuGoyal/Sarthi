@@ -1,13 +1,10 @@
-# Caddy config for the NATIVE (non-Docker) deployment.
+# Caddy config for the VPS deployment.
 #
-# This is not the same file as ../Caddyfile, which targets the Docker Compose
-# stack. Two differences, both because there is no Docker network here:
+# The backend runs as a systemd unit directly on the host, not in a container,
+# so the upstream is localhost:8080 rather than a Docker service name.
 #
-#   ../Caddyfile (Docker)   reverse_proxy server:8080    <- compose service name
-#   this file    (native)   reverse_proxy localhost:8080 <- systemd unit on the host
-#
-# DOMAIN is still read from the environment, so this file stays free of any
-# specific hostname. setup-vps.sh writes it to /etc/sarthi/caddy.env and points
+# DOMAIN is read from the environment, so this file stays free of any specific
+# hostname. setup-vps.sh writes it to /etc/sarthi/caddy.env and points
 # caddy.service at that file via a systemd drop-in.
 #
 # Caddy handles HTTP->HTTPS redirect, Let's Encrypt issuance/renewal, and
