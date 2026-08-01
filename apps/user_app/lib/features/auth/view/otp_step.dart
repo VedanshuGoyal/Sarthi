@@ -3,9 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../../../core/config/api_config.dart';
 import '../auth_providers.dart';
-import '../data/auth_repository.dart';
 import '../view_model/registration_view_model.dart';
 
 /// Formats remaining [seconds] as `m:ss`, e.g. 60 → `1:00`, 9 → `0:09`.
@@ -38,7 +36,6 @@ class _OtpStepState extends ConsumerState<OtpStep> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(registrationViewModelProvider);
-    final theme = Theme.of(context);
     return SarthiFormScaffold(
       leading: BackButton(onPressed: vm.isLoading ? null : vm.back),
       title: 'Verify your number',
@@ -61,15 +58,6 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         ),
         const SizedBox(height: 12),
         _resendSection(context, vm),
-        // Development hint — shown only when the backend has no SMS provider
-        // wired up (toggle with --dart-define=SHOW_DEV_OTP_HINT=false).
-        if (ApiConfig.showDevOtpHint && !vm.isOtpInvalidated)
-          Text(
-            'For testing, use ${AuthRepository.devOtp}.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
       ],
       footer: SarthiPrimaryButton(
         label: 'Verify',

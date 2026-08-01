@@ -84,16 +84,19 @@ class _RouteMapState extends State<RouteMap> {
     }
     if (!_styleRequested) {
       _styleRequested = true;
-      DefaultAssetBundle.of(context).loadString(_mapStyleAsset).then((style) {
-        if (mounted) {
-          setState(() {
-            _mapStyle = style;
-            _map?.setMapStyle(_mapStyle);
+      DefaultAssetBundle.of(context)
+          .loadString(_mapStyleAsset)
+          .then((style) {
+            if (mounted) {
+              setState(() {
+                _mapStyle = style;
+                _map?.setMapStyle(_mapStyle);
+              });
+            }
+          })
+          .catchError((e) {
+            debugPrint('Failed to load map style: $e');
           });
-        }
-      }).catchError((e) {
-        debugPrint('Failed to load map style: $e');
-      });
     }
   }
 
@@ -106,10 +109,13 @@ class _RouteMapState extends State<RouteMap> {
     }
   }
 
-  Future<BitmapDescriptor> _createPinMarker(Color color, {double devicePixelRatio = 1.0}) async {
+  Future<BitmapDescriptor> _createPinMarker(
+    Color color, {
+    double devicePixelRatio = 1.0,
+  }) async {
     final double width = 36 * devicePixelRatio;
     final double height = 48 * devicePixelRatio;
-    
+
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder);
 
@@ -118,30 +124,36 @@ class _RouteMapState extends State<RouteMap> {
       ..strokeWidth = 2.5 * devicePixelRatio
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-      
+
     final Paint shadowPaint = Paint()
       ..color = Colors.black.withOpacity(0.4)
       ..style = PaintingStyle.fill;
-      
+
     final Paint ringPaint = Paint()
       ..color = color
       ..style = PaintingStyle.fill;
-      
+
     final Paint whiteFill = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;
-      
+
     // 1. Draw the small shadow dot at the very bottom
-    final Offset groundPoint = Offset(width / 2, height - (2 * devicePixelRatio));
-    canvas.drawOval(Rect.fromCenter(center: groundPoint, width: 8 * devicePixelRatio, height: 4 * devicePixelRatio), shadowPaint);
-    
+    final Offset groundPoint = Offset(
+      width / 2,
+      height - (2 * devicePixelRatio),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: groundPoint,
+        width: 8 * devicePixelRatio,
+        height: 4 * devicePixelRatio,
+      ),
+      shadowPaint,
+    );
+
     // 2. Draw the vertical stick (from center of head to ground point)
     final Offset circleCenter = Offset(width / 2, width / 2);
-    canvas.drawLine(
-      circleCenter,
-      groundPoint,
-      stickPaint,
-    );
+    canvas.drawLine(circleCenter, groundPoint, stickPaint);
 
     // 3. Draw the circular head
     // Outer colored ring
@@ -151,18 +163,32 @@ class _RouteMapState extends State<RouteMap> {
     // Center colored dot
     canvas.drawCircle(circleCenter, 3.5 * devicePixelRatio, ringPaint);
 
-    final ui.Image image = await pictureRecorder.endRecording().toImage(width.toInt(), height.toInt());
-    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    final ui.Image image = await pictureRecorder.endRecording().toImage(
+      width.toInt(),
+      height.toInt(),
+    );
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    return BitmapDescriptor.bytes(
+      byteData!.buffer.asUint8List(),
+      imagePixelRatio: devicePixelRatio,
+    );
   }
 
   /// Programmatically draws minimal UI markers matching the requested style.
   Future<void> _loadMarkerIcons(ImageConfiguration config) async {
     final dpr = config.devicePixelRatio ?? 2.0;
-    
-    final start = await _createPinMarker(const Color(0xFF1B8754), devicePixelRatio: dpr); // Rapido Green
-    final dest = await _createPinMarker(const Color(0xFFE2433B), devicePixelRatio: dpr); // Rapido Red
-    
+
+    final start = await _createPinMarker(
+      const Color(0xFF1B8754),
+      devicePixelRatio: dpr,
+    ); // Rapido Green
+    final dest = await _createPinMarker(
+      const Color(0xFFE2433B),
+      devicePixelRatio: dpr,
+    ); // Rapido Red
+
     if (mounted) {
       setState(() {
         _startIcon = start;
@@ -280,7 +306,7 @@ class _RouteMapState extends State<RouteMap> {
     return ClipRRect(
       borderRadius: radius,
       child: AspectRatio(
-        aspectRatio: 16 / 10,
+        aspectRatio: 21 / 9,
         child: _mapsFailed
             ? _placeholder(const Icon(Icons.map_outlined))
             : !_mapsReady

@@ -53,3 +53,7 @@ app.*.map.json
 **/.env
 .env.prod
 **/.env.prod
+
+# Built APKs from scripts/build-user-app-apk.sh — rebuild via the script
+# rather than tracking a binary in git history.
+/scripts/*.apk

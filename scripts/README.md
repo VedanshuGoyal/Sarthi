@@ -8,6 +8,7 @@ anywhere — each resolves the repo root itself. All are `chmod +x`.
 | `run-backend.sh` | Brings up Postgres (Docker), waits until it's ready, applies all `migrations/*.up.sql` (idempotent), then runs the Go API server on `:8080`. Ctrl-C stops the server; the DB container keeps running. |
 | `run-user-app.sh [device]` | Runs the customer Flutter app (`apps/user_app`) in debug. Defaults to `chrome`. |
 | `run-driver-app.sh [device]` | Runs the driver Flutter app (`apps/driver_app`) in debug. Defaults to `chrome`. |
+| `build-user-app-apk.sh [mode]` | Builds the customer app's APK against the deployed VPS backend (`DOMAIN` read from `server/.env.prod`) and copies it into `scripts/`. `release` by default, or `debug`. |
 | `status.sh` | Read-only health check: is Docker/Postgres up and is the Go server answering `/healthz`? |
 
 ## Typical session

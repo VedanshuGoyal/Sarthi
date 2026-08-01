@@ -19,14 +19,4 @@ abstract final class ApiConfig {
     }
     return 'http://localhost:8080';
   }
-
-  /// Whether to show the "for testing, use 123456" hint on the OTP screen.
-  ///
-  /// The backend accepts the fixed dev code only when it runs without an SMS
-  /// provider, so this defaults on for local dev. Build against a Fast2SMS-backed
-  /// server with `--dart-define=SHOW_DEV_OTP_HINT=false` to hide it.
-  static const bool showDevOtpHint = bool.fromEnvironment(
-    'SHOW_DEV_OTP_HINT',
-    defaultValue: true,
-  );
 }

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/brand/mojud_logo.dart';
 import '../../../core/theme/deep_signal/deep_signal.dart';
-import '../../../core/theme/deep_signal/deep_signal_gallery.dart';
 import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
@@ -236,15 +235,6 @@ class HomeScreen extends ConsumerWidget {
               title: const MojudLockup(markHeight: 22),
               actions: [
                 const ThemeModeToggle(),
-                IconButton(
-                  icon: const Icon(Icons.palette_outlined),
-                  tooltip: 'Deep Signal cards',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const DeepSignalGalleryScreen(),
-                    ),
-                  ),
-                ),
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: IconButton(
