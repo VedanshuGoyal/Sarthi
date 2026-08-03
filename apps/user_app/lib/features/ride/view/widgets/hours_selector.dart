@@ -76,17 +76,21 @@ class HoursSelector extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final value in quickHours)
-              ChoiceChip(
-                label: Text('${value}h'),
-                selected: hours == value,
-                onSelected: (_) => onQuickPick(value),
-                showCheckmark: false,
-              ),
-          ],
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final value in quickHours) ...[
+                if (value != quickHours.first) const SizedBox(width: 8),
+                ChoiceChip(
+                  label: Text('${value}h'),
+                  selected: hours == value,
+                  onSelected: (_) => onQuickPick(value),
+                  showCheckmark: false,
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );

@@ -30,6 +30,7 @@ class RouteMap extends StatefulWidget {
     required this.destination,
     this.startLabel,
     this.destinationLabel,
+    this.fullScreen = false,
   });
 
   final GeoPoint start;
@@ -38,6 +39,9 @@ class RouteMap extends StatefulWidget {
   /// Optional info-window titles for the two markers.
   final String? startLabel;
   final String? destinationLabel;
+
+  /// If true, the map is not cropped to an aspect ratio and will expand to fill its parent.
+  final bool fullScreen;
 
   @override
   State<RouteMap> createState() => _RouteMapState();
@@ -303,46 +307,53 @@ class _RouteMapState extends State<RouteMap> {
   Widget build(BuildContext context) {
     final tokens = DeepSignalTokens.of(context);
     final radius = BorderRadius.circular(DeepSignalTokens.radius);
+    
+    final Widget mapContent = _mapsFailed
+        ? _placeholder(const Icon(Icons.map_outlined))
+        : !_mapsReady
+        ? _placeholder(const CircularProgressIndicator())
+        : GoogleMap(
+            // Base map type — normal works best with JSON styling.
+            mapType: MapType.normal,
+            initialCameraPosition: CameraPosition(
+              target: LatLng(
+                (widget.start.latitude + widget.destination.latitude) / 2,
+                (widget.start.longitude + widget.destination.longitude) / 2,
+              ),
+              zoom: 11,
+            ),
+            markers: _markers,
+            // Force legacy markers so the SDK accepts our local JSON styling
+            markerType: GoogleMapMarkerType.marker,
+            mapId: null,
+            polylines: _lines(tokens.accent),
+            // A static overview: no gestures, so the parent list scrolls
+            // freely and the frame the camera picks is what the user sees.
+            zoomGesturesEnabled: widget.fullScreen,
+            scrollGesturesEnabled: widget.fullScreen,
+            rotateGesturesEnabled: widget.fullScreen,
+            tiltGesturesEnabled: widget.fullScreen,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            myLocationButtonEnabled: false,
+            onMapCreated: (map) {
+              _map = map;
+              if (_mapStyle != null) {
+                map.setMapStyle(_mapStyle);
+              }
+              _frameRoute(map);
+            },
+          );
+
+    if (widget.fullScreen) {
+      return mapContent;
+    }
+
     return ClipRRect(
       borderRadius: radius,
       child: AspectRatio(
         aspectRatio: 21 / 9,
-        child: _mapsFailed
-            ? _placeholder(const Icon(Icons.map_outlined))
-            : !_mapsReady
-            ? _placeholder(const CircularProgressIndicator())
-            : GoogleMap(
-                // Base map type — normal works best with JSON styling.
-                mapType: MapType.normal,
-                initialCameraPosition: CameraPosition(
-                  target: LatLng(
-                    (widget.start.latitude + widget.destination.latitude) / 2,
-                    (widget.start.longitude + widget.destination.longitude) / 2,
-                  ),
-                  zoom: 11,
-                ),
-                markers: _markers,
-                // Force legacy markers so the SDK accepts our local JSON styling
-                markerType: GoogleMapMarkerType.marker,
-                mapId: null,
-                polylines: _lines(tokens.accent),
-                // A static overview: no gestures, so the parent list scrolls
-                // freely and the frame the camera picks is what the user sees.
-                zoomGesturesEnabled: false,
-                scrollGesturesEnabled: false,
-                rotateGesturesEnabled: false,
-                tiltGesturesEnabled: false,
-                zoomControlsEnabled: false,
-                mapToolbarEnabled: false,
-                myLocationButtonEnabled: false,
-                onMapCreated: (map) {
-                  _map = map;
-                  if (_mapStyle != null) {
-                    map.setMapStyle(_mapStyle);
-                  }
-                  _frameRoute(map);
-                },
-              ),
+        child: mapContent,
       ),
     );
   }
