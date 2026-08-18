@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../../core/theme/deep_signal/deep_signal_theme.dart';
 import 'view/splash_screen.dart';
 
 /// Registers both Deep Signal modes so the splash renders either.

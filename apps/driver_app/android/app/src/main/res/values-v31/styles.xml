@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 replaced the windowBackground launch screen with the system
+         splash API: `@drawable/launch_background` is ignored from API 31 on,
+         and the platform draws the launcher icon on a solid colour instead.
+         @color/launch_background carries a `-night` variant, so this single
+         file brands the splash in light and dark alike (no custom animated
+         icon override — the system falls back to the launcher icon). -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+    </style>
+
+    <!-- Unchanged from values/styles.xml — repeated because a theme defined in
+         a qualified folder replaces, rather than merges with, the base one. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// **Loading skeleton.** The "finding a driver" placeholder: three shimmer bars
@@ -46,7 +46,10 @@ class _DeepSignalFindingDriverSkeletonState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.eyebrow.toUpperCase(), style: t.eyebrow(color: t.faintest)),
+          Text(
+            widget.eyebrow.toUpperCase(),
+            style: t.eyebrow(color: t.faintest),
+          ),
           const SizedBox(height: 20),
           _Bar(controller: _controller, widthFactor: 0.62, delay: 0.0),
           const SizedBox(height: DeepSignalTokens.s14),

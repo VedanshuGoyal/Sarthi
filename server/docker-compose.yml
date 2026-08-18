@@ -32,6 +32,9 @@ services:
       - ./migrations/0003_create_recent_pickups.up.sql:/docker-entrypoint-initdb.d/0003_create_recent_pickups.sql:ro
       - ./migrations/0004_create_cars.up.sql:/docker-entrypoint-initdb.d/0004_create_cars.sql:ro
       - ./migrations/0005_create_bookings.up.sql:/docker-entrypoint-initdb.d/0005_create_bookings.sql:ro
+      - ./migrations/0006_create_drivers.up.sql:/docker-entrypoint-initdb.d/0006_create_drivers.sql:ro
+      - ./migrations/0007_create_driver_sessions.up.sql:/docker-entrypoint-initdb.d/0007_create_driver_sessions.sql:ro
+      - ./migrations/0008_create_driver_kyc.up.sql:/docker-entrypoint-initdb.d/0008_create_driver_kyc.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sarthi -d sarthi"]
       interval: 5s

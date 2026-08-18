@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// **Payment method.** The one inverted card in the set — it flips against the

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../deep_signal_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// The frame every Deep Signal card shares: a [surface] fill with a 1px hairline
 /// border and the system's single 2px radius. No shadow, no gradient — surfaces
@@ -57,6 +56,8 @@ class DeepSignalDivider extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) =>
-      Container(height: 1, color: color ?? DeepSignalTokens.of(context).hairline);
+  Widget build(BuildContext context) => Container(
+    height: 1,
+    color: color ?? DeepSignalTokens.of(context).hairline,
+  );
 }

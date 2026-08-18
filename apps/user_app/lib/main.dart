@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'core/brand/mojud_brand.dart';
-import 'core/theme/deep_signal/deep_signal_theme.dart';
-import 'core/theme/theme_mode_controller.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/home_screen.dart';

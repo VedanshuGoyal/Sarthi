@@ -1,44 +1,112 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+
+import 'core/location_providers.dart';
+import 'features/auth/driver_auth_controller.dart';
+import 'features/auth/domain/driver.dart';
+import 'features/documents/document_providers.dart';
+import 'features/documents/view/document_view_screen.dart';
+import 'features/home/view/start_driving_screen.dart';
 
 /// Entry point for the Sarthi driver app.
 ///
-/// [ProviderScope] is the Riverpod root for app-wide state. The driver app
-/// shares the ultramarine (#7293F3) design scheme with the customer app via
-/// [SarthiTheme], so both feel like one product.
-void main() {
-  runApp(const ProviderScope(child: SarthiDriverApp()));
+/// The app is bootstrapped through [MCPToolkitBinding] so the flutter-mcp-toolkit
+/// server can inspect and drive it during development. This binding is a no-op in
+/// release builds. [ProviderScope] is the Riverpod root for app-wide state. The
+/// driver app shares the Deep Signal design language with the customer app —
+/// same [DeepSignalTheme], same system-setting + in-app-toggle mode switching —
+/// so both feel like one product.
+Future<void> main() async {
+  await MCPToolkitBinding.instance.bootstrapFlutter(
+    runApp: () => runApp(const ProviderScope(child: SarthiDriverApp())),
+  );
 }
 
-class SarthiDriverApp extends StatelessWidget {
+class SarthiDriverApp extends ConsumerWidget {
   const SarthiDriverApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'Sarthi Driver',
-      // Shared ultramarine (#7293F3) design scheme — common to both apps.
-      // Light is white + ultramarine; dark follows the system setting.
-      theme: SarthiTheme.light(),
-      darkTheme: SarthiTheme.dark(),
-      home: const _DriverHomePlaceholder(),
+      theme: DeepSignalTheme.light(),
+      darkTheme: DeepSignalTheme.dark(),
+      themeMode: themeMode,
+      home: const _AppRoot(),
     );
   }
 }
 
-/// Temporary landing screen. Replaced by features/home once the driver
-/// "Go Online" flow lands. The driver registration flow will reuse the shared
-/// [SarthiPhoneField] / [SarthiPrimaryButton] widgets, mirroring the customer
-/// app's onboarding.
-class _DriverHomePlaceholder extends StatelessWidget {
-  const _DriverHomePlaceholder();
+/// Routes between onboarding and the driver home based on the persistent
+/// session in [driverAuthControllerProvider]. On launch that provider hydrates
+/// from secure storage (hence the brief loading state), so a returning driver
+/// with a saved token lands straight on Home without re-registering.
+class _AppRoot extends ConsumerWidget {
+  const _AppRoot();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Fired as soon as the app starts, before auth/onboarding renders. It
+    // runs alongside session hydration below rather than gating it — a
+    // driver who denies the OS prompt still reaches onboarding/Home and is
+    // asked again (or pointed to Settings) once they try to go online.
+    ref.watch(locationPermissionProvider);
+
+    final session = ref.watch(driverAuthControllerProvider);
+    return session.when(
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      // A storage read failure just means "not logged in" — start onboarding.
+      error: (_, _) => const StartDrivingScreen(),
+      data: (session) => session == null
+          ? const StartDrivingScreen()
+          : _SignedInRoot(driver: session.driver),
+    );
+  }
+}
+
+/// Once signed in, a driver must clear the Document View's six KYC steps
+/// before reaching Home — mirrors real driver apps gating "Go Online" behind
+/// verification.
+///
+/// The gate reads the backend's KYC status, not local progress, so it survives
+/// a reinstall and can't be bypassed from the device. It currently opens as
+/// soon as the documents are submitted; once there's a review tool it should
+/// wait for [KycStatus.verified] instead.
+class _SignedInRoot extends ConsumerWidget {
+  const _SignedInRoot({required this.driver});
+
+  final Driver driver;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final submitted = ref.watch(
+      documentRegistrationViewModelProvider.select((vm) => vm.isSubmitted),
+    );
+    return submitted ? _DriverHome(driver: driver) : const DocumentViewScreen();
+  }
+}
+
+/// Temporary landing screen for a signed-in driver. Replaced by the real
+/// "Go Online" home once the map/matchmaking flow lands.
+class _DriverHome extends StatelessWidget {
+  const _DriverHome({required this.driver});
+
+  final Driver driver;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sarthi Driver')),
-      body: const Center(child: Text('Go online to start earning')),
+      appBar: AppBar(
+        title: const Text('Sarthi Driver'),
+        actions: const [ThemeModeToggle(), SizedBox(width: 4)],
+      ),
+      body: Center(
+        child: Text('Welcome, ${driver.name} — go online to start earning'),
+      ),
     );
   }
 }

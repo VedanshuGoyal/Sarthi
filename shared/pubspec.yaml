@@ -10,6 +10,15 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # --- State management ---
+  # ThemeModeController (system/light/dark toggle) is a Riverpod Notifier so
+  # both apps share one implementation of the mode-switching behaviour.
+  flutter_riverpod: ^2.6.1
+
+  # --- Type ---
+  # Deep Signal's Instrument Sans / JetBrains Mono type ramp.
+  google_fonts: ^8.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

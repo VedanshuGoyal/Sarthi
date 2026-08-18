@@ -12,8 +12,8 @@
 library;
 
 import 'package:flutter/widgets.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../theme/deep_signal/deep_signal_tokens.dart';
 import 'mojud_brand.dart';
 import 'mojud_wordmark_path.dart';
 
@@ -111,7 +111,9 @@ class MojudWordmark extends StatelessWidget {
     return _Art(
       aspect: kWordmarkAspect,
       height: height,
-      painter: _WordmarkPainter(color: color ?? DeepSignalTokens.of(context).fg),
+      painter: _WordmarkPainter(
+        color: color ?? DeepSignalTokens.of(context).fg,
+      ),
       label: MojudBrand.name,
     );
   }
@@ -257,7 +259,11 @@ class _MarkPainter extends CustomPainter {
 
     // Two verticals…
     canvas
-      ..drawLine(const Offset(_left, _top), const Offset(_left, _bottom), stroke)
+      ..drawLine(
+        const Offset(_left, _top),
+        const Offset(_left, _bottom),
+        stroke,
+      )
       ..drawLine(
         const Offset(_right, _top),
         const Offset(_right, _bottom),

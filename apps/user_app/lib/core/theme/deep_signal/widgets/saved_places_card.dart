@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// One saved place in the [DeepSignalSavedPlacesCard].
@@ -60,7 +60,10 @@ class DeepSignalSavedPlacesCard extends StatelessWidget {
               child: InkWell(
                 onTap: () => onTap(i),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 18,
+                  ),
                   child: Row(
                     children: [
                       Container(
@@ -69,7 +72,9 @@ class DeepSignalSavedPlacesCard extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           border: Border.all(color: t.soft),
-                          borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
+                          borderRadius: BorderRadius.circular(
+                            DeepSignalTokens.radius,
+                          ),
                         ),
                         child: Text(
                           places[i].tag,
@@ -81,7 +86,10 @@ class DeepSignalSavedPlacesCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(places[i].name, style: t.title(15, height: 1.2)),
+                            Text(
+                              places[i].name,
+                              style: t.title(15, height: 1.2),
+                            ),
                             const SizedBox(height: 2),
                             Text(
                               places[i].address,

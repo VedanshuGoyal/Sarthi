@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user_app/core/theme/deep_signal/deep_signal.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/core/theme/deep_signal/deep_signal_gallery.dart';
-import 'package:user_app/core/theme/theme_mode_controller.dart';
 
 /// Pumps the full card gallery under the Deep Signal theme in [mode]. The
 /// gallery renders every one of the ten cards, so a clean pump exercises the
@@ -35,8 +34,14 @@ void main() {
     });
 
     test('forBrightness resolves the matching set', () {
-      expect(DeepSignalTokens.forBrightness(Brightness.dark), DeepSignalTokens.dark);
-      expect(DeepSignalTokens.forBrightness(Brightness.light), DeepSignalTokens.light);
+      expect(
+        DeepSignalTokens.forBrightness(Brightness.dark),
+        DeepSignalTokens.dark,
+      );
+      expect(
+        DeepSignalTokens.forBrightness(Brightness.light),
+        DeepSignalTokens.light,
+      );
     });
 
     test('alpha helpers grade the foreground', () {

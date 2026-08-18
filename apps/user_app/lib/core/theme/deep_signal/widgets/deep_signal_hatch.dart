@@ -25,7 +25,12 @@ class DeepSignalHatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-    painter: _HatchPainter(angle: angle, band: band, base: base, stripe: stripe),
+    painter: _HatchPainter(
+      angle: angle,
+      band: band,
+      base: base,
+      stripe: stripe,
+    ),
     child: child,
   );
 }

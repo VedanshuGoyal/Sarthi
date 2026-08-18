@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// **Surge / unavailable.** A demand notice: an accent eyebrow, a headline, an
@@ -52,7 +52,12 @@ class DeepSignalSurgeNoticeCard extends StatelessWidget {
           ),
           Text(
             estimate,
-            style: t.mono(size: 11, color: t.muted, trackingEm: 0.04, height: 1.7),
+            style: t.mono(
+              size: 11,
+              color: t.muted,
+              trackingEm: 0.04,
+              height: 1.7,
+            ),
           ),
           const SizedBox(height: 20),
           Row(

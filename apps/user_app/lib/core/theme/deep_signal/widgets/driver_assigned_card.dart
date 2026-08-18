@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 import 'deep_signal_hatch.dart';
 
@@ -61,10 +61,18 @@ class DeepSignalDriverAssignedCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
-            child: Text(status.toUpperCase(), style: t.eyebrow(color: t.accent)),
+            child: Text(
+              status.toUpperCase(),
+              style: t.eyebrow(color: t.accent),
+            ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(22, DeepSignalTokens.s14, 22, 20),
+            padding: const EdgeInsets.fromLTRB(
+              22,
+              DeepSignalTokens.s14,
+              22,
+              20,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -78,11 +86,19 @@ class DeepSignalDriverAssignedCard extends StatelessWidget {
                       const SizedBox(height: 5),
                       Text(
                         '$rating ★ · $trips TRIPS',
-                        style: t.mono(color: t.muted, trackingEm: 0.12, height: 1.9),
+                        style: t.mono(
+                          color: t.muted,
+                          trackingEm: 0.12,
+                          height: 1.9,
+                        ),
                       ),
                       Text(
                         vehicle.toUpperCase(),
-                        style: t.mono(color: t.muted, trackingEm: 0.12, height: 1.9),
+                        style: t.mono(
+                          color: t.muted,
+                          trackingEm: 0.12,
+                          height: 1.9,
+                        ),
                       ),
                     ],
                   ),
@@ -90,7 +106,10 @@ class DeepSignalDriverAssignedCard extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('PLATE', style: t.mono(color: t.faint, trackingEm: 0.16)),
+                    Text(
+                      'PLATE',
+                      style: t.mono(color: t.faint, trackingEm: 0.16),
+                    ),
                     const SizedBox(height: 6),
                     Text(
                       plate,

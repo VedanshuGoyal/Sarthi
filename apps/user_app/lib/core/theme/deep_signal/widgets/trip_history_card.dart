@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// One completed trip in the [DeepSignalTripHistoryCard].
@@ -59,7 +59,10 @@ class DeepSignalTripHistoryCard extends StatelessWidget {
               child: InkWell(
                 onTap: onTap == null ? null : () => onTap!(i),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 18,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -70,7 +73,11 @@ class DeepSignalTripHistoryCard extends StatelessWidget {
                         children: [
                           Text(
                             entries[i].date,
-                            style: t.mono(size: 9.5, color: t.faint, trackingEm: 0.16),
+                            style: t.mono(
+                              size: 9.5,
+                              color: t.faint,
+                              trackingEm: 0.16,
+                            ),
                           ),
                           Text(entries[i].price, style: t.title(17, height: 1)),
                         ],

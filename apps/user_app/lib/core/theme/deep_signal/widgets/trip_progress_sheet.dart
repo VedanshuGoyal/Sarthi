@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 import 'deep_signal_hatch.dart';
 
@@ -116,7 +116,11 @@ class DeepSignalTripProgressSheet extends StatelessWidget {
                     Text(
                       '$remaining\n$eta',
                       textAlign: TextAlign.right,
-                      style: t.mono(color: t.muted, trackingEm: 0.1, height: 1.8),
+                      style: t.mono(
+                        color: t.muted,
+                        trackingEm: 0.1,
+                        height: 1.8,
+                      ),
                     ),
                   ],
                 ),
@@ -186,7 +190,9 @@ class _ProgressRail extends StatelessWidget {
                   height: 7,
                   decoration: BoxDecoration(
                     color: t.accent,
-                    borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
+                    borderRadius: BorderRadius.circular(
+                      DeepSignalTokens.radius,
+                    ),
                   ),
                 ),
               ),

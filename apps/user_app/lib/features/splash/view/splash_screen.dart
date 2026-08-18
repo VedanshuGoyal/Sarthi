@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/brand/mojud_logo.dart';
-import '../../../core/theme/deep_signal/deep_signal_tokens.dart';
 
 /// The MOJUD launch screen, shown while the saved session is read back out of
 /// secure storage on cold start.

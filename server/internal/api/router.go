@@ -17,11 +17,16 @@ func NewRouter(
 	recents *service.RecentPickupService,
 	cars *service.CarService,
 	bookings *service.BookingService,
+	driverAuth *service.DriverAuthService,
+	driverSessions *service.SessionService,
+	driverKYC *service.DriverKYCService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
 	cr := NewCarHandler(cars)
 	bk := NewBookingHandler(bookings)
+	dh := NewDriverAuthHandler(driverAuth, driverSessions)
+	dk := NewDriverKYCHandler(driverKYC)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -53,6 +58,24 @@ func NewRouter(
 
 	mux.HandleFunc("GET /users", h.ListUsers)
 
+	// Driver app: the same phone/OTP registration flow as the customer app,
+	// but a separate account type/session (see DriverAuthHandler).
+	mux.HandleFunc("POST /driver/auth/otp", dh.RequestOTP)
+	mux.HandleFunc("POST /driver/auth/otp/resend", dh.ResendOTP)
+	mux.HandleFunc("POST /driver/auth/otp/verify", dh.VerifyOTP)
+	mux.HandleFunc("POST /driver/auth/register", dh.Register)
+	mux.HandleFunc("GET /driver/auth/me", requireAuth(driverSessions, dh.Me))
+	mux.HandleFunc("POST /driver/auth/logout", requireAuth(driverSessions, dh.Logout))
+
+	// Driver KYC: the six-step Document View. Every route is scoped to the
+	// session's own driver — no route takes a driver id.
+	mux.HandleFunc("GET /driver/kyc", requireAuth(driverSessions, dk.Get))
+	mux.HandleFunc("PATCH /driver/kyc/profile", requireAuth(driverSessions, dk.UpdateProfile))
+	mux.HandleFunc("POST /driver/kyc/bank-account", requireAuth(driverSessions, dk.SetBankAccount))
+	mux.HandleFunc("POST /driver/kyc/submit", requireAuth(driverSessions, dk.Submit))
+	mux.HandleFunc("POST /driver/kyc/documents/{kind}", requireAuth(driverSessions, dk.UploadDocument))
+	mux.HandleFunc("GET /driver/kyc/documents/{kind}/content", requireAuth(driverSessions, dk.DocumentContent))
+
 	return withCORS(logRequests(mux))
 }
 
@@ -67,7 +90,7 @@ func withCORS(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}

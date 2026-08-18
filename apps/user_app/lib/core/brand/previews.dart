@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../theme/deep_signal/deep_signal_theme.dart';
-import '../theme/deep_signal/deep_signal_tokens.dart';
 import 'mojud_brand.dart';
 import 'mojud_logo.dart';
 

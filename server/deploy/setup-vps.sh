@@ -60,8 +60,15 @@ preflight() {
 	set -a; # shellcheck disable=SC1090
 	. "$ENV_PROD"; set +a
 
+	# Driver KYC images and bank details are only as safe as these: object
+	# storage that survives a VPS rebuild, and the keys protecting personal
+	# numbers at rest. All required — the server would otherwise fall back to
+	# local disk and fixed development keys, which is exactly the failure we
+	# cannot afford on live driver documents.
 	local missing=()
-	for var in DOMAIN POSTGRES_PASSWORD FAST2SMS_API_KEY FAST2SMS_OTP_ID; do
+	for var in DOMAIN POSTGRES_PASSWORD FAST2SMS_API_KEY FAST2SMS_OTP_ID \
+		S3_BUCKET S3_ENDPOINT S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY \
+		DOCUMENT_ENCRYPTION_KEY DOCUMENT_HASH_PEPPER; do
 		[[ -n "${!var:-}" ]] || missing+=("$var")
 	done
 	[[ ${#missing[@]} -eq 0 ]] || die "$ENV_PROD is missing values for: ${missing[*]}"
@@ -192,6 +199,14 @@ phase_service() {
 		ADDR=:8080
 		FAST2SMS_API_KEY=$FAST2SMS_API_KEY
 		FAST2SMS_OTP_ID=$FAST2SMS_OTP_ID
+		STORAGE_BACKEND=s3
+		S3_BUCKET=$S3_BUCKET
+		S3_REGION=${S3_REGION:-auto}
+		S3_ENDPOINT=$S3_ENDPOINT
+		S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID
+		S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY
+		DOCUMENT_ENCRYPTION_KEY=$DOCUMENT_ENCRYPTION_KEY
+		DOCUMENT_HASH_PEPPER=$DOCUMENT_HASH_PEPPER
 	EOF
 	umask 022
 	chown root:root "$SERVER_ENV"; chmod 600 "$SERVER_ENV"

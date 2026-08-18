@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/core/brand/mojud_brand.dart';
 import 'package:user_app/core/brand/mojud_logo.dart';
 import 'package:user_app/core/brand/mojud_wordmark_path.dart';
-import 'package:user_app/core/theme/deep_signal/deep_signal_theme.dart';
-import 'package:user_app/core/theme/deep_signal/deep_signal_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// Coverage for the painted MOJUD identity. The logo is drawn rather than
 /// loaded, so these guard the two things a raster asset would give for free:
@@ -66,18 +65,14 @@ void main() {
         const SizedBox.square(dimension: 200, child: MojudMark()),
       );
 
-      check(tester.getSize(find.byType(MojudMark))).equals(
-        const Size.square(200),
-      );
+      check(
+        tester.getSize(find.byType(MojudMark)),
+      ).equals(const Size.square(200));
     });
 
     testWidgets('paints in both modes', (tester) async {
       for (final brightness in Brightness.values) {
-        await pump(
-          tester,
-          const MojudMark(height: 64),
-          brightness: brightness,
-        );
+        await pump(tester, const MojudMark(height: 64), brightness: brightness);
       }
     });
   });

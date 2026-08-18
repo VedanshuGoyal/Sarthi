@@ -1,9 +1,8 @@
 import 'package:checks/checks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/core/brand/mojud_logo.dart';
-import 'package:user_app/core/theme/deep_signal/deep_signal_theme.dart';
-import 'package:user_app/core/theme/deep_signal/deep_signal_tokens.dart';
 import 'package:user_app/features/splash/view/splash_screen.dart';
 
 /// Coverage for the launch screen. Its signal bar animates forever, so these
@@ -23,10 +22,7 @@ void main() {
 
     await tester.pumpWidget(
       MediaQuery(
-        data: MediaQueryData(
-          size: size,
-          disableAnimations: reduceMotion,
-        ),
+        data: MediaQueryData(size: size, disableAnimations: reduceMotion),
         child: MaterialApp(
           theme: DeepSignalTheme.of(brightness),
           home: const SplashScreen(),

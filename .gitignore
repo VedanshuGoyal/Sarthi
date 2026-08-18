@@ -57,3 +57,6 @@ app.*.map.json
 # Built APKs from scripts/build-user-app-apk.sh — rebuild via the script
 # rather than tracking a binary in git history.
 /scripts/*.apk
+
+# Local KYC image storage written by the dev (STORAGE_BACKEND=local) server.
+server/.data/

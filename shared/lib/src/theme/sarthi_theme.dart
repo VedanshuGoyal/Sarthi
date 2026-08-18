@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'sarthi_colors.dart';
 
-/// Builds the shared Material 3 theme for every Sarthi app.
+/// The original ultramarine Material 3 theme, superseded app-wide in both
+/// apps by [DeepSignalTheme]. It survives as the base a handful of
+/// not-yet-migrated customer booking screens layer their Vast Quiet ride
+/// theme on top of — see `vast_quiet_theme.dart` in user_app.
 ///
 /// The colour scheme is seeded from [SarthiColors.ultramarine] so the whole
 /// app derives harmonious tones from the brand colour, while [primary] is
 /// pinned to the exact ultramarine so buttons and accents match the brand
-/// guideline precisely. Both apps call [SarthiTheme.light] (and later
-/// [SarthiTheme.dark]) instead of declaring their own [ThemeData], keeping the
-/// design scheme common across the customer and driver apps.
+/// guideline precisely.
 abstract final class SarthiTheme {
   /// Corner radius used consistently across inputs, buttons, and cards.
   static const double radius = 12;

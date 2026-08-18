@@ -7,8 +7,9 @@
 /// adopt the language, and read raw tokens with `DeepSignalTokens.of(context)`.
 library;
 
-export 'deep_signal_theme.dart';
-export 'deep_signal_tokens.dart';
+export 'package:sarthi_shared/sarthi_shared.dart'
+    show DeepSignalTheme, DeepSignalTokens;
+
 export 'widgets/deep_signal_card.dart';
 export 'widgets/deep_signal_hatch.dart';
 export 'widgets/driver_assigned_card.dart';

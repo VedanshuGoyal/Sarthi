@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../deep_signal_tokens.dart';
 import 'deep_signal_card.dart';
 
 /// **Rate & tip.** A post-trip card: a star row and a row of tip chips. Stars
@@ -71,7 +71,9 @@ class DeepSignalRateAndTipCard extends StatelessWidget {
               for (var i = 0; i < tips.length; i++)
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.only(right: i == tips.length - 1 ? 0 : 8),
+                    padding: EdgeInsets.only(
+                      right: i == tips.length - 1 ? 0 : 8,
+                    ),
                     child: _TipChip(
                       label: tips[i],
                       selected: i == selectedTip,
@@ -102,7 +104,11 @@ class _Star extends StatelessWidget {
       child: AnimatedDefaultTextStyle(
         duration: DeepSignalTokens.motion,
         curve: DeepSignalTokens.easing,
-        style: TextStyle(fontSize: 26, height: 1, color: filled ? t.fg : t.soft),
+        style: TextStyle(
+          fontSize: 26,
+          height: 1,
+          color: filled ? t.fg : t.soft,
+        ),
         child: const Text('★'),
       ),
     );

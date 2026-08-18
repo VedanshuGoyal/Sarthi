@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../theme_mode_controller.dart';
 import 'deep_signal.dart';
 
 /// A living catalogue of the Deep Signal card set, wired with real interactive
@@ -59,8 +59,18 @@ class _DeepSignalGalleryScreenState
   ];
 
   static const _places = [
-    SavedPlace(tag: 'H', name: 'Home', address: "14 QUEEN'S QUAY, E1", distance: '0.4 KM'),
-    SavedPlace(tag: 'W', name: 'Studio', address: '3 CHARLOTTE RD, EC2', distance: '5.1 KM'),
+    SavedPlace(
+      tag: 'H',
+      name: 'Home',
+      address: "14 QUEEN'S QUAY, E1",
+      distance: '0.4 KM',
+    ),
+    SavedPlace(
+      tag: 'W',
+      name: 'Studio',
+      address: '3 CHARLOTTE RD, EC2',
+      distance: '5.1 KM',
+    ),
     SavedPlace(tag: '+', name: 'Add a place', address: 'SAVED SHORTCUT'),
   ];
 
@@ -149,7 +159,10 @@ class _DeepSignalGalleryScreenState
         expiry: '09 / 29',
         width: double.infinity,
       ),
-      const DeepSignalTripHistoryCard(entries: _history, width: double.infinity),
+      const DeepSignalTripHistoryCard(
+        entries: _history,
+        width: double.infinity,
+      ),
       const DeepSignalFindingDriverSkeleton(width: double.infinity),
       DeepSignalSurgeNoticeCard(
         message: 'Fares in this area are 1.6× until 21:30.',

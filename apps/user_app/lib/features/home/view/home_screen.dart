@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/brand/mojud_logo.dart';
-import '../../../core/theme/deep_signal/deep_signal.dart';
-import '../../../core/theme/theme_mode_controller.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
@@ -279,9 +278,8 @@ class HomeScreen extends ConsumerWidget {
                               children: [
                                 Text(
                                   'Hi $firstName, how can we drive you?',
-                                  style: theme.textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(

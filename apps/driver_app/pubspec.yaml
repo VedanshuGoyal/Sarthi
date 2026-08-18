@@ -12,13 +12,21 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # --- Shared design system ---
-  # Ultramarine theme + reusable widgets common to both Sarthi apps.
+  # Deep Signal theme + reusable widgets common to both Sarthi apps.
   sarthi_shared:
     path: ../../shared
 
   # --- State management ---
   # Predictable, testable state across the app (per project guidelines).
   flutter_riverpod: ^2.6.1
+
+  # --- REST transport ---
+  # HTTP client for auth/registration against the Go backend.
+  http: ^1.2.2
+
+  # --- Secure storage ---
+  # Persists the driver's auth session (bearer token) in the OS keychain/keystore.
+  flutter_secure_storage: ^10.3.1
 
   # --- Real-time transport ---
   # WebSocket client used to receive ride offers and stream GPS to the Go backend.
@@ -31,6 +39,26 @@ dependencies:
   # --- Maps ---
   # Map UI for the home screen and active-job navigation. Maps_flutter == google_maps_flutter.
   google_maps_flutter: ^2.9.0
+
+  # --- Photo capture ---
+  # Selfie + document (Aadhar/DL) photo capture for the post-registration
+  # document verification flow.
+  image_picker: ^1.1.2
+
+  # --- On-device file locations ---
+  # image_picker hands back a path in the OS cache directory, which Android
+  # reclaims whenever it wants space. Captures are copied into the app's
+  # documents directory so a half-finished onboarding survives a restart.
+  path_provider: ^2.1.4
+
+  # --- System permissions ---
+  # Deep-links to the OS settings screens the "Go Online" flow depends on:
+  # display-over-other-apps, background location, unrestricted battery usage.
+  permission_handler: ^11.3.1
+
+  # --- MCP agent inspection (debug only) ---
+  # Lets the flutter-mcp-toolkit server drive/inspect this app. No-op in release.
+  mcp_toolkit: ^3.0.0
 
 dev_dependencies:
   flutter_test:

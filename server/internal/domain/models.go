@@ -62,14 +62,122 @@ type Location struct {
 }
 
 // Driver is a registered driver together with their live state. The persistent
-// fields (ID, Name, Vehicle) come from PostgreSQL; Status and Location are the
-// real-time fields held in memstore and never trusted from the database.
+// fields (ID, PhoneE164, Name, Vehicle, CreatedAt) come from PostgreSQL; Status
+// and Location are the real-time fields held in memstore and never trusted from
+// the database.
 type Driver struct {
-	ID       string       `json:"id"`
-	Name     string       `json:"name"`
-	Vehicle  string       `json:"vehicle"`
-	Status   DriverStatus `json:"status"`
-	Location Location     `json:"location"`
+	ID        string       `json:"id"`
+	PhoneE164 string       `json:"phoneE164"`
+	Name      string       `json:"name"`
+	Vehicle   string       `json:"vehicle"`
+	CreatedAt time.Time    `json:"createdAt"`
+	Status    DriverStatus `json:"status"`
+	Location  Location     `json:"location"`
+}
+
+// DriverTransmission is which gearbox(es) a driver can drive. Collected on the
+// driver app's "Type of Vehicle" step; matchmaking uses it to respect the
+// customer's [CarTransmission].
+type DriverTransmission string
+
+const (
+	DriverTransmissionManual    DriverTransmission = "manual"
+	DriverTransmissionAutomatic DriverTransmission = "automatic"
+	DriverTransmissionBoth      DriverTransmission = "both"
+)
+
+// Gender is the driver's gender, collected on the Photo and Name step.
+type Gender string
+
+const (
+	GenderMale   Gender = "male"
+	GenderFemale Gender = "female"
+	GenderOther  Gender = "other"
+)
+
+// DocumentKind names one of the KYC images a driver uploads.
+type DocumentKind string
+
+const (
+	DocumentSelfie         DocumentKind = "selfie"
+	DocumentAadhaar        DocumentKind = "aadhaar"
+	DocumentDrivingLicense DocumentKind = "driving_license"
+)
+
+// DocumentKinds lists every kind a driver must supply, in the order the app's
+// Document View asks for them.
+var DocumentKinds = []DocumentKind{
+	DocumentSelfie,
+	DocumentAadhaar,
+	DocumentDrivingLicense,
+}
+
+// DocumentStatus is where one uploaded image sits in review.
+type DocumentStatus string
+
+const (
+	DocumentPending  DocumentStatus = "pending"  // uploaded, awaiting review
+	DocumentVerified DocumentStatus = "verified" // accepted by a reviewer
+	DocumentRejected DocumentStatus = "rejected" // needs re-uploading
+)
+
+// KYCStatus is the driver's overall onboarding state. Owned by the server —
+// the app reports what it collected, never whether it passed.
+type KYCStatus string
+
+const (
+	KYCIncomplete KYCStatus = "incomplete" // still filling in the Document View
+	KYCSubmitted  KYCStatus = "submitted"  // everything supplied, awaiting review
+	KYCVerified   KYCStatus = "verified"   // cleared to drive
+	KYCRejected   KYCStatus = "rejected"   // something was refused
+)
+
+// DriverDocument is one uploaded KYC image. The bytes live in object storage
+// (see internal/storage); PostgreSQL holds this metadata and the key that
+// finds them. ObjectKey never leaves the server — clients read an image
+// through the documents endpoint, which checks the session first.
+type DriverDocument struct {
+	ID           string         `json:"id"`
+	Kind         DocumentKind   `json:"kind"`
+	ObjectKey    string         `json:"-"`
+	ContentType  string         `json:"contentType"`
+	ByteSize     int64          `json:"byteSize"`
+	SHA256       string         `json:"sha256"`
+	Status       DocumentStatus `json:"status"`
+	RejectReason string         `json:"rejectReason,omitempty"`
+	UploadedAt   time.Time      `json:"uploadedAt"`
+	ReviewedAt   *time.Time     `json:"reviewedAt,omitempty"`
+}
+
+// DriverProfile is the typed, non-image half of a driver's KYC. AadhaarLast4
+// is all that is kept of the Aadhaar number — see the secret package for why.
+type DriverProfile struct {
+	FullName             string             `json:"fullName"`
+	DateOfBirth          *time.Time         `json:"dateOfBirth,omitempty"`
+	Gender               Gender             `json:"gender,omitempty"`
+	Transmission         DriverTransmission `json:"transmission,omitempty"`
+	AadhaarLast4         string             `json:"aadhaarLast4,omitempty"`
+	DrivingLicenseNumber string             `json:"drivingLicenseNumber,omitempty"`
+	KYCStatus            KYCStatus          `json:"kycStatus"`
+	KYCSubmittedAt       *time.Time         `json:"kycSubmittedAt,omitempty"`
+}
+
+// DriverBankAccount is where a driver's earnings are paid. The account number
+// is encrypted at rest and never returned to a client; Last4 is what the app
+// shows so the driver can recognise their own account.
+type DriverBankAccount struct {
+	AccountHolderName string    `json:"accountHolderName"`
+	AccountNumberLast4 string   `json:"accountNumberLast4"`
+	IFSCCode          string    `json:"ifscCode"`
+	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+// DriverKYC is the whole Document View as the app needs to render it: what has
+// been collected, what has been uploaded, and where review stands.
+type DriverKYC struct {
+	Profile     DriverProfile      `json:"profile"`
+	Documents   []DriverDocument   `json:"documents"`
+	BankAccount *DriverBankAccount `json:"bankAccount,omitempty"`
 }
 
 // RecentPickup is a place a customer has used as a ride pickup, kept as a short

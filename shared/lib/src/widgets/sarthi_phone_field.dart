@@ -68,10 +68,8 @@ class SarthiPhoneField extends StatelessWidget {
                     countryCode,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
-                      // Derive from the ambient theme so the prefix matches
-                      // whatever design language wraps the field (Deep Signal
-                      // ink in user_app, ultramarine in driver_app) rather than
-                      // a hardcoded brand colour.
+                      // Derive from the ambient theme (both apps run Deep
+                      // Signal) rather than a hardcoded brand colour.
                       color: theme.colorScheme.primary,
                     ),
                   ),
