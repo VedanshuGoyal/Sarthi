@@ -20,6 +20,7 @@ func NewRouter(
 	driverAuth *service.DriverAuthService,
 	driverSessions *service.SessionService,
 	driverKYC *service.DriverKYCService,
+	maps *service.MapsService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -27,6 +28,7 @@ func NewRouter(
 	bk := NewBookingHandler(bookings)
 	dh := NewDriverAuthHandler(driverAuth, driverSessions)
 	dk := NewDriverKYCHandler(driverKYC)
+	mp := NewMapsHandler(maps)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -55,6 +57,10 @@ func NewRouter(
 
 	// Confirmed bookings from the app; recorded server-side (log-only for now).
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
+
+	// Short-lived Ola Maps tokens for the app's place search; the OAuth client
+	// secret stays on the server.
+	mux.HandleFunc("GET /maps/token", requireAuth(sessions, mp.Token))
 
 	mux.HandleFunc("GET /users", h.ListUsers)
 

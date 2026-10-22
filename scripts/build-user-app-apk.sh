@@ -43,12 +43,12 @@ API_BASE_URL="https://$DOMAIN"
 
 cd "$REPO_ROOT/apps/user_app"
 
-# Feed .env (Ola Maps OAuth creds) into the build's compile-time defines when
+# Feed .env (Google Maps SDK key etc.) into the build's compile-time defines when
 # present, same as run-user-app.sh — independent of which backend it talks to.
 DART_DEFINES=(--dart-define="API_BASE_URL=${API_BASE_URL}")
 if [ -f .env ]; then
   DART_DEFINES+=(--dart-define-from-file=.env)
-  echo "🔑 Loading Ola Maps credentials from apps/user_app/.env"
+  echo "🔑 Loading build settings from apps/user_app/.env"
 
   MAPS_KEY="$(grep -E '^MAPS_API_KEY=' .env | cut -d= -f2- || true)"
   printf 'MAPS_API_KEY=%s\n' "${MAPS_KEY}" > ios/Flutter/Maps.xcconfig
@@ -58,8 +58,8 @@ if [ -f .env ]; then
     echo "⚠️  No MAPS_API_KEY in .env — the 'Select on map' step won't load tiles."
   fi
 else
-  echo "⚠️  No apps/user_app/.env — map search will show 'maps isn't set up'."
-  echo "   Copy .env.example to .env and add your Ola Maps + MAPS_API_KEY keys."
+  echo "⚠️  No apps/user_app/.env — the 'Select on map' step won't load tiles."
+  echo "   Copy .env.example to .env and add your MAPS_API_KEY (Google Maps SDK)."
 fi
 
 echo "🌐 Pointing APK at ${API_BASE_URL}"

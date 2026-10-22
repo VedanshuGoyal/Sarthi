@@ -209,22 +209,24 @@ psql "$DATABASE_URL" -c \
 ## Ola Maps (pickup-location step)
 
 The Round Trip pickup screen uses Ola Maps Places (OAuth 2.0 client
-credentials). Credentials load from a git-ignored `.env` at `apps/user_app/.env`
-(copy `.env.example` and fill it in):
+credentials). The **backend** holds the credentials and mints short-lived
+bearer tokens; the app fetches one from `GET /maps/token` (authenticated with
+the customer's session) and sends it on its Places requests. The client secret
+never ships in an app build or the web bundle.
+
+Put the credentials in the git-ignored `server/.env`, which
+`./scripts/run-backend.sh` loads:
 
 ```bash
-cd apps/user_app
-cp .env.example .env      # then paste your OLA_MAPS_CLIENT_ID / _SECRET
-flutter run --dart-define-from-file=.env
+# server/.env
+OLA_MAPS_CLIENT_ID=your-client-id
+OLA_MAPS_CLIENT_SECRET=your-client-secret
 ```
 
-`--dart-define-from-file` maps each `.env` key into the compile-time defines
-read by `lib/core/config/ola_maps_config.dart`. Without credentials the search
-field degrades to a "maps isn't set up" message rather than crashing.
-
-> ⚠️ A client secret embedded in a mobile build can be extracted. For
-> production, mint the token on the Go backend and point the app's
-> `tokenProvider` at it (see `lib/features/ride/data/location_repository.dart`).
+On the VPS they go in `server/.env.prod` (see `server/deploy/README.md`).
+Without them `/maps/token` answers 503 and the search field shows "Map search
+isn't set up yet." rather than crashing. The app side lives in
+`lib/features/ride/data/ola_maps_authenticator.dart`.
 
 ### Google Maps (the "Select on map" pin step)
 

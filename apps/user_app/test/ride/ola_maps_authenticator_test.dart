@@ -7,7 +7,7 @@ import 'package:http/testing.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/data/ola_maps_authenticator.dart';
 
-/// A token-endpoint stub that hands out `token-1`, `token-2`, … and counts hits.
+/// A `/maps/token` stub that hands out `token-1`, `token-2`, … and counts hits.
 class _TokenServer {
   int calls = 0;
   List<http.Request> requests = [];
@@ -17,36 +17,36 @@ class _TokenServer {
       calls++;
       requests.add(request);
       return http.Response(
-        jsonEncode({
-          'access_token': 'token-$calls',
-          'expires_in': expiresIn,
-          'token_type': 'Bearer',
-        }),
+        jsonEncode({'accessToken': 'token-$calls', 'expiresIn': expiresIn}),
         200,
       );
     });
   }
 }
 
+/// An authenticator whose backend always answers [status].
+OlaMapsAuthenticator _answering(int status) => OlaMapsAuthenticator(
+  client: MockClient((_) async => http.Response('{}', status)),
+  baseUrl: 'https://api.test',
+  tokenGetter: () => 'session',
+);
+
 void main() {
   group('OlaMapsAuthenticator', () {
-    test('requests a client-credentials token and returns it', () async {
+    test('fetches the token from the backend with the session token', () async {
       final server = _TokenServer();
       final auth = OlaMapsAuthenticator(
         client: server.client(),
-        clientId: 'id',
-        clientSecret: 'secret',
-        tokenUrl: 'https://auth.test/token',
+        baseUrl: 'https://api.test',
+        tokenGetter: () => 'session-abc',
       );
 
       check(await auth.accessToken()).equals('token-1');
 
       final request = server.requests.single;
-      check(request.method).equals('POST');
-      check(request.url.toString()).equals('https://auth.test/token');
-      check(request.bodyFields['grant_type']).equals('client_credentials');
-      check(request.bodyFields['client_id']).equals('id');
-      check(request.bodyFields['client_secret']).equals('secret');
+      check(request.method).equals('GET');
+      check(request.url.toString()).equals('https://api.test/maps/token');
+      check(request.headers['Authorization']).equals('Bearer session-abc');
     });
 
     test('caches the token until it nears expiry', () async {
@@ -54,8 +54,8 @@ void main() {
       var now = DateTime(2026, 7, 15, 12);
       final auth = OlaMapsAuthenticator(
         client: server.client(expiresIn: 3600),
-        clientId: 'id',
-        clientSecret: 'secret',
+        baseUrl: 'https://api.test',
+        tokenGetter: () => 'session',
         refreshLeeway: const Duration(seconds: 30),
         clock: () => now,
       );
@@ -76,8 +76,8 @@ void main() {
       final server = _TokenServer();
       final auth = OlaMapsAuthenticator(
         client: server.client(),
-        clientId: 'id',
-        clientSecret: 'secret',
+        baseUrl: 'https://api.test',
+        tokenGetter: () => 'session',
       );
 
       final results = await Future.wait([
@@ -90,22 +90,52 @@ void main() {
       check(server.calls).equals(1);
     });
 
-    test('throws a LocationException when credentials are missing', () async {
+    test(
+      'says maps are not set up when the backend has no credentials',
+      () async {
+        await check(_answering(503).accessToken()).throws<LocationException>(
+          (it) => it.has((e) => e.message, 'message').contains("isn't set up"),
+        );
+      },
+    );
+
+    test('asks to sign in again when the session is rejected', () async {
+      await check(_answering(401).accessToken()).throws<LocationException>(
+        (it) => it.has((e) => e.message, 'message').contains('Sign in again'),
+      );
+    });
+
+    test('throws when the backend cannot mint a token', () async {
+      await check(_answering(502).accessToken()).throws<LocationException>();
+    });
+
+    test('throws when the backend is unreachable', () async {
       final auth = OlaMapsAuthenticator(
-        client: MockClient((_) async => http.Response('{}', 200)),
-        clientId: '',
-        clientSecret: '',
+        client: MockClient((_) async => throw http.ClientException('offline')),
+        baseUrl: 'https://api.test',
+        tokenGetter: () => 'session',
       );
       await check(auth.accessToken()).throws<LocationException>();
     });
 
-    test('throws when the token endpoint rejects the request', () async {
+    test('does not cache a failure', () async {
+      var fail = true;
       final auth = OlaMapsAuthenticator(
-        client: MockClient((_) async => http.Response('nope', 401)),
-        clientId: 'id',
-        clientSecret: 'secret',
+        client: MockClient(
+          (_) async => fail
+              ? http.Response('{}', 502)
+              : http.Response(
+                  jsonEncode({'accessToken': 'ok', 'expiresIn': 3600}),
+                  200,
+                ),
+        ),
+        baseUrl: 'https://api.test',
+        tokenGetter: () => 'session',
       );
+
       await check(auth.accessToken()).throws<LocationException>();
+      fail = false;
+      check(await auth.accessToken()).equals('ok');
     });
   });
 }

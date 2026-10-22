@@ -251,3 +251,11 @@ type Ride struct {
 	RequestedAt time.Time  `json:"requestedAt"`
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
+
+// MapsToken is a short-lived Ola Maps bearer token. The backend mints it with
+// the client credentials it alone holds and hands it to the apps, which send it
+// on their own Places requests. ExpiresAt is when Ola stops accepting it.
+type MapsToken struct {
+	AccessToken string    `json:"accessToken"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}

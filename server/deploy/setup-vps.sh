@@ -73,6 +73,12 @@ preflight() {
 	done
 	[[ ${#missing[@]} -eq 0 ]] || die "$ENV_PROD is missing values for: ${missing[*]}"
 
+	# Map search is optional: without Ola credentials the apps just show
+	# "Map search isn't set up yet." Worth flagging, not worth refusing over.
+	if [[ -z "${OLA_MAPS_CLIENT_ID:-}" || -z "${OLA_MAPS_CLIENT_SECRET:-}" ]]; then
+		warn "OLA_MAPS_CLIENT_ID/OLA_MAPS_CLIENT_SECRET not set — map search will be off"
+	fi
+
 	# Caddy cannot get a certificate unless $DOMAIN already resolves here, and
 	# each failed ACME attempt counts against a Let's Encrypt rate limit
 	# (5 failed validations per hostname per hour). Fail early instead.
@@ -199,6 +205,8 @@ phase_service() {
 		ADDR=:8080
 		FAST2SMS_API_KEY=$FAST2SMS_API_KEY
 		FAST2SMS_OTP_ID=$FAST2SMS_OTP_ID
+		OLA_MAPS_CLIENT_ID=${OLA_MAPS_CLIENT_ID:-}
+		OLA_MAPS_CLIENT_SECRET=${OLA_MAPS_CLIENT_SECRET:-}
 		STORAGE_BACKEND=s3
 		S3_BUCKET=$S3_BUCKET
 		S3_REGION=${S3_REGION:-auto}

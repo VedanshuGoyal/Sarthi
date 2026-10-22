@@ -23,6 +23,10 @@ type Config struct {
 	// and CI don't need real credentials.
 	Fast2SMS Fast2SMSConfig
 
+	// OlaMaps holds the Ola Maps OAuth client credentials. Optional: without
+	// them GET /maps/token answers 503 and the apps show "maps isn't set up".
+	OlaMaps OlaMapsConfig
+
 	// Storage says where driver KYC images are kept.
 	Storage StorageConfig
 
@@ -91,6 +95,21 @@ func (c Fast2SMSConfig) Enabled() bool {
 	return c.APIKey != "" && c.OTPID != ""
 }
 
+// OlaMapsConfig holds the Ola Maps OAuth 2.0 client credentials. They stay on
+// the server: the apps never see the secret, only the short-lived bearer tokens
+// minted with it (GET /maps/token).
+type OlaMapsConfig struct {
+	ClientID     string
+	ClientSecret string
+	// TokenURL overrides Ola's token endpoint; empty means the default.
+	TokenURL string
+}
+
+// Enabled reports whether both credentials are present.
+func (c OlaMapsConfig) Enabled() bool {
+	return c.ClientID != "" && c.ClientSecret != ""
+}
+
 // Load reads configuration from the environment. DATABASE_URL is required so we
 // fail fast rather than starting a server that can't persist anything.
 func Load() (Config, error) {
@@ -119,6 +138,11 @@ func Load() (Config, error) {
 		Fast2SMS: Fast2SMSConfig{
 			APIKey: os.Getenv("FAST2SMS_API_KEY"),
 			OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
+		},
+		OlaMaps: OlaMapsConfig{
+			ClientID:     os.Getenv("OLA_MAPS_CLIENT_ID"),
+			ClientSecret: os.Getenv("OLA_MAPS_CLIENT_SECRET"),
+			TokenURL:     os.Getenv("OLA_MAPS_TOKEN_URL"),
 		},
 		Storage: storage,
 		Secrets: secrets,

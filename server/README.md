@@ -50,6 +50,22 @@ export FAST2SMS_OTP_ID='your-otp-template-id'      # a registered OTP template
 Leave them unset for local dev/CI: the server logs a warning and accepts the
 fixed dev code `123456`.
 
+### Map search (Ola Maps)
+
+The apps' place search talks to Ola Maps with short-lived bearer tokens they
+fetch from `GET /maps/token`. The OAuth client secret lives only here, so
+nothing extractable ships in an app build or the web bundle. Set both from the
+Ola Maps console (cloud.olakrutrim.com → Ola Maps → project credentials):
+
+```bash
+export OLA_MAPS_CLIENT_ID='your-client-id'
+export OLA_MAPS_CLIENT_SECRET='your-client-secret'
+```
+
+Leave them unset and `/maps/token` answers 503 `maps_not_configured`; the app
+then shows "Map search isn't set up yet." `./scripts/run-backend.sh` picks both
+up from `server/.env`.
+
 If you already have Postgres, apply the migration manually instead of step 1:
 
 ```bash
@@ -69,6 +85,7 @@ migrate -path migrations -database "$DATABASE_URL" up
 | POST   | `/auth/register`    | `{ "phoneE164", "name", "email", "dateOfBirth" }` | `dateOfBirth` is `YYYY-MM-DD`; 201 → `{registered:true, token, user}`, 409 if phone taken |
 | GET    | `/auth/me`          | — (Bearer token)                                  | The authenticated user's account. 401 without a valid token |
 | POST   | `/auth/logout`      | — (Bearer token)                                  | Revokes the caller's session token |
+| GET    | `/maps/token`       | — (Bearer token)                                  | `{accessToken, expiresIn}` — an Ola Maps token minted server-side (cached, shared across users until ~5 min before expiry). 503 `maps_not_configured` without credentials, 502 `maps_unavailable` if Ola refuses |
 | GET    | `/users`            | —                                                 | All accounts, newest first (diagnostic — unauthenticated) |
 | GET    | `/healthz`          | —                                                 | Liveness |
 
@@ -102,6 +119,9 @@ curl -s localhost:8080/users | jq
 - OTP delivery goes through Fast2SMS when `FAST2SMS_API_KEY`/`FAST2SMS_OTP_ID`
   are set; otherwise a fixed dev code (`123456`) is accepted. The provider is an
   outbound adapter in `internal/sms/fast2sms`, wired via `service.WithOTPSender`.
+- Ola Maps tokens come from the outbound adapter `internal/maps/olamaps`
+  (client-credentials grant, one cached token, single refresh under a mutex),
+  behind `service.MapsService`.
 - Auth uses opaque bearer tokens. On login/registration the server mints a
   session, writes it to PostgreSQL (durable source of truth) **and** an in-memory
   `memstore.SessionCache` (the hot path — `/auth/me` etc. validate from memory,
@@ -123,7 +143,7 @@ scripted and idempotent:
 # On a fresh Ubuntu 24.04 box, with a DNS A record already pointing at it:
 git clone git@github.com:VedanshuGoyal/Sarthi.git
 cd Sarthi/server
-cp .env.prod.example .env.prod   # fill in DOMAIN, POSTGRES_PASSWORD, FAST2SMS_*
+cp .env.prod.example .env.prod   # fill in DOMAIN, POSTGRES_PASSWORD, FAST2SMS_*, OLA_MAPS_*
 sudo deploy/setup-vps.sh
 ```
 

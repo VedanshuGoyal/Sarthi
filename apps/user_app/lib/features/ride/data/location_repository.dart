@@ -36,9 +36,8 @@ class LocationServiceDisabledException extends LocationException {
 /// supply a fixed position without touching the GPS plugin.
 typedef PositionFetcher = Future<GeoPoint> Function();
 
-/// Supplies a valid Ola Maps OAuth bearer token. Injectable so tests can pass a
-/// canned token and production can later swap client-side minting for a
-/// backend-minted one without touching the repository.
+/// Supplies a valid Ola Maps OAuth bearer token. Production fetches it from the
+/// Sarthi backend ([OlaMapsAuthenticator]); tests inject a canned token.
 typedef AccessTokenProvider = Future<String> Function();
 
 /// The single interface for pickup-location data access.
@@ -355,8 +354,8 @@ class LocationRepository {
     String path,
     Map<String, String> params,
   ) async {
-    // Throws LocationException when credentials are missing or the token
-    // request fails — surfaced to the caller unchanged.
+    // Throws LocationException when maps aren't set up on the backend or the
+    // token request fails — surfaced to the caller unchanged.
     final token = await _tokenProvider();
 
     final uri = Uri.parse(

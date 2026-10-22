@@ -9,9 +9,10 @@
 #   ./scripts/run-user-app.sh macos        # -> desktop (needs full Xcode)
 #   ./scripts/run-user-app.sh <emulator>   # e.g. an Android device id
 #
-# Ola Maps credentials (for the pickup-location step) load from a git-ignored
+# Build settings (the Google Maps SDK key) load from a git-ignored
 # apps/user_app/.env via --dart-define-from-file — copy .env.example to .env and
-# fill it in. Without it the app still runs; map search shows "maps isn't set up".
+# fill it in. Ola Maps place search needs nothing here: the backend hands out
+# its tokens (GET /maps/token), so set OLA_MAPS_* in server/.env.
 #
 # List available devices with:  flutter devices
 set -euo pipefail
@@ -26,7 +27,7 @@ cd "$REPO_ROOT/apps/user_app"
 DART_DEFINES=()
 if [ -f .env ]; then
   DART_DEFINES+=(--dart-define-from-file=.env)
-  echo "🔑 Loading Ola Maps credentials from apps/user_app/.env"
+  echo "🔑 Loading build settings from apps/user_app/.env"
 
   # The Google Maps SDK key is a *native* setting (dart-defines can't reach the
   # manifest/Info.plist). Android's Gradle reads .env directly; for iOS we
@@ -39,8 +40,8 @@ if [ -f .env ]; then
     echo "⚠️  No MAPS_API_KEY in .env — the 'Select on map' step won't load tiles."
   fi
 else
-  echo "⚠️  No apps/user_app/.env — map search will show 'maps isn't set up'."
-  echo "   Copy .env.example to .env and add your Ola Maps + MAPS_API_KEY keys."
+  echo "⚠️  No apps/user_app/.env — the 'Select on map' step won't load tiles."
+  echo "   Copy .env.example to .env and add your MAPS_API_KEY (Google Maps SDK)."
 fi
 
 echo "📦 Resolving dependencies..."

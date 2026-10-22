@@ -18,6 +18,7 @@ import (
 
 	"github.com/sarthi/server/internal/api"
 	"github.com/sarthi/server/internal/config"
+	"github.com/sarthi/server/internal/maps/olamaps"
 	"github.com/sarthi/server/internal/memstore"
 	"github.com/sarthi/server/internal/repository"
 	"github.com/sarthi/server/internal/secret"
@@ -137,10 +138,23 @@ func run() error {
 		cfg.Secrets.Pepper,
 	)
 
+	// Ola Maps: the server alone holds the OAuth client secret and hands the
+	// apps short-lived tokens (GET /maps/token).
+	var mapsTokens service.MapsTokenSource
+	if cfg.OlaMaps.Enabled() {
+		mapsTokens = olamaps.New(cfg.OlaMaps.ClientID, cfg.OlaMaps.ClientSecret,
+			olamaps.WithTokenURL(cfg.OlaMaps.TokenURL))
+		slog.Info("maps: Ola Maps token minting enabled")
+	} else {
+		slog.Warn("maps: no OLA_MAPS_CLIENT_ID/OLA_MAPS_CLIENT_SECRET set; " +
+			"GET /maps/token will answer 503 and map search stays off")
+	}
+	mapsService := service.NewMapsService(mapsTokens)
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
-			driverAuthService, driverSessions, driverKYC),
+			driverAuthService, driverSessions, driverKYC, mapsService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

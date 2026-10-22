@@ -5,6 +5,7 @@ import 'data/booking_repository.dart';
 import 'data/cars_api.dart';
 import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
+import 'data/ola_maps_authenticator.dart';
 import 'data/recent_pickups_api.dart';
 import 'domain/one_way_trip.dart';
 import 'domain/pickup_location.dart';
@@ -30,13 +31,14 @@ final tripSelectionViewModelProvider =
 /// The single data-access seam for pickup search + GPS + recents. Overridden in
 /// previews and tests with a fake so no real Ola/GPS/backend call is made.
 ///
-/// Recents hit the Sarthi backend authenticated with the current session token,
-/// read on demand from in-memory auth state (like [authRepositoryProvider]).
+/// Recents and the Ola Maps token both come from the Sarthi backend,
+/// authenticated with the current session token read on demand from in-memory
+/// auth state (like [authRepositoryProvider]).
 final locationRepositoryProvider = Provider<LocationRepository>((ref) {
+  String? sessionToken() => ref.read(authControllerProvider).valueOrNull?.token;
   return LocationRepository(
-    recentsApi: RecentPickupsApi(
-      tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
-    ),
+    tokenProvider: OlaMapsAuthenticator(tokenGetter: sessionToken).accessToken,
+    recentsApi: RecentPickupsApi(tokenGetter: sessionToken),
   );
 });
 

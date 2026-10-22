@@ -34,6 +34,7 @@ meaningful fraction of available RAM.
    | `POSTGRES_PASSWORD` | generate one: `openssl rand -base64 24`                      |
    | `FAST2SMS_API_KEY`  | Fast2SMS dashboard → Dev API → API Key                       |
    | `FAST2SMS_OTP_ID`   | a registered OTP template id                                 |
+   | `OLA_MAPS_CLIENT_ID` / `OLA_MAPS_CLIENT_SECRET` | Ola Maps console → project credentials (optional; map search is off without them) |
 
    `.env.prod` is gitignored. Keep it that way — it holds live credentials.
 
