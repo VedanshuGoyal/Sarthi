@@ -14,8 +14,6 @@ import 'widgets/route_summary.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
 import 'widgets/ride_theme.dart';
-import '../../../core/theme/skyline/skyline_row.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
 
 /// The One-Way "trip details" step: when to go and which car.
 ///

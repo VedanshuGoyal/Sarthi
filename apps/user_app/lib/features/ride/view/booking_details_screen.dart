@@ -13,7 +13,6 @@ import 'widgets/ride_theme.dart';
 import 'widgets/hours_selector.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
-import '../../../core/theme/skyline/skyline_row.dart';
 
 /// Step 3 of a Round Trip booking: how long, when, and what kind of car.
 ///

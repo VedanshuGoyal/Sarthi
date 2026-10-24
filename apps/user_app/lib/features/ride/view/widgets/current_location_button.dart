@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/skyline/skyline_row.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// "Use my current location" action for the pickup step.
 ///

@@ -9,8 +9,6 @@ import 'widgets/car_selector_field.dart';
 import 'widgets/route_summary.dart';
 import 'widgets/ride_theme.dart';
 import 'widgets/vast_quiet/vast_quiet.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
-import '../../../core/theme/skyline/skyline_row.dart';
 
 /// The final One-Way step: the estimated trip time for the settled plan.
 ///

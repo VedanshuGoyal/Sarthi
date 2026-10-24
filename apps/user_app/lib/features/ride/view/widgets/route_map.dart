@@ -8,8 +8,6 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../../core/config/google_maps_config.dart';
 import '../../../../core/maps/web_maps_loader.dart';
-import '../../../../core/theme/skyline/skyline_tokens.dart';
-import '../../../../core/theme/deep_signal/deep_signal.dart';
 import '../../domain/geo_point.dart';
 
 /// A read-only overview map framing both ends of a route.

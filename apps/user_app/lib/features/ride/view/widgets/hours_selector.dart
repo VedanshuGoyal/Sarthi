@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// Picks how many hours to hire a driver for: a −/＋ stepper plus quick-pick
 /// chips for the common durations.

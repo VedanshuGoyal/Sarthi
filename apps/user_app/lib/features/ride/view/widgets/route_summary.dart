@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// A compact, read-only banner echoing both ends of the route chosen on the
 /// earlier location steps. The One-Way details and review screens share it so

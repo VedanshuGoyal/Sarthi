@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
-import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// A labelled dropdown for a small fixed set of choices.
 ///

@@ -9,7 +9,7 @@ import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/map_pickup_view_model.dart';
 import 'widgets/map_pin_card.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// Pick a pickup by panning a Google map under a fixed centre pin.
 ///

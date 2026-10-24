@@ -11,7 +11,6 @@ import 'widgets/schedule_field.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/ride_theme.dart';
 import 'widgets/time_slot_picker.dart';
-import '../../../core/theme/skyline/skyline_row.dart';
 
 /// Step 3 of a Multi-Stop trip: write the driver's plan for the day.
 ///

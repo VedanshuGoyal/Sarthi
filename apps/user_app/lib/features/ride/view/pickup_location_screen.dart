@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/skyline/skyline_row.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/pickup_selection_view_model.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'skyline_tokens.dart';
+import '../theme/skyline/skyline_tokens.dart';
 
 /// The Skyline list row: an icon in a tinted rounded well, a title, an
 /// optional subtitle and trailing widget. Used for search results, recents and
@@ -99,22 +99,37 @@ class SkylineCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(Skyline.s8),
+    this.onTap,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
 
+  /// Makes the whole card tappable, with an ink ripple clipped to its corners.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(Skyline.radiusLg),
-        boxShadow: t.cardShadow,
+    final radius = BorderRadius.circular(Skyline.radiusLg);
+    final decoration = BoxDecoration(
+      color: t.surface,
+      borderRadius: radius,
+      boxShadow: t.cardShadow,
+    );
+    if (onTap == null) {
+      return Container(padding: padding, decoration: decoration, child: child);
+    }
+    return DecoratedBox(
+      decoration: decoration,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(padding: padding, child: child),
+        ),
       ),
-      child: child,
     );
   }
 }

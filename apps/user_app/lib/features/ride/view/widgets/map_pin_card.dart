@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../../../../core/theme/skyline/skyline_tokens.dart';
-
 /// The card docked over the map that reports what the centre pin currently
 /// points at and lets the customer confirm it.
 ///

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/brand/mojud_logo.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
 import '../auth_providers.dart';
 
 /// Step 1 — collect the customer's +91 mobile number.

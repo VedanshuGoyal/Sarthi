@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 
-import '../../../features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
-    show RideSurfaces;
+import '../deep_signal/deep_signal_tokens.dart';
 import 'skyline_tokens.dart';
 
 /// The Skyline [ThemeData] — rounded and friendly, in Deep Signal's deep navy
-/// and signal blue.
+/// and signal blue. Both Sarthi apps use it.
 ///
-/// Pass [light] to `MaterialApp.theme`; the customer app is light only.
+/// Pass [light] to `MaterialApp.theme`; both apps are light only. An app adds
+/// its own theme extensions (e.g. the customer app's ride surfaces) through
+/// `extensions`.
 /// The [ColorScheme] and component themes re-skin every Material widget
 /// (buttons, fields, sheets, dialogs, pickers, snackbars) so screens built on
 /// them adopt the look with no per-screen styling. Custom cards read raw
 /// colours with [SkylineTokens.of].
 abstract final class SkylineTheme {
-  static ThemeData light() => _build(SkylineTokens.light);
+  static ThemeData light({
+    Iterable<ThemeExtension<dynamic>> extensions = const [],
+  }) => _build(SkylineTokens.light, extensions);
 
-  static ThemeData _build(SkylineTokens t) {
+  static ThemeData _build(
+    SkylineTokens t,
+    Iterable<ThemeExtension<dynamic>> appExtensions,
+  ) {
     final scheme = ColorScheme(
       brightness: t.brightness,
       primary: t.primary,
@@ -117,7 +122,7 @@ abstract final class SkylineTheme {
       colorScheme: scheme,
       extensions: [
         t,
-        RideSurfaces(wash: t.isDark ? t.sunken : t.primarySoft),
+        ...appExtensions,
         // Older widgets still read Deep Signal tokens; hand them the Skyline
         // palette so nothing renders in the previous colours.
         _deepSignalCompat(t),

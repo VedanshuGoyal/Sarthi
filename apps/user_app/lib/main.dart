@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'core/brand/mojud_brand.dart';
-import 'core/theme/skyline/skyline_theme.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/home_screen.dart';
+import 'features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
+    show RideSurfaces;
 import 'features/splash/view/splash_screen.dart';
 
 /// Entry point for the MOJUD customer app.
@@ -30,7 +32,9 @@ class MojudUserApp extends StatelessWidget {
     // theme switch.
     return MaterialApp(
       title: MojudBrand.name,
-      theme: SkylineTheme.light(),
+      theme: SkylineTheme.light(
+        extensions: [RideSurfaces(wash: SkylineTokens.light.primarySoft)],
+      ),
       themeMode: ThemeMode.light,
       home: const _AppRoot(),
     );

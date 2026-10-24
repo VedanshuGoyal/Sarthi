@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// One choice in the trip chooser.
 ///

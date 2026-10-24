@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/pickup_location.dart';
-import '../../../../core/theme/skyline/skyline_row.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// A tappable past pickup shown when the search field is empty.
 ///

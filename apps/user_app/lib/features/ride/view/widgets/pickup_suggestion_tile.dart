@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/place_suggestion.dart';
-import '../../../../core/theme/skyline/skyline_row.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// One tappable search result in the pickup list.
 ///

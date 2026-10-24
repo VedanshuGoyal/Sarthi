@@ -20,7 +20,7 @@ import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
 import '../../ride/view/widgets/ride_theme.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// Landing screen shown after a customer finishes registering.
 ///

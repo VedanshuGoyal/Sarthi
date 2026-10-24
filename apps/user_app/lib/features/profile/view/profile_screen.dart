@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/skyline/skyline_row.dart';
-import '../../../core/theme/skyline/skyline_tokens.dart';
+import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../auth/domain/auth_user.dart';
 import 'widgets/saved_cars_section.dart';
 import 'widgets/user_avatar.dart';

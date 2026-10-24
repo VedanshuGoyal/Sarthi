@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'schedule_field.dart';
-import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// One stop in the Multi-Stop planner: where to go, the driver's task there,
 /// and the leave-by deadline — plus reorder/remove controls in the header.
