@@ -25,6 +25,7 @@ import (
 	"github.com/sarthi/server/internal/service"
 	"github.com/sarthi/server/internal/sms/fast2sms"
 	"github.com/sarthi/server/internal/storage"
+	"github.com/sarthi/server/pkg/geo"
 )
 
 func main() {
@@ -138,6 +139,14 @@ func run() error {
 		cfg.Secrets.Pepper,
 	)
 
+	// Driver rides: bookings move through accept → arrive → start → complete
+	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
+	driverRides := service.NewDriverRideService(
+		repository.NewDriverRideRepository(pool),
+		repository.NewDriverKYCRepository(pool),
+		memstore.NewDriverTracker(geo.DefaultResolution),
+	)
+
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
 	// apps short-lived tokens (GET /maps/token).
 	var mapsTokens service.MapsTokenSource
@@ -154,7 +163,7 @@ func run() error {
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
-			driverAuthService, driverSessions, driverKYC, mapsService),
+			driverAuthService, driverSessions, driverKYC, driverRides, mapsService),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

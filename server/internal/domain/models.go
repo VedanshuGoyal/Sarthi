@@ -166,10 +166,10 @@ type DriverProfile struct {
 // is encrypted at rest and never returned to a client; Last4 is what the app
 // shows so the driver can recognise their own account.
 type DriverBankAccount struct {
-	AccountHolderName string    `json:"accountHolderName"`
-	AccountNumberLast4 string   `json:"accountNumberLast4"`
-	IFSCCode          string    `json:"ifscCode"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	AccountHolderName  string    `json:"accountHolderName"`
+	AccountNumberLast4 string    `json:"accountNumberLast4"`
+	IFSCCode           string    `json:"ifscCode"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 // DriverKYC is the whole Document View as the app needs to render it: what has
@@ -223,18 +223,109 @@ type Car struct {
 	CreatedAt    time.Time       `json:"createdAt"`
 }
 
-// Booking is a confirmed trip request submitted from the customer app. Until
-// matchmaking and the ride pipeline exist, PostgreSQL is the source of truth
-// for what the customer asked for. TripType is "roundTrip", "oneWay" or
-// "multiStop"; Details is the schemaless per-trip-type payload the app sent,
-// persisted verbatim as JSONB so the pipeline can be designed against real
-// bookings.
+// Booking is a confirmed trip request submitted from the customer app, and —
+// once a driver takes it — the ride itself. PostgreSQL is the source of truth.
+// TripType is "roundTrip", "oneWay" or "multiStop"; Details is the schemaless
+// per-trip-type payload the app sent, persisted verbatim as JSONB.
+//
+// ScheduledAt and FarePaise are lifted out of Details when the booking is
+// recorded, so drivers' lists can sort on them and earnings can be summed.
+// Money is integer paise. FareEstimated marks a fare the server derived from
+// the trip's duration rather than one the customer was quoted.
 type Booking struct {
-	ID        string         `json:"id"`
-	UserID    string         `json:"userId"`
-	TripType  string         `json:"tripType"`
-	Details   map[string]any `json:"details"`
-	CreatedAt time.Time      `json:"createdAt"`
+	ID            string         `json:"id"`
+	UserID        string         `json:"userId"`
+	TripType      string         `json:"tripType"`
+	Details       map[string]any `json:"details"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	Status        RideStatus     `json:"status"`
+	DriverID      string         `json:"driverId,omitempty"`
+	ScheduledAt   *time.Time     `json:"scheduledAt,omitempty"`
+	FarePaise     int64          `json:"farePaise"`
+	FareEstimated bool           `json:"fareEstimated"`
+	AcceptedAt    *time.Time     `json:"acceptedAt,omitempty"`
+	ArrivedAt     *time.Time     `json:"arrivedAt,omitempty"`
+	StartedAt     *time.Time     `json:"startedAt,omitempty"`
+	CompletedAt   *time.Time     `json:"completedAt,omitempty"`
+}
+
+// RideCustomer is who a driver is driving for. Only revealed to the driver a
+// ride is assigned to.
+type RideCustomer struct {
+	Name      string `json:"name"`
+	PhoneE164 string `json:"phoneE164"`
+}
+
+// RideBooking is a booking together with the customer who made it, as the
+// repository reads it for the driver-facing ride lists.
+type RideBooking struct {
+	Booking  Booking
+	Customer RideCustomer
+}
+
+// RidePlace is one address on a ride — the pickup, a destination or a stop.
+type RidePlace struct {
+	Address string  `json:"address"`
+	Lat     float64 `json:"lat"`
+	Lng     float64 `json:"lng"`
+}
+
+// RideStop is one errand on a multi-stop ride: where, what for, and the time
+// to leave by.
+type RideStop struct {
+	Place    RidePlace  `json:"place"`
+	Task     string     `json:"task,omitempty"`
+	DepartBy *time.Time `json:"departBy,omitempty"`
+}
+
+// RideCar is the customer's car the driver will drive. Multi-stop bookings
+// don't name one yet, so it is optional on a ride.
+type RideCar struct {
+	Registration string `json:"registration"`
+	CarType      string `json:"carType"`
+	Transmission string `json:"transmission"`
+}
+
+// DriverRide is a booking as the driver app renders it: the schemaless
+// details parsed into typed places, times and the car, plus the lifecycle
+// timestamps. Customer is set only for the driver the ride is assigned to;
+// DistanceM only on the open-requests feed, when the driver shared a location.
+type DriverRide struct {
+	ID               string        `json:"id"`
+	TripType         string        `json:"tripType"`
+	Status           RideStatus    `json:"status"`
+	ScheduledAt      time.Time     `json:"scheduledAt"`
+	EndsAt           time.Time     `json:"endsAt"`
+	FarePaise        int64         `json:"farePaise"`
+	FareEstimated    bool          `json:"fareEstimated"`
+	Pickup           RidePlace     `json:"pickup"`
+	Destination      *RidePlace    `json:"destination,omitempty"`
+	Stops            []RideStop    `json:"stops,omitempty"`
+	Hours            int           `json:"hours,omitempty"`
+	EstimatedMinutes int           `json:"estimatedMinutes,omitempty"`
+	Car              *RideCar      `json:"car,omitempty"`
+	Customer         *RideCustomer `json:"customer,omitempty"`
+	DistanceM        *float64      `json:"distanceM,omitempty"`
+	AcceptedAt       *time.Time    `json:"acceptedAt,omitempty"`
+	ArrivedAt        *time.Time    `json:"arrivedAt,omitempty"`
+	StartedAt        *time.Time    `json:"startedAt,omitempty"`
+	CompletedAt      *time.Time    `json:"completedAt,omitempty"`
+}
+
+// EarningsPeriod is what a driver earned over one window: the summed fares of
+// rides completed in it.
+type EarningsPeriod struct {
+	FarePaise int64 `json:"farePaise"`
+	Rides     int   `json:"rides"`
+}
+
+// DriverEarnings is the earnings panel's summary. Windows are calendar
+// periods in IST: today, this week (from Monday) and this month.
+type DriverEarnings struct {
+	Today EarningsPeriod `json:"today"`
+	Week  EarningsPeriod `json:"week"`
+	Month EarningsPeriod `json:"month"`
+	Total EarningsPeriod `json:"total"`
 }
 
 // Ride is a single trip request and its full lifecycle. Completed rides are the

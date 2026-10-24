@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/repository"
 )
 
 // ErrInvalidBooking is returned when a submitted booking names no trip type or
@@ -16,15 +18,15 @@ var ErrInvalidBooking = errors.New("booking tripType and details are required")
 // BookingStore is the slice of persistence this service needs. Defined
 // consumer-side so the service stays testable with a fake.
 type BookingStore interface {
-	Insert(ctx context.Context, userID, tripType string, details map[string]any) (domain.Booking, error)
+	Insert(ctx context.Context, p repository.InsertBookingParams) (domain.Booking, error)
 }
 
 // BookingService receives confirmed bookings from the customer app and persists
 // them.
 //
-// Matchmaking isn't built yet, so a booking is stored and logged — enough to be
-// the source of truth for what a customer asked for and to design the ride
-// pipeline against real payloads. PostgreSQL is that source of truth.
+// A recorded booking is an open ride request: drivers see it in their app's
+// requests feed (see DriverRideService) until one accepts it. PostgreSQL is
+// the source of truth.
 type BookingService struct {
 	store BookingStore
 }
@@ -42,7 +44,21 @@ func (s *BookingService) Record(ctx context.Context, userID, tripType string, de
 	if tripType == "" || len(details) == 0 {
 		return domain.Booking{}, ErrInvalidBooking
 	}
-	booking, err := s.store.Insert(ctx, userID, tripType, details)
+	// Read the details now rather than when a driver lists them: a booking no
+	// driver can read is one nobody will ever take.
+	plan, err := parseTripPlan(tripType, details)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("%w: %v", ErrInvalidBooking, err)
+	}
+	fare, estimated := plan.Fare()
+	booking, err := s.store.Insert(ctx, repository.InsertBookingParams{
+		UserID:        userID,
+		TripType:      tripType,
+		Details:       details,
+		ScheduledAt:   plan.ScheduledAt,
+		FarePaise:     fare,
+		FareEstimated: estimated,
+	})
 	if err != nil {
 		return domain.Booking{}, err
 	}

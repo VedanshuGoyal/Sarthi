@@ -20,6 +20,7 @@ func NewRouter(
 	driverAuth *service.DriverAuthService,
 	driverSessions *service.SessionService,
 	driverKYC *service.DriverKYCService,
+	driverRides *service.DriverRideService,
 	maps *service.MapsService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
@@ -28,6 +29,7 @@ func NewRouter(
 	bk := NewBookingHandler(bookings)
 	dh := NewDriverAuthHandler(driverAuth, driverSessions)
 	dk := NewDriverKYCHandler(driverKYC)
+	dr := NewDriverRideHandler(driverRides)
 	mp := NewMapsHandler(maps)
 
 	mux := http.NewServeMux()
@@ -82,13 +84,22 @@ func NewRouter(
 	mux.HandleFunc("POST /driver/kyc/documents/{kind}", requireAuth(driverSessions, dk.UploadDocument))
 	mux.HandleFunc("GET /driver/kyc/documents/{kind}/content", requireAuth(driverSessions, dk.DocumentContent))
 
+	// Driver ride panels: open requests near the driver, their own rides,
+	// the accept → arrive → start → complete steps, earnings, and the
+	// online/offline switch. Scoped to the session's driver like KYC.
+	mux.HandleFunc("GET /driver/rides/requests", requireAuth(driverSessions, dr.Requests))
+	mux.HandleFunc("GET /driver/rides", requireAuth(driverSessions, dr.Mine))
+	mux.HandleFunc("POST /driver/rides/{id}/{action}", requireAuth(driverSessions, dr.Act))
+	mux.HandleFunc("GET /driver/earnings", requireAuth(driverSessions, dr.Earnings))
+	mux.HandleFunc("PUT /driver/duty", requireAuth(driverSessions, dr.SetDuty))
+
 	return withCORS(logRequests(mux))
 }
 
 // withCORS makes the API reachable from the Flutter web app, which runs on a
 // different origin (localhost:<random>) and so triggers browser CORS checks.
 // It reflects the request Origin and answers the preflight OPTIONS request
-// directly — the method-aware mux only registers GET/POST, so OPTIONS would
+// directly — the method-aware mux registers no OPTIONS routes, so OPTIONS would
 // otherwise 405. Permissive by design for local dev; restrict the allowed
 // origins before deploying.
 func withCORS(next http.Handler) http.Handler {
@@ -96,7 +107,7 @@ func withCORS(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}
