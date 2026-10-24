@@ -60,6 +60,11 @@ dependencies:
   # Lets the flutter-mcp-toolkit server drive/inspect this app. No-op in release.
   mcp_toolkit: ^3.0.0
 
+  # --- Hand-offs to other apps ---
+  # Opens turn-by-turn navigation in Google Maps and the dialer to call the
+  # customer from a ride's detail screen.
+  url_launcher: ^6.3.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

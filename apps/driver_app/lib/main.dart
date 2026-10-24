@@ -8,6 +8,7 @@ import 'features/auth/driver_auth_controller.dart';
 import 'features/auth/domain/driver.dart';
 import 'features/documents/document_providers.dart';
 import 'features/documents/view/document_view_screen.dart';
+import 'features/home/view/driver_home_shell.dart';
 import 'features/home/view/start_driving_screen.dart';
 
 /// Entry point for the Sarthi driver app.
@@ -15,26 +16,22 @@ import 'features/home/view/start_driving_screen.dart';
 /// The app is bootstrapped through [MCPToolkitBinding] so the flutter-mcp-toolkit
 /// server can inspect and drive it during development. This binding is a no-op in
 /// release builds. [ProviderScope] is the Riverpod root for app-wide state. The
-/// driver app shares the Deep Signal design language with the customer app —
-/// same [DeepSignalTheme], same system-setting + in-app-toggle mode switching —
-/// so both feel like one product.
+/// driver app shares the customer app's light-only Skyline look — same
+/// [SkylineTheme] from `sarthi_shared` — so both feel like one product.
 Future<void> main() async {
   await MCPToolkitBinding.instance.bootstrapFlutter(
     runApp: () => runApp(const ProviderScope(child: SarthiDriverApp())),
   );
 }
 
-class SarthiDriverApp extends ConsumerWidget {
+class SarthiDriverApp extends StatelessWidget {
   const SarthiDriverApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themeModeProvider);
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sarthi Driver',
-      theme: DeepSignalTheme.light(),
-      darkTheme: DeepSignalTheme.dark(),
-      themeMode: themeMode,
+      theme: SkylineTheme.light(),
       home: const _AppRoot(),
     );
   }
@@ -86,27 +83,8 @@ class _SignedInRoot extends ConsumerWidget {
     final submitted = ref.watch(
       documentRegistrationViewModelProvider.select((vm) => vm.isSubmitted),
     );
-    return submitted ? _DriverHome(driver: driver) : const DocumentViewScreen();
-  }
-}
-
-/// Temporary landing screen for a signed-in driver. Replaced by the real
-/// "Go Online" home once the map/matchmaking flow lands.
-class _DriverHome extends StatelessWidget {
-  const _DriverHome({required this.driver});
-
-  final Driver driver;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sarthi Driver'),
-        actions: const [ThemeModeToggle(), SizedBox(width: 4)],
-      ),
-      body: Center(
-        child: Text('Welcome, ${driver.name} — go online to start earning'),
-      ),
-    );
+    return submitted
+        ? DriverHomeShell(driver: driver)
+        : const DocumentViewScreen();
   }
 }

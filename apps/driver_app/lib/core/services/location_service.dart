@@ -8,10 +8,13 @@ enum LocationPermissionResult {
   serviceDisabled,
 }
 
-/// Thin data-layer wrapper around the `geolocator` plugin's permission APIs.
+/// A point the device reported.
+typedef DevicePosition = ({double lat, double lng});
+
+/// Thin data-layer wrapper around the `geolocator` plugin.
 ///
 /// No business logic — just turns geolocator's service/permission checks into
-/// a single [LocationPermissionResult] the app can act on.
+/// a single [LocationPermissionResult], and reads the current position.
 class LocationService {
   const LocationService();
 
@@ -37,5 +40,31 @@ class LocationService {
       LocationPermission.denied ||
       LocationPermission.unableToDetermine => LocationPermissionResult.denied,
     };
+  }
+
+  /// The device's position, or null when permission is missing, location is
+  /// off, or no fix arrives within [timeout]. Falls back to the last known
+  /// fix rather than leaving a driver with no distance at all.
+  Future<DevicePosition?> currentPosition({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return null;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(timeLimit: timeout),
+      );
+      return (lat: position.latitude, lng: position.longitude);
+    } catch (_) {
+      try {
+        final last = await Geolocator.getLastKnownPosition();
+        return last == null ? null : (lat: last.latitude, lng: last.longitude);
+      } catch (_) {
+        return null; // getLastKnownPosition is unsupported on web
+      }
+    }
   }
 }

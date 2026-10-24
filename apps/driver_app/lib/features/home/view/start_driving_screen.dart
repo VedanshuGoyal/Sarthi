@@ -19,7 +19,7 @@ class StartDrivingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(actions: const [ThemeModeToggle(), SizedBox(width: 4)]),
+      appBar: AppBar(),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
