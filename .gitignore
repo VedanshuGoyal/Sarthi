@@ -60,3 +60,6 @@ app.*.map.json
 
 # Local KYC image storage written by the dev (STORAGE_BACKEND=local) server.
 server/.data/
+
+# Rendered download page (scripts/publish-apps.sh) — holds copies of the APKs.
+/scripts/apps-page/dist/

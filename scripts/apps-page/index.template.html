@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MOJUD apps</title>
+<link rel="icon" type="image/png" href="mojud-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --canvas: #E7F0F8; --surface: #FFFFFF; --sunken: #EEF4FA;
+    --ink: #0B2239; --muted: #4A5D72; --faint: #56697E;
+    --signal: #2A93BE; --blue-text: #1A6E93; --soft: #D6EAF4; --hairline: #DCE7F1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif; line-height: 1.5;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+  header span { font-weight: 800; letter-spacing: .08em; font-size: 18px; }
+  h1 { margin: 0; font-size: clamp(28px, 6vw, 36px); line-height: 1.15; font-weight: 800; }
+  .lede { margin: 8px 0 28px; color: var(--muted); font-size: 16px; }
+  .apps { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .card {
+    background: var(--surface); border-radius: 24px; padding: 20px;
+    box-shadow: 0 4px 16px rgba(11, 34, 57, .06); display: flex; flex-direction: column; gap: 14px;
+  }
+  .app-head { display: flex; align-items: center; gap: 14px; }
+  .app-head img { width: 56px; height: 56px; border-radius: 16px; background: var(--sunken); }
+  .app-head h2 { margin: 0; font-size: 19px; font-weight: 800; }
+  .app-head p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: var(--soft); color: var(--blue-text); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
+  .download {
+    display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px;
+    background: var(--ink); color: #fff; border-radius: 18px; text-decoration: none;
+    font-weight: 700; font-size: 16px;
+  }
+  .download:hover { background: #12345A; }
+  .download:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
+  .hash { margin: 0; font-size: 12px; color: var(--faint); word-break: break-all; }
+  .hash code { font-family: ui-monospace, monospace; }
+  section.panel { margin-top: 24px; background: var(--surface); border-radius: 24px; padding: 20px; box-shadow: 0 4px 16px rgba(11, 34, 57, .06); }
+  section.panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 800; }
+  ol { margin: 0; padding-left: 22px; color: var(--muted); }
+  ol li { margin: 6px 0; }
+  ol strong { color: var(--ink); }
+  .note { margin: 14px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--sunken); color: var(--muted); font-size: 14px; }
+  .qr { display: none; }
+  @media (min-width: 900px) and (hover: hover) {
+    .qr { display: flex; align-items: center; gap: 18px; }
+    .qr svg { width: 132px; height: 132px; flex-shrink: 0; background: #fff; border-radius: 12px; padding: 6px; }
+  }
+  footer { margin-top: 28px; color: var(--faint); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <svg width="30" height="30" viewBox="0 0 144 144" role="img" aria-label="MOJUD">
+      <g stroke="#0B2239" stroke-width="9" stroke-linecap="round" fill="none">
+        <line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/>
+        <line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/>
+        <line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/>
+      </g>
+      <circle cx="72" cy="72" r="8" fill="#CE9A3C"/>
+    </svg>
+    <span>MOJUD</span>
+  </header>
+
+  <h1>Get the apps</h1>
+  <p class="lede">Test builds for Android phones. Your car, our driver.</p>
+
+  <div class="apps">
+    <article class="card">
+      <div class="app-head">
+        <img src="mojud-icon.png" alt="" width="56" height="56">
+        <div>
+          <h2>MOJUD</h2>
+          <p>Book a driver for your own car.</p>
+        </div>
+      </div>
+      <div class="meta">
+        <span class="chip">Version {{USER_VERSION}}</span>
+        <span class="chip">{{USER_SIZE}}</span>
+        <span class="chip">Android</span>
+      </div>
+      <a class="download" href="{{USER_APK}}" download>Download for Android</a>
+      <p class="hash">SHA-256 <code>{{USER_SHA}}</code></p>
+    </article>
+
+    <article class="card">
+      <div class="app-head">
+        <img src="sarthi-driver-icon.png" alt="" width="56" height="56">
+        <div>
+          <h2>Sarthi Driver</h2>
+          <p>For drivers: sign up, documents, trips.</p>
+        </div>
+      </div>
+      <div class="meta">
+        <span class="chip">Version {{DRIVER_VERSION}}</span>
+        <span class="chip">{{DRIVER_SIZE}}</span>
+        <span class="chip">Android</span>
+      </div>
+      <a class="download" href="{{DRIVER_APK}}" download>Download for Android</a>
+      <p class="hash">SHA-256 <code>{{DRIVER_SHA}}</code></p>
+    </article>
+  </div>
+
+  <section class="panel">
+    <h2>How to install</h2>
+    <ol>
+      <li>Tap <strong>Download for Android</strong> on your phone.</li>
+      <li>Open the downloaded file. If asked, allow your browser to <strong>install unknown apps</strong>.</li>
+      <li>Tap <strong>Install</strong>, then open the app.</li>
+    </ol>
+    <p class="note">Installed an earlier test build? Uninstall it first. These builds are signed with a new key, so Android won't update over the old one.</p>
+  </section>
+
+  <section class="panel qr">
+    {{QR_SVG}}
+    <div>
+      <h2>On a computer?</h2>
+      <p style="margin:0;color:var(--muted)">Scan this with your phone's camera to open this page there.</p>
+    </div>
+  </section>
+
+  <footer>Test builds, not yet on Google Play · Updated {{UPDATED}}</footer>
+</main>
+</body>
+</html>
