@@ -94,11 +94,13 @@ class MyRidesViewModel extends ChangeNotifier {
   /// Applies a lifecycle [action] to [ride]. Returns null on success or a
   /// message to show. A ride that has moved on server-side (another device,
   /// a stale screen) is reloaded so the panel shows where it really is.
-  Future<String?> act(Ride ride, RideAction action) async {
+  ///
+  /// Starting needs [otp], the code from the customer's app.
+  Future<String?> act(Ride ride, RideAction action, {String? otp}) async {
     _busyRideId = ride.id;
     notifyListeners();
     try {
-      final updated = await _repository.act(ride.id, action);
+      final updated = await _repository.act(ride.id, action, otp: otp);
       if (action == RideAction.release) {
         _rides = [
           for (final r in _rides)

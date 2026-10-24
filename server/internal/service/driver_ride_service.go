@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math/big"
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
@@ -26,6 +30,14 @@ var ErrRideClash = errors.New("this ride overlaps one you've already accepted")
 // ErrRideInProgress is returned when a driver tries to start a ride while
 // another is still underway.
 var ErrRideInProgress = errors.New("finish your current ride before starting another")
+
+// ErrStartOTPIncorrect is returned when the code a driver enters to start a
+// ride doesn't match the one in the customer's app.
+var ErrStartOTPIncorrect = errors.New("that code doesn't match — ask the customer for the code in their app")
+
+// ErrStartOTPReset is returned on the wrong attempt that uses up the
+// allowance: the ride gets a new code, which the customer's app now shows.
+var ErrStartOTPReset = errors.New("too many wrong codes — the customer's app now shows a new one")
 
 const (
 	// requestRadiusM is how far from the driver an open ride may start and
@@ -51,7 +63,8 @@ type DriverRideStore interface {
 	ListOpen(ctx context.Context, driverID string, from time.Time, limit int) ([]domain.RideBooking, error)
 	ListForDriver(ctx context.Context, driverID string, limit int) ([]domain.RideBooking, error)
 	FindByID(ctx context.Context, id string) (domain.RideBooking, error)
-	Accept(ctx context.Context, id, driverID string, at time.Time) (domain.RideBooking, error)
+	Accept(ctx context.Context, id, driverID string, at time.Time, startOTP string) (domain.RideBooking, error)
+	SetStartOTP(ctx context.Context, id, driverID, startOTP string) error
 	Advance(ctx context.Context, id, driverID string, from, to domain.RideStatus, at time.Time) (domain.RideBooking, error)
 	Release(ctx context.Context, id, driverID string) error
 	Decline(ctx context.Context, id, driverID string) error
@@ -71,6 +84,14 @@ type DriverPresence interface {
 	Remove(driverID string)
 }
 
+// StartCodeGuard caps wrong start-code attempts per ride
+// (memstore.OTPGuard, keyed by ride id).
+type StartCodeGuard interface {
+	Begin(key string)
+	RecordFailure(key string) (invalidated bool)
+	Succeed(key string)
+}
+
 // LatLng is a point the driver app reports.
 type LatLng struct{ Lat, Lng float64 }
 
@@ -85,13 +106,22 @@ type DriverRideService struct {
 	store    DriverRideStore
 	profiles DriverProfileReader
 	presence DriverPresence
+	codes    StartCodeGuard
 	now      func() time.Time
+	newCode  func() (string, error)
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
-// reader and the live presence index.
-func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence) *DriverRideService {
-	return &DriverRideService{store: store, profiles: profiles, presence: presence, now: time.Now}
+// reader, the live presence index and the start-code attempt limiter.
+func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard) *DriverRideService {
+	return &DriverRideService{
+		store:    store,
+		profiles: profiles,
+		presence: presence,
+		codes:    codes,
+		now:      time.Now,
+		newCode:  newStartOTP,
+	}
 }
 
 // Requests returns the open rides driverID can take, soonest first. With a
@@ -179,10 +209,15 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		}
 	}
 
-	rb, err := s.store.Accept(ctx, rideID, driverID, s.now())
+	code, err := s.newCode()
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
+	rb, err := s.store.Accept(ctx, rideID, driverID, s.now(), code)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	s.codes.Begin(rideID)
 	slog.InfoContext(ctx, "ride accepted", "driverId", driverID, "rideId", rideID)
 	ride, _, _ := toDriverRide(rb, true)
 	return ride, nil
@@ -198,19 +233,54 @@ func (s *DriverRideService) Arrive(ctx context.Context, driverID, rideID string)
 	return s.advance(ctx, driverID, rideID, domain.RideStatusAccepted, domain.RideStatusArrived)
 }
 
-// Start begins the ride once the driver is at the pickup. A driver drives one
-// car at a time, so it's refused while another ride is underway.
-func (s *DriverRideService) Start(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
+// Start begins the ride once the driver is at the pickup and enters the code
+// from the customer's app. A driver drives one car at a time, so it's refused
+// while another ride is underway.
+//
+// Wrong codes are capped per ride (StartCodeGuard); the attempt that uses up
+// the allowance replaces the code, so guessing never gets easier and the
+// customer simply reads out the new one.
+func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp string) (domain.DriverRide, error) {
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	for _, rb := range mine {
+	var target *domain.RideBooking
+	for i, rb := range mine {
 		if rb.Booking.Status == domain.RideStatusInProgress && rb.Booking.ID != rideID {
 			return domain.DriverRide{}, ErrRideInProgress
 		}
+		if rb.Booking.ID == rideID {
+			target = &mine[i]
+		}
 	}
-	return s.advance(ctx, driverID, rideID, domain.RideStatusArrived, domain.RideStatusInProgress)
+	if target == nil || target.Booking.Status != domain.RideStatusArrived {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+
+	want := target.Booking.StartOTP
+	if want == "" || subtle.ConstantTimeCompare([]byte(otp), []byte(want)) != 1 {
+		if !s.codes.RecordFailure(rideID) {
+			return domain.DriverRide{}, ErrStartOTPIncorrect
+		}
+		code, err := s.newCode()
+		if err != nil {
+			return domain.DriverRide{}, err
+		}
+		if err := s.store.SetStartOTP(ctx, rideID, driverID, code); err != nil {
+			return domain.DriverRide{}, err
+		}
+		s.codes.Begin(rideID)
+		slog.WarnContext(ctx, "ride start code reset after wrong attempts",
+			"driverId", driverID, "rideId", rideID)
+		return domain.DriverRide{}, ErrStartOTPReset
+	}
+
+	ride, err := s.advance(ctx, driverID, rideID, domain.RideStatusArrived, domain.RideStatusInProgress)
+	if err == nil {
+		s.codes.Succeed(rideID)
+	}
+	return ride, err
 }
 
 // Complete finishes a ride that is underway.
@@ -263,6 +333,15 @@ func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string
 	slog.InfoContext(ctx, "ride advanced", "driverId", driverID, "rideId", rideID, "status", to)
 	ride, _, _ := toDriverRide(rb, true)
 	return ride, nil
+}
+
+// newStartOTP draws a uniformly random 4-digit code from crypto/rand.
+func newStartOTP() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(10_000))
+	if err != nil {
+		return "", fmt.Errorf("drawing start code: %w", err)
+	}
+	return fmt.Sprintf("%04d", n.Int64()), nil
 }
 
 // clearedProfile returns driverID's profile if their KYC lets them drive.

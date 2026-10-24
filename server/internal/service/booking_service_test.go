@@ -17,6 +17,11 @@ type fakeBookingStore struct {
 	params    repository.InsertBookingParams
 	got       domain.Booking
 	err       error
+	listed    []domain.UserBooking
+}
+
+func (f *fakeBookingStore) ListForUser(context.Context, string, int) ([]domain.UserBooking, error) {
+	return f.listed, f.err
 }
 
 func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingParams) (domain.Booking, error) {
@@ -103,5 +108,42 @@ func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 
 	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+}
+
+func TestBookingService_ListMine_showsStartCodeOnlyWhileDriverIsComing(t *testing.T) {
+	at := time.Date(2026, 10, 26, 3, 30, 0, 0, time.UTC)
+	booking := func(id string, status domain.RideStatus) domain.Booking {
+		return domain.Booking{
+			ID: id, TripType: TripRoundTrip, Details: roundTripDetails(),
+			Status: status, ScheduledAt: &at, FarePaise: 44000, StartOTP: "4821",
+		}
+	}
+	driver := &domain.RideDriver{Name: "Ravi", PhoneE164: "+919800000001"}
+	store := &fakeBookingStore{listed: []domain.UserBooking{
+		{Booking: booking("open", domain.RideStatusRequested)},
+		{Booking: booking("coming", domain.RideStatusAccepted), Driver: driver},
+		{Booking: booking("waiting", domain.RideStatusArrived), Driver: driver},
+		{Booking: booking("driving", domain.RideStatusInProgress), Driver: driver},
+		{Booking: domain.Booking{ID: "junk", TripType: TripRoundTrip, Details: map[string]any{}}},
+	}}
+	got, err := NewBookingService(store).ListMine(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("ListMine: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("bookings = %d, want 4 (unreadable one skipped)", len(got))
+	}
+	want := map[string]string{"open": "", "coming": "4821", "waiting": "4821", "driving": ""}
+	for _, b := range got {
+		if b.StartOTP != want[b.ID] {
+			t.Errorf("%s: startOtp = %q, want %q", b.ID, b.StartOTP, want[b.ID])
+		}
+	}
+	if got[1].Driver == nil || got[1].Driver.Name != "Ravi" {
+		t.Errorf("driver = %+v, want Ravi", got[1].Driver)
+	}
+	if got[0].Pickup.Address != "India Gate, New Delhi" || got[0].FarePaise != 44000 {
+		t.Errorf("booking = %+v", got[0])
 	}
 }

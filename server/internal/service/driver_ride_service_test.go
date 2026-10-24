@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/memstore"
 	"github.com/sarthi/server/internal/repository"
 )
 
@@ -63,7 +65,18 @@ func (f *fakeRideStore) FindByID(_ context.Context, id string) (domain.RideBooki
 	return *rb, nil
 }
 
-func (f *fakeRideStore) Accept(_ context.Context, id, driverID string, at time.Time) (domain.RideBooking, error) {
+func (f *fakeRideStore) SetStartOTP(_ context.Context, id, driverID, otp string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rb, ok := f.rides[id]
+	if !ok || rb.Booking.DriverID != driverID {
+		return repository.ErrRideStateConflict
+	}
+	rb.Booking.StartOTP = otp
+	return nil
+}
+
+func (f *fakeRideStore) Accept(_ context.Context, id, driverID string, at time.Time, otp string) (domain.RideBooking, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rb, ok := f.rides[id]
@@ -73,6 +86,7 @@ func (f *fakeRideStore) Accept(_ context.Context, id, driverID string, at time.T
 	rb.Booking.Status = domain.RideStatusAccepted
 	rb.Booking.DriverID = driverID
 	rb.Booking.AcceptedAt = &at
+	rb.Booking.StartOTP = otp
 	return *rb, nil
 }
 
@@ -161,9 +175,26 @@ func newRideService(store *fakeRideStore) *DriverRideService {
 		"auto":    {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionAutomatic},
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
-	}, &fakePresence{online: map[string]bool{}})
+	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard())
 	svc.now = func() time.Time { return testNow }
+	codes := []string{"1111", "2222", "3333"}
+	svc.newCode = func() (string, error) {
+		c := codes[0]
+		codes = append(codes[1:], c)
+		return c, nil
+	}
 	return svc
+}
+
+// startWithCode starts a ride with the code it was issued — what the driver
+// types after the customer reads it out.
+func startWithCode(svc *DriverRideService, store *fakeRideStore) func(context.Context, string, string) (domain.DriverRide, error) {
+	return func(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
+		store.mu.Lock()
+		code := store.rides[rideID].Booking.StartOTP
+		store.mu.Unlock()
+		return svc.Start(ctx, driverID, rideID, code)
+	}
 }
 
 func TestRequests_filtersAndHidesCustomer(t *testing.T) {
@@ -226,7 +257,7 @@ func TestAccept_lifecycle(t *testing.T) {
 		t.Errorf("early complete err = %v, want ErrRideStateConflict", err)
 	}
 	for _, step := range []func(context.Context, string, string) (domain.DriverRide, error){
-		svc.Arrive, svc.Start, svc.Complete,
+		svc.Arrive, startWithCode(svc, store), svc.Complete,
 	} {
 		if _, err := step(ctx, "auto", "r1"); err != nil {
 			t.Fatalf("step: %v", err)
@@ -309,10 +340,11 @@ func TestStart_oneRideAtATime(t *testing.T) {
 			t.Fatalf("Arrive %s: %v", id, err)
 		}
 	}
-	if _, err := svc.Start(ctx, "auto", "a"); err != nil {
+	start := startWithCode(svc, store)
+	if _, err := start(ctx, "auto", "a"); err != nil {
 		t.Fatalf("Start a: %v", err)
 	}
-	if _, err := svc.Start(ctx, "auto", "b"); !errors.Is(err, ErrRideInProgress) {
+	if _, err := start(ctx, "auto", "b"); !errors.Is(err, ErrRideInProgress) {
 		t.Errorf("Start b err = %v, want ErrRideInProgress", err)
 	}
 }
@@ -343,7 +375,7 @@ func TestEarnings_istWindows(t *testing.T) {
 	store := &earningsSpy{fakeRideStore: newFakeRideStore(), capture: func(today, week, month time.Time) {
 		gotToday, gotWeek, gotMonth = today, week, month
 	}}
-	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}})
+	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard())
 	// Sunday 25 Oct 2026, 01:00 IST — still Saturday evening in UTC.
 	svc.now = func() time.Time { return time.Date(2026, 10, 24, 19, 30, 0, 0, time.UTC) }
 
@@ -369,4 +401,60 @@ type earningsSpy struct {
 func (s *earningsSpy) Earnings(_ context.Context, _ string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	s.capture(today, week, month)
 	return domain.DriverEarnings{}, nil
+}
+
+func TestStart_requiresTheCustomersCode(t *testing.T) {
+	store := newFakeRideStore(openRide("r1", testNow.Add(time.Hour), 2, "automatic"))
+	svc := newRideService(store)
+	ctx := context.Background()
+
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if got := store.rides["r1"].Booking.StartOTP; got != "1111" {
+		t.Fatalf("issued code = %q, want 1111", got)
+	}
+	// Not at the pickup yet: the code alone doesn't start it.
+	if _, err := svc.Start(ctx, "auto", "r1", "1111"); !errors.Is(err, repository.ErrRideStateConflict) {
+		t.Errorf("start before arrive err = %v, want ErrRideStateConflict", err)
+	}
+	if _, err := svc.Arrive(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Arrive: %v", err)
+	}
+
+	// Four wrong codes are just wrong; the fifth replaces the code.
+	for i := range memstore.MaxOTPVerifyFailures - 1 {
+		if _, err := svc.Start(ctx, "auto", "r1", "9999"); !errors.Is(err, ErrStartOTPIncorrect) {
+			t.Fatalf("wrong code %d err = %v, want ErrStartOTPIncorrect", i+1, err)
+		}
+	}
+	if _, err := svc.Start(ctx, "auto", "r1", "9999"); !errors.Is(err, ErrStartOTPReset) {
+		t.Fatalf("last wrong code err = %v, want ErrStartOTPReset", err)
+	}
+	if got := store.rides["r1"].Booking.StartOTP; got != "2222" {
+		t.Fatalf("code after reset = %q, want 2222", got)
+	}
+	// The old code is dead; the new one works, with a fresh allowance.
+	if _, err := svc.Start(ctx, "auto", "r1", "1111"); !errors.Is(err, ErrStartOTPIncorrect) {
+		t.Errorf("old code err = %v, want ErrStartOTPIncorrect", err)
+	}
+	ride, err := svc.Start(ctx, "auto", "r1", "2222")
+	if err != nil {
+		t.Fatalf("Start with new code: %v", err)
+	}
+	if ride.Status != domain.RideStatusInProgress {
+		t.Errorf("status = %s, want in_progress", ride.Status)
+	}
+}
+
+func TestNewStartOTP_isFourDigits(t *testing.T) {
+	for range 200 {
+		code, err := newStartOTP()
+		if err != nil {
+			t.Fatalf("newStartOTP: %v", err)
+		}
+		if len(code) != 4 || strings.Trim(code, "0123456789") != "" {
+			t.Fatalf("code = %q, want 4 digits", code)
+		}
+	}
 }

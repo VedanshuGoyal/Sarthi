@@ -48,6 +48,9 @@ class FakeRidesRepository implements RidesRepository {
   Map<RideAction, RidesException> failures = {};
 
   final List<(String, RideAction)> acted = [];
+
+  /// The code sent with the last start.
+  String? lastOtp;
   final List<bool> duty = [];
 
   @override
@@ -57,8 +60,9 @@ class FakeRidesRepository implements RidesRepository {
   Future<List<Ride>> myRides() async => mine;
 
   @override
-  Future<Ride?> act(String id, RideAction action) async {
+  Future<Ride?> act(String id, RideAction action, {String? otp}) async {
     acted.add((id, action));
+    if (action == RideAction.start) lastOtp = otp;
     final failure = failures[action];
     if (failure != null) throw failure;
     final status = switch (action) {

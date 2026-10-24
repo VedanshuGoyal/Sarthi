@@ -36,13 +36,13 @@ const (
 // bookingColumns is the shared SELECT/RETURNING list, in scanBooking's order.
 const bookingColumns = `id, user_id, trip_type, details, created_at, status,
 	coalesce(driver_id::text, ''), scheduled_at, fare_paise, fare_estimated,
-	accepted_at, arrived_at, started_at, completed_at`
+	accepted_at, arrived_at, started_at, completed_at, coalesce(start_otp, '')`
 
 // rideColumns is bookingColumns read through the `b` alias, plus the
 // customer's name and phone from `u` — the shape scanRide reads.
 const rideColumns = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
 	coalesce(b.driver_id::text, ''), b.scheduled_at, b.fare_paise, b.fare_estimated,
-	b.accepted_at, b.arrived_at, b.started_at, b.completed_at,
+	b.accepted_at, b.arrived_at, b.started_at, b.completed_at, coalesce(b.start_otp, ''),
 	u.name, u.phone_e164`
 
 // timestampColumn is the column each forward status stamps.
@@ -105,18 +105,19 @@ func (r *DriverRideRepository) FindByID(ctx context.Context, id string) (domain.
 	return rb, nil
 }
 
-// Accept assigns an open ride to driverID. It succeeds for exactly one
-// driver: anyone after the first gets [ErrRideUnavailable].
-func (r *DriverRideRepository) Accept(ctx context.Context, id, driverID string, at time.Time) (domain.RideBooking, error) {
+// Accept assigns an open ride to driverID, issuing startOTP as the code the
+// customer will give them to start it. It succeeds for exactly one driver:
+// anyone after the first gets [ErrRideUnavailable].
+func (r *DriverRideRepository) Accept(ctx context.Context, id, driverID string, at time.Time, startOTP string) (domain.RideBooking, error) {
 	q := `
 		WITH b AS (
 		    UPDATE bookings
-		    SET status = 'accepted', driver_id = $2, accepted_at = $3
+		    SET status = 'accepted', driver_id = $2, accepted_at = $3, start_otp = $4
 		    WHERE id = $1 AND status = 'requested' AND driver_id IS NULL
 		    RETURNING *)
 		SELECT ` + rideColumns + `
 		FROM b JOIN users u ON u.id = b.user_id`
-	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at))
+	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at, startOTP))
 	if err != nil {
 		return domain.RideBooking{}, rideErr(err, ErrRideUnavailable, "accepting ride")
 	}
@@ -157,7 +158,8 @@ func (r *DriverRideRepository) Release(ctx context.Context, id, driverID string)
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE bookings
-		SET status = 'requested', driver_id = NULL, accepted_at = NULL, arrived_at = NULL
+		SET status = 'requested', driver_id = NULL, accepted_at = NULL, arrived_at = NULL,
+		    start_otp = NULL
 		WHERE id = $1 AND driver_id = $2 AND status IN ('accepted', 'arrived')`,
 		id, driverID)
 	if err != nil {
@@ -171,6 +173,23 @@ func (r *DriverRideRepository) Release(ctx context.Context, id, driverID string)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("releasing ride: %w", err)
+	}
+	return nil
+}
+
+// SetStartOTP replaces the start code of driverID's ride that is waiting to
+// start — used after too many wrong attempts. [ErrRideStateConflict] if the
+// ride isn't theirs or has already started.
+func (r *DriverRideRepository) SetStartOTP(ctx context.Context, id, driverID, startOTP string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE bookings SET start_otp = $3
+		WHERE id = $1 AND driver_id = $2 AND status IN ('accepted', 'arrived')`,
+		id, driverID, startOTP)
+	if err != nil {
+		return rideErr(err, ErrRideNotFound, "resetting start code")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRideStateConflict
 	}
 	return nil
 }
@@ -265,7 +284,7 @@ func scanBooking(row pgx.Row) (domain.Booking, error) {
 	err := row.Scan(
 		&b.ID, &b.UserID, &b.TripType, &b.Details, &b.CreatedAt, &b.Status,
 		&b.DriverID, &b.ScheduledAt, &b.FarePaise, &b.FareEstimated,
-		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt,
+		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt, &b.StartOTP,
 	)
 	return b, err
 }
@@ -276,7 +295,7 @@ func scanRide(row pgx.Row) (domain.RideBooking, error) {
 	err := row.Scan(
 		&b.ID, &b.UserID, &b.TripType, &b.Details, &b.CreatedAt, &b.Status,
 		&b.DriverID, &b.ScheduledAt, &b.FarePaise, &b.FareEstimated,
-		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt,
+		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt, &b.StartOTP,
 		&rb.Customer.Name, &rb.Customer.PhoneE164,
 	)
 	return rb, err

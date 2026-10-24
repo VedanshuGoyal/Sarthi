@@ -57,8 +57,10 @@ func NewRouter(
 	mux.HandleFunc("POST /me/cars", requireAuth(sessions, cr.Add))
 	mux.HandleFunc("DELETE /me/cars/{id}", requireAuth(sessions, cr.Delete))
 
-	// Confirmed bookings from the app; recorded server-side (log-only for now).
+	// Confirmed bookings from the app, and the customer's list of them with
+	// status, assigned driver and start code.
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
+	mux.HandleFunc("GET /me/bookings", requireAuth(sessions, bk.List))
 
 	// Short-lived Ola Maps tokens for the app's place search; the OAuth client
 	// secret stays on the server.

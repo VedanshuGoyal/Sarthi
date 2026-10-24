@@ -36,6 +36,7 @@ services:
       - ./migrations/0007_create_driver_sessions.up.sql:/docker-entrypoint-initdb.d/0007_create_driver_sessions.sql:ro
       - ./migrations/0008_create_driver_kyc.up.sql:/docker-entrypoint-initdb.d/0008_create_driver_kyc.sql:ro
       - ./migrations/0009_booking_rides.up.sql:/docker-entrypoint-initdb.d/0009_booking_rides.sql:ro
+      - ./migrations/0010_booking_start_otp.up.sql:/docker-entrypoint-initdb.d/0010_booking_start_otp.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sarthi -d sarthi"]
       interval: 5s

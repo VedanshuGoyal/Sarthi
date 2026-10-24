@@ -145,6 +145,8 @@ func run() error {
 		repository.NewDriverRideRepository(pool),
 		repository.NewDriverKYCRepository(pool),
 		memstore.NewDriverTracker(geo.DefaultResolution),
+		// Wrong start-code attempts, keyed by ride id (5 per code).
+		memstore.NewOTPGuard(),
 	)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the

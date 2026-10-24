@@ -1,7 +1,7 @@
 name: user_app
 description: "MOJUD — the customer-facing ride-hailing app."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.12.2
@@ -46,6 +46,10 @@ dependencies:
   flutter_secure_storage: ^10.3.1
   google_fonts: ^8.2.0
 
+  # --- Hand-offs to other apps ---
+  # Calls the assigned driver from the "Your rides" card.
+  url_launcher: ^6.3.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -65,4 +69,3 @@ flutter:
     - assets/markers/pin_origin.png
     - assets/markers/pin_destination.png
     - assets/map_styles/
-

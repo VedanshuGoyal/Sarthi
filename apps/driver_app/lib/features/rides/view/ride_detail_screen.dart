@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -509,8 +510,18 @@ class _ActionBar extends ConsumerWidget {
     WidgetRef ref,
     RideAction action,
   ) async {
-    final confirm = await _confirm(context, action);
-    if (!confirm || !context.mounted) return;
+    // Starting asks for the customer's code instead of a yes/no.
+    String? otp;
+    if (action == RideAction.start) {
+      otp = await showDialog<String>(
+        context: context,
+        builder: (_) => const _StartCodeDialog(),
+      );
+      if (otp == null || !context.mounted) return;
+    } else {
+      final confirm = await _confirm(context, action);
+      if (!confirm || !context.mounted) return;
+    }
 
     final String? error;
     switch (action) {
@@ -519,7 +530,9 @@ class _ActionBar extends ConsumerWidget {
       case RideAction.decline:
         error = await ref.read(dutyViewModelProvider).decline(ride);
       default:
-        error = await ref.read(myRidesViewModelProvider).act(ride, action);
+        error = await ref
+            .read(myRidesViewModelProvider)
+            .act(ride, action, otp: otp);
     }
     if (!context.mounted) return;
 
@@ -537,6 +550,7 @@ class _ActionBar extends ConsumerWidget {
       RideAction.accept => 'Ride accepted — it\'s in your upcoming rides.',
       RideAction.decline => 'Request hidden.',
       RideAction.release => 'Ride handed back.',
+      RideAction.start => 'Trip started. Drive safe!',
       RideAction.complete =>
         'Trip complete — ${RideFormat.rupees(ride.fareRupees)} added to earnings.',
       _ => null,
@@ -550,11 +564,6 @@ class _ActionBar extends ConsumerWidget {
   /// Steps that are hard to undo ask first.
   Future<bool> _confirm(BuildContext context, RideAction action) async {
     final (title, body, yes) = switch (action) {
-      RideAction.start => (
-        'Start the trip?',
-        "Only start once you're with the customer and their car.",
-        'Start trip',
-      ),
       RideAction.complete => (
         'Complete the trip?',
         'Confirm the trip is over and the car is back with the customer.',
@@ -586,5 +595,75 @@ class _ActionBar extends ConsumerWidget {
       ),
     );
     return result ?? false;
+  }
+}
+
+/// Asks for the 4-digit code shown in the customer's app — the proof that the
+/// driver is with the right customer before the trip can start. Pops with
+/// the code, or null if cancelled.
+class _StartCodeDialog extends StatefulWidget {
+  const _StartCodeDialog();
+
+  @override
+  State<_StartCodeDialog> createState() => _StartCodeDialogState();
+}
+
+class _StartCodeDialogState extends State<_StartCodeDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool get _complete => _controller.text.length == 4;
+
+  void _submit() {
+    if (_complete) Navigator.of(context).pop(_controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return AlertDialog(
+      title: const Text('Enter start code'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Ask the customer for the 4-digit code shown in their MOJUD app.',
+            style: t.body(size: 15),
+          ),
+          const SizedBox(height: Skyline.s16),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            maxLength: 4,
+            textAlign: TextAlign.center,
+            style: t.figure(28).copyWith(letterSpacing: 12),
+            decoration: const InputDecoration(
+              hintText: '• • • •',
+              counterText: '',
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _complete ? _submit : null,
+          child: const Text('Start trip'),
+        ),
+      ],
+    );
   }
 }

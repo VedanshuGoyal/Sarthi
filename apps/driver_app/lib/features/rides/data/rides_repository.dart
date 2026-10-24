@@ -13,7 +13,8 @@ class RidesException implements Exception {
 
   /// The backend's machine-readable tag — `ride_unavailable` (someone else
   /// took it), `ride_clash`, `transmission_mismatch`, `ride_state`,
-  /// `ride_in_progress`, `kyc_not_cleared` — or null for generic failures.
+  /// `ride_in_progress`, `start_otp_incorrect`, `start_otp_reset`,
+  /// `kyc_not_cleared` — or null for generic failures.
   final String? code;
 
   @override
@@ -50,9 +51,14 @@ class RidesRepository {
 
   /// Applies [action] to ride [id]. Returns the updated ride, or null for
   /// actions that give the ride up ([RideAction.decline],
-  /// [RideAction.release]).
-  Future<Ride?> act(String id, RideAction action) async {
-    final body = await _send('POST', '/driver/rides/$id/${action.wireName}');
+  /// [RideAction.release]). [RideAction.start] needs [otp], the code the
+  /// customer reads out from their app.
+  Future<Ride?> act(String id, RideAction action, {String? otp}) async {
+    final body = await _send(
+      'POST',
+      '/driver/rides/$id/${action.wireName}',
+      payload: action == RideAction.start ? {'otp': otp ?? ''} : null,
+    );
     if (body.isEmpty) return null;
     final decoded = jsonDecode(body);
     return decoded is Map<String, dynamic>

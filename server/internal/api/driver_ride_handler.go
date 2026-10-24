@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sarthi/server/internal/domain"
 	"github.com/sarthi/server/internal/repository"
@@ -30,6 +31,12 @@ type ridesResponse struct {
 
 type rideResponse struct {
 	Ride domain.DriverRide `json:"ride"`
+}
+
+// startRequest is the body of POST /driver/rides/{id}/start: the code the
+// customer reads out from their app.
+type startRequest struct {
+	OTP string `json:"otp"`
 }
 
 // dutyRequest is the PUT /driver/duty body. Lat/Lng are optional: a driver
@@ -66,8 +73,9 @@ func (h *DriverRideHandler) Mine(w http.ResponseWriter, r *http.Request) {
 }
 
 // Act handles POST /driver/rides/{id}/{action}, where action is accept,
-// decline, arrive, start, complete or release. Accept and the three steps
-// answer with the updated ride; decline and release with 204.
+// decline, arrive, start, complete or release. Start takes a {"otp": "1234"}
+// body. Accept and the three steps answer with the updated ride; decline and
+// release with 204.
 func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	driverID, rideID := userIDFrom(ctx), r.PathValue("id")
@@ -82,7 +90,12 @@ func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 	case "arrive":
 		ride, err = h.svc.Arrive(ctx, driverID, rideID)
 	case "start":
-		ride, err = h.svc.Start(ctx, driverID, rideID)
+		var req startRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "send the start code as {\"otp\": \"1234\"}")
+			return
+		}
+		ride, err = h.svc.Start(ctx, driverID, rideID, strings.TrimSpace(req.OTP))
 	case "complete":
 		ride, err = h.svc.Complete(ctx, driverID, rideID)
 	case "decline":
@@ -166,6 +179,10 @@ func writeRideError(w http.ResponseWriter, err error, fallback string) {
 		writeErrorCode(w, http.StatusConflict, "ride_clash", err.Error(), 0)
 	case errors.Is(err, service.ErrRideInProgress):
 		writeErrorCode(w, http.StatusConflict, "ride_in_progress", err.Error(), 0)
+	case errors.Is(err, service.ErrStartOTPIncorrect):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "start_otp_incorrect", err.Error(), 0)
+	case errors.Is(err, service.ErrStartOTPReset):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "start_otp_reset", err.Error(), 0)
 	case errors.Is(err, repository.ErrDriverNotFound):
 		writeError(w, http.StatusNotFound, "driver not found")
 	default:

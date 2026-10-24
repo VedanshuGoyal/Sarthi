@@ -19,13 +19,16 @@ import '../../ride/view/multi_stop_planner_screen.dart';
 import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
+import '../../ride/view/widgets/my_rides_section.dart';
 import '../../ride/view/widgets/ride_theme.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// Landing screen shown after a customer finishes registering.
 ///
-/// Greets the user, then hosts the [TripTypeSelector] so they can pick how they
-/// want to travel, above a short "how it works" card. The body is centred and
+/// Greets the user, shows any unfinished bookings ([MyRidesSection] — with
+/// the driver and start code once one accepts), then hosts the
+/// [TripTypeSelector] so they can pick how they want to travel, above a short
+/// "how it works" card. The body is centred and
 /// width-capped on large screens and scrolls on short ones, per the
 /// responsive-layout guideline.
 class HomeScreen extends ConsumerWidget {
@@ -73,6 +76,8 @@ class HomeScreen extends ConsumerWidget {
   ) async {
     try {
       await send(ref.read(bookingRepositoryProvider));
+      // Show the new booking under "Your rides" straight away.
+      ref.read(myBookingsViewModelProvider).load();
       return true;
     } on BookingSubmitException {
       return false;
@@ -250,6 +255,7 @@ class HomeScreen extends ConsumerWidget {
                     style: text.headlineMedium,
                   ),
                   const SizedBox(height: Skyline.s24),
+                  const MyRidesSection(),
                   Text('Book a driver', style: t.title(16)),
                   const SizedBox(height: Skyline.s12),
                   TripTypeSelector(

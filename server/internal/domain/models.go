@@ -247,6 +247,11 @@ type Booking struct {
 	ArrivedAt     *time.Time     `json:"arrivedAt,omitempty"`
 	StartedAt     *time.Time     `json:"startedAt,omitempty"`
 	CompletedAt   *time.Time     `json:"completedAt,omitempty"`
+
+	// StartOTP is the code the driver must enter to start the ride, issued on
+	// accept. Never serialised from here: only the customer's own bookings
+	// view (CustomerBooking) carries it, and never the driver's.
+	StartOTP string `json:"-"`
 }
 
 // RideCustomer is who a driver is driving for. Only revealed to the driver a
@@ -261,6 +266,39 @@ type RideCustomer struct {
 type RideBooking struct {
 	Booking  Booking
 	Customer RideCustomer
+}
+
+// RideDriver is the driver assigned to a customer's booking.
+type RideDriver struct {
+	Name      string `json:"name"`
+	PhoneE164 string `json:"phoneE164"`
+}
+
+// UserBooking is a booking together with its assigned driver (nil until one
+// accepts), as the repository reads it for the customer's own list.
+type UserBooking struct {
+	Booking Booking
+	Driver  *RideDriver
+}
+
+// CustomerBooking is a booking as the customer app shows it: what was booked,
+// where it stands, who is driving, and — while the driver is on the way or
+// waiting at the pickup — the code to give them to start the trip.
+type CustomerBooking struct {
+	ID            string      `json:"id"`
+	TripType      string      `json:"tripType"`
+	Status        RideStatus  `json:"status"`
+	ScheduledAt   time.Time   `json:"scheduledAt"`
+	EndsAt        time.Time   `json:"endsAt"`
+	FarePaise     int64       `json:"farePaise"`
+	FareEstimated bool        `json:"fareEstimated"`
+	Pickup        RidePlace   `json:"pickup"`
+	Destination   *RidePlace  `json:"destination,omitempty"`
+	StopCount     int         `json:"stopCount,omitempty"`
+	Car           *RideCar    `json:"car,omitempty"`
+	Driver        *RideDriver `json:"driver,omitempty"`
+	StartOTP      string      `json:"startOtp,omitempty"`
+	CreatedAt     time.Time   `json:"createdAt"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.

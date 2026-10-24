@@ -19,7 +19,11 @@ var ErrInvalidBooking = errors.New("booking tripType and details are required")
 // consumer-side so the service stays testable with a fake.
 type BookingStore interface {
 	Insert(ctx context.Context, p repository.InsertBookingParams) (domain.Booking, error)
+	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 }
+
+// maxCustomerBookings caps the customer's bookings list.
+const maxCustomerBookings = 50
 
 // BookingService receives confirmed bookings from the customer app and persists
 // them.
@@ -68,4 +72,51 @@ func (s *BookingService) Record(ctx context.Context, userID, tripType string, de
 		"tripType", tripType,
 	)
 	return booking, nil
+}
+
+// ListMine returns userID's bookings, latest scheduled first, each with its
+// status, assigned driver and — while the driver is on the way or waiting at
+// the pickup — the code the customer gives them to start the trip. A booking
+// whose details can't be read is skipped rather than failing the list.
+func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.CustomerBooking, error) {
+	rows, err := s.store.ListForUser(ctx, userID, maxCustomerBookings)
+	if err != nil {
+		return nil, err
+	}
+	out := []domain.CustomerBooking{}
+	for _, ub := range rows {
+		b := ub.Booking
+		plan, err := parseTripPlan(b.TripType, b.Details)
+		if err != nil {
+			slog.WarnContext(ctx, "booking skipped: unreadable details", "bookingId", b.ID, "error", err)
+			continue
+		}
+		if b.ScheduledAt != nil {
+			plan.ScheduledAt = *b.ScheduledAt
+		}
+		fare, estimated := b.FarePaise, b.FareEstimated
+		if fare == 0 {
+			fare, estimated = plan.Fare()
+		}
+		cb := domain.CustomerBooking{
+			ID:            b.ID,
+			TripType:      b.TripType,
+			Status:        b.Status,
+			ScheduledAt:   plan.ScheduledAt,
+			EndsAt:        plan.EndsAt(),
+			FarePaise:     fare,
+			FareEstimated: estimated,
+			Pickup:        plan.Pickup,
+			Destination:   plan.Destination,
+			StopCount:     len(plan.Stops),
+			Car:           plan.Car,
+			Driver:        ub.Driver,
+			CreatedAt:     b.CreatedAt,
+		}
+		if b.Status == domain.RideStatusAccepted || b.Status == domain.RideStatusArrived {
+			cb.StartOTP = b.StartOTP
+		}
+		out = append(out, cb)
+	}
+	return out, nil
 }

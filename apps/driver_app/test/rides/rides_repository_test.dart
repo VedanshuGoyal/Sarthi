@@ -60,6 +60,17 @@ void main() {
     check(updated.customer!.name).equals('Asha Kumari');
   });
 
+  test('start sends the customer\'s code', () async {
+    late http.Request sent;
+    await repo({
+      'ride': rideJson(status: 'in_progress', withCustomer: true),
+    }, onRequest: (r) => sent = r).act('r1', RideAction.start, otp: '4821');
+    check(sent.url.path).equals('/driver/rides/r1/start');
+    check(
+      jsonDecode(sent.body) as Map<String, dynamic>,
+    ).deepEquals({'otp': '4821'});
+  });
+
   test('decline answers with no ride', () async {
     final result = await repo(null, status: 204).act('r1', RideAction.decline);
     check(result).isNull();

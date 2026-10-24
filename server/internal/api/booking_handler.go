@@ -2,8 +2,10 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
+	"github.com/sarthi/server/internal/domain"
 	"github.com/sarthi/server/internal/service"
 )
 
@@ -31,6 +33,23 @@ type bookingRequest struct {
 type bookingResponse struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// bookingsResponse is the customer's bookings list.
+type bookingsResponse struct {
+	Bookings []domain.CustomerBooking `json:"bookings"`
+}
+
+// List handles GET /me/bookings: the customer's bookings with status, driver
+// and start code.
+func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
+	bookings, err := h.svc.ListMine(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		slog.Error("bookings: list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not load your bookings")
+		return
+	}
+	writeJSON(w, http.StatusOK, bookingsResponse{Bookings: bookings})
 }
 
 // Submit handles POST /me/bookings.

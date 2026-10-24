@@ -12,6 +12,7 @@ import 'domain/pickup_location.dart';
 import 'view_model/booking_details_view_model.dart';
 import 'view_model/map_pickup_view_model.dart';
 import 'view_model/multi_stop_planner_view_model.dart';
+import 'view_model/my_bookings_view_model.dart';
 import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
@@ -50,6 +51,18 @@ final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });
+
+/// The customer's bookings for the home screen's "Your rides" section.
+/// Rebuilt per signed-in user, so a different account on the same phone never
+/// sees the previous one's rides or start codes.
+final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
+  (ref) {
+    ref.watch(authControllerProvider.select((s) => s.valueOrNull?.user.id));
+    return MyBookingsViewModel(
+      repository: ref.watch(bookingRepositoryProvider),
+    );
+  },
+);
 
 /// The data seam for the customer's saved cars: on-device storage first, the
 /// backend (authenticated with the current session token, read on demand like

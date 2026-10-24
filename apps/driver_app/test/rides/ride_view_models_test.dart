@@ -121,6 +121,30 @@ void main() {
       check(earningsRefreshed).equals(1);
     });
 
+    test('starting sends the code and surfaces a wrong one', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'arrived')];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      repo.failures[RideAction.start] = const RidesException(
+        "That code doesn't match.",
+        code: 'start_otp_incorrect',
+      );
+      check(
+        await vm.act(vm.byId('r')!, RideAction.start, otp: '1234'),
+      ).equals("That code doesn't match.");
+      check(repo.lastOtp).equals('1234');
+      check(vm.byId('r')!.status).equals(RideStatus.arrived);
+
+      repo.failures.clear();
+      check(
+        await vm.act(vm.byId('r')!, RideAction.start, otp: '4821'),
+      ).isNull();
+      check(repo.lastOtp).equals('4821');
+      check(vm.byId('r')!.status).equals(RideStatus.inProgress);
+    });
+
     test('releasing removes the ride', () async {
       final repo = FakeRidesRepository()
         ..mine = [ride(id: 'r', status: 'accepted')];

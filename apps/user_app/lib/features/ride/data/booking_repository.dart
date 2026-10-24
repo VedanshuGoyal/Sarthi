@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
 import '../domain/multi_stop_trip.dart';
+import '../domain/my_booking.dart';
 import '../domain/one_way_trip.dart';
 import '../domain/round_trip_booking.dart';
 
@@ -17,11 +18,11 @@ class BookingSubmitException implements Exception {
   String toString() => 'BookingSubmitException: $message';
 }
 
-/// Sends confirmed bookings to the Sarthi backend (`POST /me/bookings`).
+/// Sends confirmed bookings to the Sarthi backend (`POST /me/bookings`) and
+/// reads them back with their status, driver and start code
+/// (`GET /me/bookings`).
 ///
-/// The sole data-access seam for booking submission, per the repository
-/// guideline. The server currently just acknowledges the booking and records
-/// its details; matchmaking and persistence come later, behind the same call.
+/// The sole data-access seam for bookings, per the repository guideline.
 class BookingRepository {
   BookingRepository({
     http.Client? client,
@@ -51,6 +52,32 @@ class BookingRepository {
 
   Future<void> submitMultiStop(MultiStopTrip trip) =>
       _submit('multiStop', trip.toJson());
+
+  /// The customer's bookings, latest scheduled first, with their status,
+  /// assigned driver and start code (`GET /me/bookings`). Throws
+  /// [BookingSubmitException] when the server can't be reached or refuses.
+  Future<List<MyBooking>> myBookings() async {
+    final http.Response response;
+    try {
+      response = await _client.get(
+        Uri.parse('$_baseUrl$_path'),
+        headers: _headers(),
+      );
+    } catch (_) {
+      throw const BookingSubmitException("Can't reach the server.");
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw BookingSubmitException(
+        'Loading your rides failed (${response.statusCode}).',
+      );
+    }
+    final decoded = jsonDecode(response.body);
+    final list = decoded is Map<String, dynamic> ? decoded['bookings'] : null;
+    return [
+      for (final item in list as List<dynamic>? ?? const [])
+        ?MyBooking.tryParse(item),
+    ];
+  }
 
   Future<void> _submit(String tripType, Map<String, dynamic> details) async {
     final body = jsonEncode({'tripType': tripType, 'details': details});
