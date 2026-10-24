@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/pickup_location.dart';
+import '../../../../core/theme/skyline/skyline_row.dart';
 
 /// A tappable past pickup shown when the search field is empty.
 ///
@@ -18,14 +19,9 @@ class RecentLocationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: const Icon(Icons.history),
-      title: Text(
-        location.address,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+    return SkylineRow(
+      icon: Icons.history_rounded,
+      title: location.address,
       onTap: onTap,
     );
   }

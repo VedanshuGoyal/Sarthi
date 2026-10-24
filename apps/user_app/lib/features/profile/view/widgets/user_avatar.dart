@@ -26,8 +26,8 @@ class UserAvatar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return CircleAvatar(
       radius: radius,
-      backgroundColor: scheme.primaryContainer,
-      foregroundColor: scheme.onPrimaryContainer,
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
       child: Text(
         initials(name),
         style: TextStyle(fontSize: radius * 0.8, fontWeight: FontWeight.w700),

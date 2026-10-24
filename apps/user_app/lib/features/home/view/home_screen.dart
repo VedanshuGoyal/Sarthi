@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/brand/mojud_logo.dart';
 import '../../auth/auth_controller.dart';
@@ -21,13 +20,14 @@ import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
 import '../../ride/view/widgets/ride_theme.dart';
-import '../../ride/view/widgets/vast_quiet/vast_quiet.dart';
+import '../../../core/theme/skyline/skyline_tokens.dart';
 
 /// Landing screen shown after a customer finishes registering.
 ///
 /// Greets the user, then hosts the [TripTypeSelector] so they can pick how they
-/// want to travel. The body is centred and width-capped on large screens and
-/// scrolls on short ones, per the responsive-layout guideline.
+/// want to travel, above a short "how it works" card. The body is centred and
+/// width-capped on large screens and scrolls on short ones, per the
+/// responsive-layout guideline.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key, required this.user});
 
@@ -209,102 +209,125 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final firstName = user.name.split(' ').first;
-    final tokens = DeepSignalTokens.of(context);
-    // The trip chooser is the entry to the ride flow. It follows the app-wide
-    // Deep Signal theme so it flips light/dark with the rest of the app, with a
-    // mode-appropriate ride wash layered on so TripOptionCard's selected tint
-    // reads in both modes (it resolves its wash through RideSurfaces).
-    final rideTheme = rideSurfaceTheme(context);
-    // The painted mountain scene is a light paper composition; in dark mode we
-    // drop it and let the canvas stand rather than showing a light band.
-    final showBackdrop = !tokens.isDark;
+    final t = SkylineTokens.of(context);
+    final text = Theme.of(context).textTheme;
 
     return Theme(
-      data: rideTheme,
-      child: Builder(
-        builder: (context) {
-          final theme = Theme.of(context);
-          return Scaffold(
-            // The mountain scene runs up behind a transparent app bar, so the
-            // peaks fill the top of the screen rather than being clipped by a
-            // solid bar.
-            extendBodyBehindAppBar: true,
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              title: const MojudLockup(markHeight: 22),
-              actions: [
-                const ThemeModeToggle(),
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: IconButton(
-                    icon: UserAvatar(name: user.name, radius: 16),
-                    tooltip: 'Your profile',
-                    onPressed: () => _openProfile(context, ref),
+      // The ride wash (selected tints, info panels) comes from the app theme.
+      data: rideSurfaceTheme(context),
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: Skyline.s20,
+          title: const MojudLockup(markHeight: 22),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: Skyline.s12),
+              child: IconButton(
+                icon: UserAvatar(name: user.name, radius: 17),
+                tooltip: 'Your profile',
+                onPressed: () => _openProfile(context, ref),
+              ),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  Skyline.s20,
+                  Skyline.s8,
+                  Skyline.s20,
+                  Skyline.s32,
+                ),
+                children: [
+                  Text('Hello, $firstName', style: t.body(size: 15)),
+                  const SizedBox(height: Skyline.s4),
+                  Text(
+                    'Where should we drive you today?',
+                    style: text.headlineMedium,
+                  ),
+                  const SizedBox(height: Skyline.s24),
+                  Text('Book a driver', style: t.title(16)),
+                  const SizedBox(height: Skyline.s12),
+                  TripTypeSelector(
+                    onSelected: (type) => _onTripSelected(context, ref, type),
+                  ),
+                  const SizedBox(height: Skyline.s24),
+                  const _HowItWorks(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Your car, our driver" — the service promise and its three steps, so a
+/// first-time customer knows what booking leads to.
+class _HowItWorks extends StatelessWidget {
+  const _HowItWorks();
+
+  static const _steps = <(IconData, String)>[
+    (Icons.touch_app_rounded, 'Pick a trip'),
+    (Icons.place_rounded, 'Set pickup & time'),
+    (Icons.directions_car_rounded, 'Driver drives your car'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(Skyline.s20),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(Skyline.radiusLg),
+        boxShadow: t.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Your car, our driver', style: t.title(16)),
+          const SizedBox(height: Skyline.s4),
+          Text(
+            'A driver comes to your pickup and drives your own car.',
+            style: t.body(size: 13),
+          ),
+          const SizedBox(height: Skyline.s16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (i, (icon, label)) in _steps.indexed) ...[
+                if (i > 0) const SizedBox(width: Skyline.s8),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: t.primarySoft,
+                          borderRadius: BorderRadius.circular(Skyline.radiusSm),
+                        ),
+                        child: Icon(icon, color: t.primaryText, size: 22),
+                      ),
+                      const SizedBox(height: Skyline.s8),
+                      Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: t.label(size: 12, color: t.ink),
+                      ),
+                    ],
                   ),
                 ),
               ],
-            ),
-            body: LayoutBuilder(
-              builder: (context, constraints) {
-                // The scene occupies the top of the viewport and fades into the
-                // canvas; clamp it so it stays a header band on tall screens and
-                // doesn't swallow short ones. The greeting is offset to sit over
-                // the lower cloud, clear of the dark peaks, where ink text reads.
-                final sceneHeight = showBackdrop
-                    ? (constraints.maxHeight * 0.42).clamp(220.0, 360.0)
-                    : 0.0;
-                final topInset = showBackdrop
-                    ? sceneHeight * 0.62
-                    : MediaQuery.of(context).padding.top + kToolbarHeight + 12;
-                return Stack(
-                  children: [
-                    if (showBackdrop)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: sceneHeight,
-                        child: const VastQuietBackdrop(),
-                      ),
-                    SafeArea(
-                      top: false,
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          child: SingleChildScrollView(
-                            padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  'Hi $firstName, how can we drive you?',
-                                  style: theme.textTheme.headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Pick a trip type to get started.',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: 28),
-                                TripTypeSelector(
-                                  onSelected: (type) =>
-                                      _onTripSelected(context, ref, type),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          );
-        },
+            ],
+          ),
+        ],
       ),
     );
   }

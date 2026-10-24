@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// A labelled dropdown for a small fixed set of choices.
 ///
@@ -50,7 +51,7 @@ class OptionDropdown<T> extends StatelessWidget {
             child: DropdownButton<T>(
               value: value,
               isExpanded: true,
-              borderRadius: BorderRadius.circular(SarthiTheme.radius),
+              borderRadius: BorderRadius.circular(Skyline.radius),
               hint: hintText == null ? null : Text(hintText!),
               items: [
                 for (final (option, name) in options)

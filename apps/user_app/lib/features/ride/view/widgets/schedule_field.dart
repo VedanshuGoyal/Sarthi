@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
+import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// Two tappable fields — date and time — for choosing when a trip starts.
 ///
@@ -95,14 +95,14 @@ class _SlotField extends StatelessWidget {
 
     return Material(
       color: scheme.surface,
-      borderRadius: BorderRadius.circular(SarthiTheme.radius),
+      borderRadius: BorderRadius.circular(Skyline.radius),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
+        borderRadius: BorderRadius.circular(Skyline.radius),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SarthiTheme.radius),
+            borderRadius: BorderRadius.circular(Skyline.radius),
             border: Border.all(color: scheme.outlineVariant),
           ),
           child: Row(

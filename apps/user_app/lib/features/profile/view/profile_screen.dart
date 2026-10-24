@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/skyline/skyline_row.dart';
+import '../../../core/theme/skyline/skyline_tokens.dart';
 import '../../auth/domain/auth_user.dart';
 import 'widgets/saved_cars_section.dart';
 import 'widgets/user_avatar.dart';
@@ -43,6 +45,7 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final t = SkylineTokens.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Your profile')),
       body: SafeArea(
@@ -50,44 +53,68 @@ class ProfileScreen extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+              padding: const EdgeInsets.fromLTRB(
+                Skyline.s20,
+                Skyline.s8,
+                Skyline.s20,
+                Skyline.s32,
+              ),
               children: [
-                Center(child: UserAvatar(name: user.name, radius: 40)),
-                const SizedBox(height: 16),
-                Text(
-                  user.name,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+                // Identity header: avatar and name on a soft blue band.
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: Skyline.s24),
+                  decoration: BoxDecoration(
+                    color: t.isDark ? t.surface : t.primarySoft,
+                    borderRadius: BorderRadius.circular(Skyline.radiusLg),
+                  ),
+                  child: Column(
+                    children: [
+                      UserAvatar(name: user.name, radius: 40),
+                      const SizedBox(height: Skyline.s12),
+                      Text(
+                        user.name,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineSmall,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                _DetailTile(
-                  icon: Icons.phone_outlined,
-                  label: 'Mobile number',
-                  value: _formatPhone(user.phoneE164),
+                const SizedBox(height: Skyline.s16),
+                SkylineCard(
+                  child: Column(
+                    children: [
+                      _DetailTile(
+                        icon: Icons.phone_rounded,
+                        label: 'Mobile number',
+                        value: _formatPhone(user.phoneE164),
+                      ),
+                      _DetailTile(
+                        icon: Icons.mail_rounded,
+                        label: 'Email',
+                        value: user.email,
+                      ),
+                      _DetailTile(
+                        icon: Icons.cake_rounded,
+                        label: 'Date of birth',
+                        value: _formatDate(user.dateOfBirth),
+                      ),
+                    ],
+                  ),
                 ),
-                _DetailTile(
-                  icon: Icons.mail_outline,
-                  label: 'Email',
-                  value: user.email,
+                const SizedBox(height: Skyline.s16),
+                const SkylineCard(
+                  padding: EdgeInsets.all(Skyline.s16),
+                  child: SavedCarsSection(),
                 ),
-                _DetailTile(
-                  icon: Icons.cake_outlined,
-                  label: 'Date of birth',
-                  value: _formatDate(user.dateOfBirth),
-                ),
-                const SizedBox(height: 24),
-                const SavedCarsSection(),
                 if (onLogout != null) ...[
-                  const SizedBox(height: 32),
+                  const SizedBox(height: Skyline.s24),
                   OutlinedButton.icon(
                     onPressed: onLogout,
-                    icon: const Icon(Icons.logout),
+                    icon: const Icon(Icons.logout_rounded),
                     label: const Text('Log out'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.error,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      foregroundColor: t.danger,
+                      side: BorderSide(color: t.danger.withValues(alpha: 0.35)),
                     ),
                   ),
                 ],
@@ -100,7 +127,6 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-/// One read-only profile fact: a leading icon, a muted label, and the value.
 class _DetailTile extends StatelessWidget {
   const _DetailTile({
     required this.icon,
@@ -114,17 +140,33 @@ class _DetailTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, color: theme.colorScheme.primary),
-      title: Text(
-        label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+    final t = SkylineTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(Skyline.s8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: t.primarySoft,
+              borderRadius: BorderRadius.circular(Skyline.radiusSm),
+            ),
+            child: Icon(icon, size: 20, color: t.primaryText),
+          ),
+          const SizedBox(width: Skyline.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: t.label(size: 12)),
+                const SizedBox(height: 2),
+                Text(value, style: t.title(15, weight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
       ),
-      subtitle: Text(value, style: theme.textTheme.bodyLarge),
     );
   }
 }

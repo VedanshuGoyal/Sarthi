@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'schedule_field.dart';
+import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// One stop in the Multi-Stop planner: where to go, the driver's task there,
 /// and the leave-by deadline — plus reorder/remove controls in the header.
@@ -63,7 +64,7 @@ class StopCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.surface,
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
+        borderRadius: BorderRadius.circular(Skyline.radius),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
@@ -165,14 +166,14 @@ class _LocationField extends StatelessWidget {
 
     return Material(
       color: scheme.surface,
-      borderRadius: BorderRadius.circular(SarthiTheme.radius),
+      borderRadius: BorderRadius.circular(Skyline.radius),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
+        borderRadius: BorderRadius.circular(Skyline.radius),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SarthiTheme.radius),
+            borderRadius: BorderRadius.circular(Skyline.radius),
             border: Border.all(color: scheme.outlineVariant),
           ),
           child: Row(

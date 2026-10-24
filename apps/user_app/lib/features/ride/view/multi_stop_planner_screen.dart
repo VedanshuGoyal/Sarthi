@@ -10,8 +10,8 @@ import 'pickup_location_screen.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/ride_theme.dart';
-import 'widgets/vast_quiet/vast_quiet.dart';
 import 'widgets/time_slot_picker.dart';
+import '../../../core/theme/skyline/skyline_row.dart';
 
 /// Step 3 of a Multi-Stop trip: write the driver's plan for the day.
 ///
@@ -132,98 +132,101 @@ class _MultiStopPlannerScreenState
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-      appBar: AppBar(title: const Text('Plan your trip')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                    children: [
-                      _StartSummary(address: vm.start.address),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'When do we start?',
-                        subtitle: 'The driver meets you at the starting point.',
-                        child: ScheduleField(
-                          scheduledAt: vm.scheduledAt,
-                          onTapDate: () => _pickStartDate(vm),
-                          onTapTime: () => _pickStartTime(vm),
+        appBar: AppBar(title: const Text('Plan your trip')),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: [
+                        _StartSummary(address: vm.start.address),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'When do we start?',
+                          subtitle:
+                              'The driver meets you at the starting point.',
+                          child: ScheduleField(
+                            scheduledAt: vm.scheduledAt,
+                            onTapDate: () => _pickStartDate(vm),
+                            onTapTime: () => _pickStartTime(vm),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'Stops',
-                        subtitle:
-                            'List each errand in order — where to go, what to '
-                            'do there, and when to move on.',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (final (i, stop) in vm.stops.indexed) ...[
-                              StopCard(
-                                key: ValueKey(stop.id),
-                                index: i + 1,
-                                address: stop.location?.address,
-                                taskController: _taskControllerFor(stop),
-                                departBy: stop.departBy,
-                                timeError: vm.timeErrorFor(stop.id),
-                                canRemove: vm.canRemoveStop,
-                                canMoveUp: i > 0,
-                                canMoveDown: i < vm.stops.length - 1,
-                                onPickLocation: () =>
-                                    _pickStopLocation(vm, stop),
-                                onTaskChanged: (task) =>
-                                    vm.setStopTask(stop.id, task),
-                                onTapDate: () => _pickStopDate(vm, stop),
-                                onTapTime: () => _pickStopTime(vm, stop),
-                                onRemove: () => vm.removeStop(stop.id),
-                                onMoveUp: () => vm.moveStopUp(stop.id),
-                                onMoveDown: () => vm.moveStopDown(stop.id),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Stops',
+                          subtitle:
+                              'List each errand in order — where to go, what to '
+                              'do there, and when to move on.',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final (i, stop) in vm.stops.indexed) ...[
+                                StopCard(
+                                  key: ValueKey(stop.id),
+                                  index: i + 1,
+                                  address: stop.location?.address,
+                                  taskController: _taskControllerFor(stop),
+                                  departBy: stop.departBy,
+                                  timeError: vm.timeErrorFor(stop.id),
+                                  canRemove: vm.canRemoveStop,
+                                  canMoveUp: i > 0,
+                                  canMoveDown: i < vm.stops.length - 1,
+                                  onPickLocation: () =>
+                                      _pickStopLocation(vm, stop),
+                                  onTaskChanged: (task) =>
+                                      vm.setStopTask(stop.id, task),
+                                  onTapDate: () => _pickStopDate(vm, stop),
+                                  onTapTime: () => _pickStopTime(vm, stop),
+                                  onRemove: () => vm.removeStop(stop.id),
+                                  onMoveUp: () => vm.moveStopUp(stop.id),
+                                  onMoveDown: () => vm.moveStopDown(stop.id),
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              OutlinedButton.icon(
+                                icon: const Icon(
+                                  Icons.add_location_alt_outlined,
+                                ),
+                                label: Text(
+                                  vm.canAddStop
+                                      ? 'Add stop'
+                                      : 'Up to ${MultiStopPlannerViewModel.maxStops} stops',
+                                ),
+                                onPressed: vm.canAddStop ? vm.addStop : null,
                               ),
-                              const SizedBox(height: 12),
                             ],
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.add_location_alt_outlined),
-                              label: Text(
-                                vm.canAddStop
-                                    ? 'Add stop'
-                                    : 'Up to ${MultiStopPlannerViewModel.maxStops} stops',
-                              ),
-                              onPressed: vm.canAddStop ? vm.addStop : null,
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _planSummaryText(context, vm, theme),
-                      ),
-                      SarthiPrimaryButton(
-                        label: 'Confirm trip',
-                        onPressed: vm.canConfirm
-                            ? () => _confirm(vm.trip!)
-                            : null,
-                      ),
-                    ],
+                  SkylineActionBar(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _planSummaryText(context, vm, theme),
+                        ),
+                        SarthiPrimaryButton(
+                          label: 'Confirm trip',
+                          onPressed: vm.canConfirm
+                              ? () => _confirm(vm.trip!)
+                              : null,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -266,45 +269,8 @@ class _StartSummary extends StatelessWidget {
   final String address;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: RideSurfaces.washOf(context),
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.trip_origin, size: 18, color: scheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Starting point',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  address,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylinePlaceSummary(label: 'Starting point', address: address);
 }
 
 /// A titled section: a heading (with optional [subtitle]) above its [child].
@@ -316,29 +282,6 @@ class _Section extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            subtitle!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        child,
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylineSection(title: title, subtitle: subtitle, child: child);
 }

@@ -8,6 +8,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../../core/config/google_maps_config.dart';
 import '../../../../core/maps/web_maps_loader.dart';
+import '../../../../core/theme/skyline/skyline_tokens.dart';
 import '../../../../core/theme/deep_signal/deep_signal.dart';
 import '../../domain/geo_point.dart';
 
@@ -105,6 +106,13 @@ class _RouteMapState extends State<RouteMap> {
   }
 
   Future<void> _loadMapsSdk() async {
+    // No Google Maps key in this build: show the "no map" panel straight
+    // away instead of building a GoogleMap that cannot render (on web it
+    // throws, on Android it draws blank grey tiles).
+    if (!GoogleMapsConfig.isConfigured) {
+      if (mounted) setState(() => _mapsFailed = true);
+      return;
+    }
     try {
       await ensureWebMapsReady();
       if (mounted) setState(() => _mapsReady = true);
@@ -307,9 +315,24 @@ class _RouteMapState extends State<RouteMap> {
   Widget build(BuildContext context) {
     final tokens = DeepSignalTokens.of(context);
     final radius = BorderRadius.circular(DeepSignalTokens.radius);
-    
+
     final Widget mapContent = _mapsFailed
-        ? _placeholder(const Icon(Icons.map_outlined))
+        ? _placeholder(
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.map_rounded,
+                  color: SkylineTokens.of(context).primaryText,
+                ),
+                const SizedBox(height: Skyline.s8),
+                Text(
+                  'Map preview unavailable',
+                  style: SkylineTokens.of(context).label(),
+                ),
+              ],
+            ),
+          )
         : !_mapsReady
         ? _placeholder(const CircularProgressIndicator())
         : GoogleMap(
@@ -351,17 +374,14 @@ class _RouteMapState extends State<RouteMap> {
 
     return ClipRRect(
       borderRadius: radius,
-      child: AspectRatio(
-        aspectRatio: 21 / 9,
-        child: mapContent,
-      ),
+      child: AspectRatio(aspectRatio: 21 / 9, child: mapContent),
     );
   }
 
   /// Neutral fill shown while the SDK loads or when it fails — sized by the
   /// same aspect ratio so the layout never jumps.
   Widget _placeholder(Widget child) => ColoredBox(
-    color: DeepSignalTokens.of(context).skeleton,
+    color: SkylineTokens.of(context).sunken,
     child: Center(child: child),
   );
 }

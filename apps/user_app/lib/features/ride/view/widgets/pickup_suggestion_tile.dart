@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/place_suggestion.dart';
+import '../../../../core/theme/skyline/skyline_row.dart';
 
 /// One tappable search result in the pickup list.
 ///
@@ -18,25 +19,10 @@ class PickupSuggestionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: const Icon(Icons.location_on_outlined),
-      title: Text(
-        suggestion.primaryText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: suggestion.secondaryText.isEmpty
-          ? null
-          : Text(
-              suggestion.secondaryText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+    return SkylineRow(
+      icon: Icons.place_rounded,
+      title: suggestion.primaryText,
+      subtitle: suggestion.secondaryText,
       onTap: onTap,
     );
   }

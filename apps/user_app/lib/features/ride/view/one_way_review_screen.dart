@@ -9,6 +9,8 @@ import 'widgets/car_selector_field.dart';
 import 'widgets/route_summary.dart';
 import 'widgets/ride_theme.dart';
 import 'widgets/vast_quiet/vast_quiet.dart';
+import '../../../core/theme/skyline/skyline_tokens.dart';
+import '../../../core/theme/skyline/skyline_row.dart';
 
 /// The final One-Way step: the estimated trip time for the settled plan.
 ///
@@ -56,87 +58,89 @@ class OneWayReviewScreen extends ConsumerWidget {
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-      appBar: AppBar(title: const Text('Review trip')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                    children: [
-                      RouteSummary(
-                        startAddress: draft.start.address,
-                        destinationAddress: draft.destination.address,
-                      ),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'Your plan',
-                        subtitle: 'Go back to change any of these.',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _PlanLine(
-                              icon: Icons.calendar_today_outlined,
-                              label: 'Starts',
-                              value:
-                                  '${l10n.formatMediumDate(draft.scheduledAt)}'
-                                  ', ${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(draft.scheduledAt))}',
-                            ),
-                            const SizedBox(height: 10),
-                            _PlanLine(
-                              icon: Icons.directions_car_outlined,
-                              label: 'Car',
-                              value: CarSelectorField.carLabel(draft.car),
-                            ),
-                          ],
+        appBar: AppBar(title: const Text('Review trip')),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: [
+                        RouteSummary(
+                          startAddress: draft.start.address,
+                          destinationAddress: draft.destination.address,
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'Trip time',
-                        subtitle: 'Estimated for your chosen start time.',
-                        child: _TravelTimeEstimate(
-                          isLoading: vm.isEstimatingTravelTime,
-                          eta: vm.travelTime,
-                          onRetry: vm.estimateFailed ? vm.retryEstimate : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_ctaHint(vm) case final hint?)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            hint,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Your plan',
+                          subtitle: 'Go back to change any of these.',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _PlanLine(
+                                icon: Icons.calendar_today_outlined,
+                                label: 'Starts',
+                                value:
+                                    '${l10n.formatMediumDate(draft.scheduledAt)}'
+                                    ', ${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(draft.scheduledAt))}',
+                              ),
+                              const SizedBox(height: 10),
+                              _PlanLine(
+                                icon: Icons.directions_car_outlined,
+                                label: 'Car',
+                                value: CarSelectorField.carLabel(draft.car),
+                              ),
+                            ],
                           ),
                         ),
-                      SarthiPrimaryButton(
-                        label: 'Confirm booking',
-                        onPressed: vm.canConfirm
-                            ? () => _confirm(context, vm.trip!)
-                            : null,
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Trip time',
+                          subtitle: 'Estimated for your chosen start time.',
+                          child: _TravelTimeEstimate(
+                            isLoading: vm.isEstimatingTravelTime,
+                            eta: vm.travelTime,
+                            onRetry: vm.estimateFailed
+                                ? vm.retryEstimate
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  SkylineActionBar(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_ctaHint(vm) case final hint?)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              hint,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        SarthiPrimaryButton(
+                          label: 'Confirm booking',
+                          onPressed: vm.canConfirm
+                              ? () => _confirm(context, vm.trip!)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -209,7 +213,7 @@ class _TravelTimeEstimate extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: RideSurfaces.washOf(context),
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
+        borderRadius: BorderRadius.circular(Skyline.radius),
       ),
       child: content,
     );
@@ -235,7 +239,7 @@ class _PlanLine extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
+        borderRadius: BorderRadius.circular(Skyline.radius),
         border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
@@ -274,29 +278,6 @@ class _Section extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            subtitle!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        child,
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylineSection(title: title, subtitle: subtitle, child: child);
 }

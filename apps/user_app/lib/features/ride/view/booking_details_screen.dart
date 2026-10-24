@@ -10,10 +10,10 @@ import 'widgets/add_car_sheet.dart';
 import 'widgets/car_selector_field.dart';
 import 'widgets/fare_summary.dart';
 import 'widgets/ride_theme.dart';
-import 'widgets/vast_quiet/vast_quiet.dart';
 import 'widgets/hours_selector.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
+import '../../../core/theme/skyline/skyline_row.dart';
 
 /// Step 3 of a Round Trip booking: how long, when, and what kind of car.
 ///
@@ -107,98 +107,98 @@ class BookingDetailsScreen extends ConsumerWidget {
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-      appBar: AppBar(title: const Text('Trip details')),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                    children: [
-                      _PickupSummary(address: vm.pickup.address),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'How long?',
-                        subtitle: 'Hire a driver by the hour.',
-                        child: HoursSelector(
-                          hours: vm.hours,
-                          quickHours: BookingDetailsViewModel.quickHours,
-                          canDecrement: vm.canDecrementHours,
-                          canIncrement: vm.canIncrementHours,
-                          onDecrement: vm.decrementHours,
-                          onIncrement: vm.incrementHours,
-                          onQuickPick: vm.setHours,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'When?',
-                        subtitle: 'Pick a start date and time.',
-                        child: ScheduleField(
-                          scheduledAt: vm.scheduledAt,
-                          onTapDate: () => _pickDate(context, vm),
-                          onTapTime: () => _pickTime(context, vm),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      _Section(
-                        title: 'Which car?',
-                        subtitle: 'The driver drives your car — pick one.',
-                        child: CarSelectorField(
-                          cars: savedCars.cars,
-                          selected: vm.car,
-                          isLoading: savedCars.isLoading,
-                          loadFailed: savedCars.loadFailed,
-                          onSelected: vm.selectCar,
-                          onRetry: savedCars.load,
-                          onAddCar: () => _addCar(context, ref),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: FareSummary(
-                          fare: vm.fare,
-                          hours: vm.hours,
-                          approximate: !vm.canConfirm,
-                          onDisclaimerTap: () => _showFareNote(context),
-                        ),
-                      ),
-                      if (!vm.canConfirm)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            'Choose your car to continue.',
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
+        appBar: AppBar(title: const Text('Trip details')),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: [
+                        _PickupSummary(address: vm.pickup.address),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'How long?',
+                          subtitle: 'Hire a driver by the hour.',
+                          child: HoursSelector(
+                            hours: vm.hours,
+                            quickHours: BookingDetailsViewModel.quickHours,
+                            canDecrement: vm.canDecrementHours,
+                            canIncrement: vm.canIncrementHours,
+                            onDecrement: vm.decrementHours,
+                            onIncrement: vm.incrementHours,
+                            onQuickPick: vm.setHours,
                           ),
                         ),
-                      SarthiPrimaryButton(
-                        label: 'Confirm booking',
-                        onPressed: vm.canConfirm
-                            ? () => _confirm(context, vm.booking!)
-                            : null,
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'When?',
+                          subtitle: 'Pick a start date and time.',
+                          child: ScheduleField(
+                            scheduledAt: vm.scheduledAt,
+                            onTapDate: () => _pickDate(context, vm),
+                            onTapTime: () => _pickTime(context, vm),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Which car?',
+                          subtitle: 'The driver drives your car — pick one.',
+                          child: CarSelectorField(
+                            cars: savedCars.cars,
+                            selected: vm.car,
+                            isLoading: savedCars.isLoading,
+                            loadFailed: savedCars.loadFailed,
+                            onSelected: vm.selectCar,
+                            onRetry: savedCars.load,
+                            onAddCar: () => _addCar(context, ref),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  SkylineActionBar(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: FareSummary(
+                            fare: vm.fare,
+                            hours: vm.hours,
+                            approximate: !vm.canConfirm,
+                            onDisclaimerTap: () => _showFareNote(context),
+                          ),
+                        ),
+                        if (!vm.canConfirm)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'Choose your car to continue.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        SarthiPrimaryButton(
+                          label: 'Confirm booking',
+                          onPressed: vm.canConfirm
+                              ? () => _confirm(context, vm.booking!)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -211,45 +211,8 @@ class _PickupSummary extends StatelessWidget {
   final String address;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: RideSurfaces.washOf(context),
-        borderRadius: BorderRadius.circular(SarthiTheme.radius),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.trip_origin, size: 18, color: scheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Pickup',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  address,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylinePlaceSummary(label: 'Pickup', address: address);
 }
 
 /// A titled section: a heading (with optional [subtitle]) above its [child].
@@ -261,29 +224,6 @@ class _Section extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            subtitle!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        child,
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylineSection(title: title, subtitle: subtitle, child: child);
 }

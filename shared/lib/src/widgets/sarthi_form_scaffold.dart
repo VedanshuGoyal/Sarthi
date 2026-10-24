@@ -18,6 +18,7 @@ class SarthiFormScaffold extends StatelessWidget {
     this.subtitle,
     this.footer,
     this.leading,
+    this.header,
     this.maxContentWidth = 480,
   });
 
@@ -32,6 +33,9 @@ class SarthiFormScaffold extends StatelessWidget {
 
   /// Optional leading widget in the app bar (e.g. a back button).
   final Widget? leading;
+
+  /// Optional widget shown above the title (e.g. a brand header).
+  final Widget? header;
   final double maxContentWidth;
 
   @override
@@ -58,6 +62,10 @@ class SarthiFormScaffold extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (header != null) ...[
+                            header!,
+                            const SizedBox(height: 24),
+                          ],
                           Text(
                             title,
                             style: theme.textTheme.headlineSmall?.copyWith(

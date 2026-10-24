@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../core/theme/skyline/skyline_row.dart';
+import '../../../core/theme/skyline/skyline_tokens.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/pickup_selection_view_model.dart';
@@ -86,7 +87,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(pickupSelectionViewModelProvider);
-    final theme = Theme.of(context);
+    final t = SkylineTokens.of(context);
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
@@ -95,51 +96,67 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+              padding: const EdgeInsets.fromLTRB(
+                Skyline.s20,
+                Skyline.s8,
+                Skyline.s20,
+                Skyline.s16,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SarthiTextField(
-                    label: widget.fieldLabel,
-                    controller: _controller,
-                    hintText: 'Search for a place',
-                    autofocus: true,
-                    textInputAction: TextInputAction.search,
-                    prefixIcon: const Icon(Icons.search),
-                    onChanged: vm.onQueryChanged,
+                  // The search field and the two ways round typing live in one
+                  // card, as a single "where" control.
+                  SkylineCard(
+                    padding: const EdgeInsets.fromLTRB(
+                      Skyline.s4,
+                      Skyline.s4,
+                      Skyline.s4,
+                      Skyline.s4,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _controller,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          onChanged: vm.onQueryChanged,
+                          style: t.title(16, weight: FontWeight.w600),
+                          decoration: InputDecoration(
+                            labelText: widget.fieldLabel,
+                            hintText: 'Search for a place',
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: t.primaryText,
+                            ),
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                          ),
+                        ),
+                        Divider(color: t.hairline, height: 1),
+                        CurrentLocationButton(
+                          isBusy: vm.isLocating,
+                          onPressed: () async =>
+                              _choose(vm, await vm.useCurrentLocation()),
+                        ),
+                        SkylineRow(
+                          icon: Icons.map_rounded,
+                          title: 'Select on map',
+                          accent: true,
+                          onTap: () => _pickOnMap(vm),
+                        ),
+                      ],
+                    ),
                   ),
                   if (vm.error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      vm.error!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
+                    const SizedBox(height: Skyline.s12),
+                    _ErrorNote(message: vm.error!),
                   ],
-                  const SizedBox(height: 8),
-                  CurrentLocationButton(
-                    isBusy: vm.isLocating,
-                    onPressed: () async =>
-                        _choose(vm, await vm.useCurrentLocation()),
-                  ),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    leading: Icon(
-                      Icons.map_outlined,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: Text(
-                      'Select on map',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    onTap: () => _pickOnMap(vm),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(child: _results(vm, theme)),
+                  const SizedBox(height: Skyline.s16),
+                  Expanded(child: _results(vm, t)),
                 ],
               ),
             ),
@@ -149,15 +166,13 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     );
   }
 
-  Widget _results(PickupSelectionViewModel vm, ThemeData theme) {
+  Widget _results(PickupSelectionViewModel vm, SkylineTokens t) {
     if (vm.isSearching && vm.suggestions.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (vm.suggestions.isNotEmpty) {
-      return ListView.separated(
-        padding: EdgeInsets.zero,
+      return _listCard(
         itemCount: vm.suggestions.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (context, i) {
           final suggestion = vm.suggestions[i];
           return PickupSuggestionTile(
@@ -169,48 +184,104 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     }
     // No live results: offer recent pickups when the field is empty.
     if (vm.query.isEmpty && vm.recents.isNotEmpty) {
-      return _recentsList(vm, theme);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Skyline.s4,
+              0,
+              Skyline.s4,
+              Skyline.s8,
+            ),
+            child: Text('Recent', style: t.title(15)),
+          ),
+          Flexible(
+            child: _listCard(
+              itemCount: vm.recents.length,
+              itemBuilder: (context, i) {
+                final recent = vm.recents[i];
+                return RecentLocationTile(
+                  location: recent,
+                  onTap: () => _choose(vm, vm.selectRecent(recent)),
+                );
+              },
+            ),
+          ),
+        ],
+      );
     }
-    return Center(
-      child: Text(
-        'Search for a place, or use your current location.',
-        textAlign: TextAlign.center,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(top: Skyline.s32),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: t.primarySoft,
+              borderRadius: BorderRadius.circular(Skyline.radiusLg),
+            ),
+            child: Icon(Icons.travel_explore_rounded, color: t.primaryText),
+          ),
+          const SizedBox(height: Skyline.s12),
+          Text(
+            'Search for a place, or use your current location.',
+            textAlign: TextAlign.center,
+            style: t.body(size: 14),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _recentsList(PickupSelectionViewModel vm, ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-          child: Text(
-            'Recent',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+  /// Results and recents in one rounded card that scrolls inside itself.
+  Widget _listCard({
+    required int itemCount,
+    required IndexedWidgetBuilder itemBuilder,
+  }) {
+    // Aligned to the top so the card hugs its rows instead of stretching to
+    // fill the space below the search card.
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SkylineCard(
+        padding: const EdgeInsets.all(Skyline.s4),
+        child: ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: itemCount,
+          itemBuilder: itemBuilder,
         ),
-        Expanded(
-          child: ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: vm.recents.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final recent = vm.recents[i];
-              return RecentLocationTile(
-                location: recent,
-                onTap: () => _choose(vm, vm.selectRecent(recent)),
-              );
-            },
+      ),
+    );
+  }
+}
+
+/// An inline error under the search card.
+class _ErrorNote extends StatelessWidget {
+  const _ErrorNote({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Container(
+      padding: const EdgeInsets.all(Skyline.s12),
+      decoration: BoxDecoration(
+        color: t.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(Skyline.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline_rounded, color: t.danger, size: 20),
+          const SizedBox(width: Skyline.s8),
+          Expanded(
+            child: Text(message, style: t.body(size: 13, color: t.danger)),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

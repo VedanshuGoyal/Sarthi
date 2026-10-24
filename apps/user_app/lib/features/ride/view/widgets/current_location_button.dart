@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/skyline/skyline_row.dart';
 
 /// "Use my current location" action for the pickup step.
 ///
@@ -16,23 +17,17 @@ class CurrentLocationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+    return SkylineRow(
+      icon: Icons.my_location_rounded,
+      title: 'Use my current location',
+      accent: true,
       leading: isBusy
           ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
             )
-          : Icon(Icons.my_location, color: theme.colorScheme.primary),
-      title: Text(
-        'Use my current location',
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+          : null,
       onTap: isBusy ? null : onPressed,
     );
   }

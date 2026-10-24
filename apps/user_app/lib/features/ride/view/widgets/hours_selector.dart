@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
+import '../../../../core/theme/skyline/skyline_tokens.dart';
 
 /// Picks how many hours to hire a driver for: a −/＋ stepper plus quick-pick
 /// chips for the common durations.
@@ -39,7 +39,7 @@ class HoursSelector extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: scheme.surface,
-            borderRadius: BorderRadius.circular(SarthiTheme.radius),
+            borderRadius: BorderRadius.circular(Skyline.radius),
             border: Border.all(color: scheme.outlineVariant),
           ),
           child: Row(
@@ -111,16 +111,21 @@ class _StepButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final t = SkylineTokens.of(context);
     final enabled = onPressed != null;
-    return IconButton.outlined(
+    // A soft tinted square rather than an outlined ring — Skyline's stepper.
+    return IconButton(
       tooltip: tooltip,
       onPressed: onPressed,
       icon: Icon(icon),
       style: IconButton.styleFrom(
-        foregroundColor: enabled ? scheme.primary : scheme.onSurfaceVariant,
-        side: BorderSide(
-          color: enabled ? scheme.primary : scheme.outlineVariant,
+        minimumSize: const Size(48, 48),
+        backgroundColor: enabled ? t.primarySoft : t.sunken,
+        foregroundColor: enabled ? t.primaryText : t.inkFaint,
+        disabledBackgroundColor: t.sunken,
+        disabledForegroundColor: t.inkFaint,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Skyline.radiusSm),
         ),
       ),
     );

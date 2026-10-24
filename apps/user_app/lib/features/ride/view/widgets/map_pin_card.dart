@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../core/theme/skyline/skyline_tokens.dart';
+
 /// The card docked over the map that reports what the centre pin currently
 /// points at and lets the customer confirm it.
 ///
@@ -35,79 +37,98 @@ class MapPinCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 8,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Pickup here',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            _detail(theme),
-            if (error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            SarthiPrimaryButton(
-              label: 'Confirm this location',
-              onPressed: canConfirm ? onConfirm : null,
-            ),
-          ],
+    final t = SkylineTokens.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(Skyline.radiusXl),
         ),
+        boxShadow: t.floatShadow,
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        Skyline.s20,
+        Skyline.s12,
+        Skyline.s20,
+        Skyline.s20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: t.outline,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          const SizedBox(height: Skyline.s16),
+          Container(
+            padding: const EdgeInsets.all(Skyline.s12),
+            decoration: BoxDecoration(
+              color: t.sunken,
+              borderRadius: BorderRadius.circular(Skyline.radius),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: t.primarySoft,
+                    borderRadius: BorderRadius.circular(Skyline.radiusSm),
+                  ),
+                  child: Icon(Icons.place_rounded, color: t.primaryText),
+                ),
+                const SizedBox(width: Skyline.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Pickup here', style: t.label(size: 12)),
+                      const SizedBox(height: 2),
+                      _detail(t),
+                    ],
+                  ),
+                ),
+                if (isResolving && !isMoving) ...[
+                  const SizedBox(width: Skyline.s8),
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: Skyline.s8),
+            Text(error!, style: t.body(size: 13, color: t.danger)),
+          ],
+          const SizedBox(height: Skyline.s16),
+          SarthiPrimaryButton(
+            label: 'Confirm this location',
+            onPressed: canConfirm ? onConfirm : null,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _detail(ThemeData theme) {
+  Widget _detail(SkylineTokens t) {
     if (isMoving) {
-      return Text(
-        'Move the map to place the pin',
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
+      return Text('Move the map to place the pin', style: t.body(size: 14));
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.place_outlined, size: 20, color: theme.colorScheme.primary),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (isResolving) ...[
-          const SizedBox(width: 8),
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ],
-      ],
+    return Text(
+      label,
+      style: t.title(15),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

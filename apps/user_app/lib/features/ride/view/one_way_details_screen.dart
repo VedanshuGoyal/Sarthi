@@ -10,9 +10,12 @@ import 'one_way_review_screen.dart';
 import 'widgets/add_car_sheet.dart';
 import 'widgets/car_selector_field.dart';
 import 'widgets/route_map.dart';
+import 'widgets/route_summary.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
 import 'widgets/ride_theme.dart';
+import '../../../core/theme/skyline/skyline_row.dart';
+import '../../../core/theme/skyline/skyline_tokens.dart';
 
 /// The One-Way "trip details" step: when to go and which car.
 ///
@@ -130,7 +133,10 @@ class OneWayDetailsScreen extends ConsumerWidget {
                         shape: const CircleBorder(),
                         elevation: 4,
                         child: IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.black),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.black,
+                          ),
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                       ),
@@ -149,7 +155,9 @@ class OneWayDetailsScreen extends ConsumerWidget {
                           child: Container(
                             decoration: BoxDecoration(
                               color: theme.colorScheme.surface,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(Skyline.radiusXl),
+                              ),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.1),
@@ -160,7 +168,12 @@ class OneWayDetailsScreen extends ConsumerWidget {
                             ),
                             child: ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                              padding: const EdgeInsets.fromLTRB(
+                                24,
+                                12,
+                                24,
+                                16,
+                              ),
                               children: [
                                 Center(
                                   child: Container(
@@ -168,11 +181,19 @@ class OneWayDetailsScreen extends ConsumerWidget {
                                     height: 4,
                                     margin: const EdgeInsets.only(bottom: 16),
                                     decoration: BoxDecoration(
-                                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                                      color: theme.colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.3),
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
                                 ),
+                                // The route in words — the map above is a
+                                // preview and may be unavailable.
+                                RouteSummary(
+                                  startAddress: vm.start.address,
+                                  destinationAddress: vm.destination.address,
+                                ),
+                                const SizedBox(height: 16),
                                 _Section(
                                   title: 'When?',
                                   subtitle: 'Pick a start date and time.',
@@ -185,7 +206,8 @@ class OneWayDetailsScreen extends ConsumerWidget {
                                 const SizedBox(height: 24),
                                 _Section(
                                   title: 'Which car?',
-                                  subtitle: 'The driver drives your car — pick one.',
+                                  subtitle:
+                                      'The driver drives your car — pick one.',
                                   child: CarSelectorField(
                                     cars: savedCars.cars,
                                     selected: vm.car,
@@ -212,12 +234,6 @@ class OneWayDetailsScreen extends ConsumerWidget {
             Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.surface,
-                border: Border(
-                  top: BorderSide(
-                    color: theme.colorScheme.outline,
-                    width: 1.5,
-                  ),
-                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.1),
@@ -277,29 +293,6 @@ class _Section extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            subtitle!,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        child,
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      SkylineSection(title: title, subtitle: subtitle, child: child);
 }

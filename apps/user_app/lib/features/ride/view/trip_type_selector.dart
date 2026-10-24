@@ -28,21 +28,21 @@ class TripTypeSelector extends ConsumerWidget {
   static const _options = <(TripType, IconData, String, String)>[
     (
       TripType.oneWay,
-      Icons.arrow_right_alt,
+      Icons.arrow_forward_rounded,
       'One-Way Trip',
-      'A single drive from your starting point to a destination.',
+      'Drop at a destination.',
     ),
     (
       TripType.roundTrip,
-      Icons.sync_alt,
+      Icons.schedule_rounded,
       'Round Trip',
-      'Hire drivers by the hour for an out-and-back journey.',
+      'Hire a driver by the hour, out and back.',
     ),
     (
       TripType.multiStop,
-      Icons.alt_route,
+      Icons.alt_route_rounded,
       'Multi-Stop Trip',
-      'One booking that visits several stops in sequence.',
+      'Several stops, one driver.',
     ),
   ];
 
@@ -61,28 +61,41 @@ class TripTypeSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(tripSelectionViewModelProvider);
 
-    final cards = [
-      for (final (type, icon, title, subtitle) in _options)
-        TripOptionCard(
-          icon: icon,
-          title: title,
-          subtitle: subtitle,
-          selected: vm.selectedType == type,
-          onTap: () => _select(context, ref, type),
-        ),
+    TripOptionCard card(
+      (TripType, IconData, String, String) option, {
+      bool featured = false,
+    }) {
+      final (type, icon, title, subtitle) = option;
+      return TripOptionCard(
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        featured: featured,
+        selected: vm.selectedType == type,
+        onTap: () => _select(context, ref, type),
+      );
+    }
+
+    // Round Trip — hiring by the hour, the core service — leads as the wide
+    // featured card; the other two sit side by side beneath it (or all three
+    // in one row on wide windows).
+    final featured = _options.firstWhere((o) => o.$1 == TripType.roundTrip);
+    final others = [
+      for (final option in _options)
+        if (option.$1 != TripType.roundTrip) option,
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Wide: cards side-by-side, equal height. Narrow: stacked.
         if (constraints.maxWidth >= _wideBreakpoint) {
           return IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final (i, card) in cards.indexed) ...[
-                  if (i > 0) const SizedBox(width: 16),
-                  Expanded(child: card),
+                Expanded(flex: 2, child: card(featured, featured: true)),
+                for (final option in others) ...[
+                  const SizedBox(width: 16),
+                  Expanded(child: card(option)),
                 ],
               ],
             ),
@@ -91,10 +104,19 @@ class TripTypeSelector extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final (i, card) in cards.indexed) ...[
-              if (i > 0) const SizedBox(height: 16),
-              card,
-            ],
+            card(featured, featured: true),
+            const SizedBox(height: 12),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, option) in others.indexed) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Expanded(child: card(option)),
+                  ],
+                ],
+              ),
+            ),
           ],
         );
       },

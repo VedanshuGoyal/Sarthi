@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
-import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'core/brand/mojud_brand.dart';
+import 'core/theme/skyline/skyline_theme.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/home_screen.dart';
@@ -20,20 +20,18 @@ Future<void> main() async {
   );
 }
 
-class MojudUserApp extends ConsumerWidget {
+class MojudUserApp extends StatelessWidget {
   const MojudUserApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // The Deep Signal two-mode design language. The mode follows the OS setting
-    // (ThemeMode.system) until the user overrides it with the in-app toggle
-    // (see [ThemeModeToggle]).
-    final themeMode = ref.watch(themeModeProvider);
+  Widget build(BuildContext context) {
+    // The Skyline design language (Deep Signal's blues, rounded and friendly),
+    // light only — the app does not follow the OS dark setting or offer a
+    // theme switch.
     return MaterialApp(
       title: MojudBrand.name,
-      theme: DeepSignalTheme.light(),
-      darkTheme: DeepSignalTheme.dark(),
-      themeMode: themeMode,
+      theme: SkylineTheme.light(),
+      themeMode: ThemeMode.light,
       home: const _AppRoot(),
     );
   }
