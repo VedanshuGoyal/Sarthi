@@ -10,6 +10,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 class MapPinCard extends StatelessWidget {
   const MapPinCard({
     super.key,
+    this.caption = 'Pickup here',
     required this.label,
     required this.isMoving,
     required this.isResolving,
@@ -17,6 +18,9 @@ class MapPinCard extends StatelessWidget {
     required this.canConfirm,
     this.onConfirm,
   });
+
+  /// What the pinned place is for ("Pickup here", "Destination"…).
+  final String caption;
 
   /// Address (or raw coordinates) under the pin.
   final String label;
@@ -87,7 +91,7 @@ class MapPinCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Pickup here', style: t.label(size: 12)),
+                      Text(caption, style: t.label(size: 12)),
                       const SizedBox(height: 2),
                       _detail(t),
                     ],

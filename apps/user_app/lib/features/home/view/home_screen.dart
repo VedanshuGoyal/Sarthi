@@ -17,6 +17,7 @@ import '../../ride/ride_providers.dart';
 import '../../ride/view/booking_details_screen.dart';
 import '../../ride/view/multi_stop_planner_screen.dart';
 import '../../ride/view/one_way_details_screen.dart';
+import '../../ride/view/one_way_route_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
 import '../../ride/view/widgets/my_rides_section.dart';
@@ -89,8 +90,8 @@ class HomeScreen extends ConsumerWidget {
 
   /// Routes the tapped trip choice to its next step. Round Trip advances to
   /// the pickup-location step, then the booking-details step; Multi-Stop to the
-  /// starting-point step, then the trip planner; One-Way to the starting-point
-  /// step, the destination step, then the details step.
+  /// starting-point step, then the trip planner; One-Way to the route step
+  /// (start pre-filled from GPS, destination to type), then the details step.
   Future<void> _onTripSelected(
     BuildContext context,
     WidgetRef ref,
@@ -161,32 +162,18 @@ class HomeScreen extends ConsumerWidget {
             );
         }
       case TripType.oneWay:
-        final start = await Navigator.of(context).push<PickupLocation>(
-          MaterialPageRoute(
-            builder: (_) => const PickupLocationScreen(
-              title: 'Set starting point',
-              fieldLabel: 'Starting point',
-            ),
-          ),
+        // One page for both ends: the start is pre-filled from GPS, so the
+        // customer usually just types where they're going.
+        final route = await Navigator.of(context).push<OneWayRoute>(
+          MaterialPageRoute(builder: (_) => const OneWayRouteScreen()),
         );
-        if (start == null || !context.mounted) return;
-        // Both steps share the auto-disposing pickup view model, and the second
-        // push overlaps the first screen's pop animation — invalidate so the
-        // destination step doesn't inherit the starting point as its selection.
-        ref.invalidate(pickupSelectionViewModelProvider);
-        final destination = await Navigator.of(context).push<PickupLocation>(
-          MaterialPageRoute(
-            builder: (_) => const PickupLocationScreen(
-              title: 'Set destination',
-              fieldLabel: 'Destination',
-            ),
-          ),
-        );
-        if (destination == null || !context.mounted) return;
+        if (route == null || !context.mounted) return;
         final trip = await Navigator.of(context).push<OneWayTrip>(
           MaterialPageRoute(
-            builder: (_) =>
-                OneWayDetailsScreen(start: start, destination: destination),
+            builder: (_) => OneWayDetailsScreen(
+              start: route.start,
+              destination: route.destination,
+            ),
           ),
         );
         if (trip != null && context.mounted) {

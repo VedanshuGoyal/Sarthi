@@ -17,6 +17,7 @@ import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
 import 'view_model/saved_cars_view_model.dart';
+import 'view_model/trip_start_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
 
 /// The trip-type chooser's view model.
@@ -92,6 +93,15 @@ final pickupSelectionViewModelProvider =
       return PickupSelectionViewModel(
         repository: ref.watch(locationRepositoryProvider),
       );
+    });
+
+/// The One-Way route step's starting point, located from GPS as soon as the
+/// step opens. `autoDispose` so each visit re-reads the current location.
+final tripStartViewModelProvider =
+    ChangeNotifierProvider.autoDispose<TripStartViewModel>((ref) {
+      return TripStartViewModel(
+        repository: ref.watch(locationRepositoryProvider),
+      )..locate();
     });
 
 /// The map-picker step's view model. `autoDispose` so each visit starts fresh,

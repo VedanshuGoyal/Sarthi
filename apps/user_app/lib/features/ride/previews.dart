@@ -19,6 +19,7 @@ import 'ride_providers.dart';
 import 'view/booking_details_screen.dart';
 import 'view/multi_stop_planner_screen.dart';
 import 'view/one_way_details_screen.dart';
+import 'view/one_way_route_screen.dart';
 import 'view/one_way_review_screen.dart';
 import 'view/pickup_location_screen.dart';
 import 'view/trip_type_selector.dart';
@@ -83,12 +84,24 @@ Widget tripChooserOneWayPreview() => _seeded(initialType: TripType.oneWay);
 /// Stand-in repository so pickup previews render without any Ola/GPS call.
 /// The previews seed the view model's state directly, so its methods are unused.
 class _PreviewLocationRepository extends LocationRepository {
-  _PreviewLocationRepository({this.recents = const []})
+  _PreviewLocationRepository({this.recents = const [], this.current})
     : super(tokenProvider: _token);
 
   final List<PickupLocation> recents;
 
+  /// The GPS fix to report; null keeps the fix pending forever, so a preview
+  /// can show the "locating" state (and never touches the GPS plugin).
+  final PickupLocation? current;
+
   static Future<String> _token() async => 'preview';
+
+  @override
+  Future<PickupLocation> currentLocation() {
+    final current = this.current;
+    return current == null
+        ? Completer<PickupLocation>().future
+        : Future.value(current);
+  }
 
   @override
   Future<List<PickupLocation>> cachedRecents() async => recents;
@@ -171,6 +184,34 @@ Widget pickupRecentsPreview() => _pickup(recents: _sampleRecents);
 @Preview(name: 'With results', group: 'Pickup', theme: ridePreviewTheme)
 Widget pickupResultsPreview() =>
     _pickup(query: 'Connaught Place', suggestions: _sampleSuggestions);
+
+// --- One-Way route step ----------------------------------------------------
+// "From" pre-filled from GPS above the destination search.
+
+/// Hosts [OneWayRouteScreen] with GPS reporting [current] (pending when null).
+Widget _route({PickupLocation? current}) => ProviderScope(
+  overrides: [
+    locationRepositoryProvider.overrideWithValue(
+      _PreviewLocationRepository(recents: _sampleRecents, current: current),
+    ),
+  ],
+  child: const OneWayRouteScreen(),
+);
+
+@Preview(
+  name: 'From current location',
+  group: 'One-Way route',
+  theme: ridePreviewTheme,
+)
+Widget routeLocatedPreview() => _route(
+  current: const PickupLocation(
+    address: 'Block C, Vasant Kunj, New Delhi',
+    point: GeoPoint(latitude: 28.5245, longitude: 77.1588),
+  ),
+);
+
+@Preview(name: 'Locating', group: 'One-Way route', theme: ridePreviewTheme)
+Widget routeLocatingPreview() => _route();
 
 // --- Map picker card -------------------------------------------------------
 // The card that docks over the map. Previewed on its own (away from the

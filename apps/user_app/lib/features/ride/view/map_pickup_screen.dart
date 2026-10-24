@@ -20,7 +20,14 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 /// `PickupLocationScreen`. The camera controller is a view-local rendering
 /// concern (like a `ScrollController`); all data access stays in the view model.
 class MapPickupScreen extends ConsumerStatefulWidget {
-  const MapPickupScreen({super.key, this.onConfirmed});
+  const MapPickupScreen({
+    super.key,
+    this.caption = 'Pickup here',
+    this.onConfirmed,
+  });
+
+  /// What the pinned place is for, shown above its address on the card.
+  final String caption;
 
   /// Invoked with the confirmed pickup. Defaults to popping and returning it.
   final void Function(BuildContext context, PickupLocation pickup)? onConfirmed;
@@ -170,6 +177,7 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
                             ),
                           ),
                           MapPinCard(
+                            caption: widget.caption,
                             label: vm.pinLabel,
                             isMoving: vm.isMoving,
                             isResolving: vm.isResolving,

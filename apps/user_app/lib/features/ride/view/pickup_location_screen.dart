@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:sarthi_shared/sarthi_shared.dart';
+import '../../../core/config/google_maps_config.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/pickup_selection_view_model.dart';
@@ -14,8 +15,9 @@ import 'widgets/recent_location_tile.dart';
 /// "pick a place" step (a Multi-Stop starting point or stop) via the labels.
 ///
 /// A search field (Ola Maps autocomplete) plus a "use my current location"
-/// shortcut (GPS + reverse-geocode). Tapping any result — a suggestion, a
-/// recent, the GPS shortcut, or a map pin — is the whole decision: the choice
+/// row that opens the map picker on the GPS fix (plain GPS + reverse-geocode
+/// when no Maps key is set). Tapping any result — a suggestion, a recent, or a
+/// confirmed map pin — is the whole decision: the choice
 /// is remembered and handed straight back via [onConfirmed], with no separate
 /// confirm step. Watches [pickupSelectionViewModelProvider]. Body is
 /// width-capped and centred on large screens per the responsive guide.
@@ -24,6 +26,8 @@ class PickupLocationScreen extends ConsumerStatefulWidget {
     super.key,
     this.title = 'Set pickup',
     this.fieldLabel = 'Pickup location',
+    this.header,
+    this.offerCurrentLocation = true,
     this.onConfirmed,
   });
 
@@ -31,6 +35,14 @@ class PickupLocationScreen extends ConsumerStatefulWidget {
   /// choosing something other than a Round Trip pickup.
   final String title;
   final String fieldLabel;
+
+  /// Shown at the top of the search card, above the field — e.g. the One-Way
+  /// step's "From" row.
+  final Widget? header;
+
+  /// Whether the map row is offered as "use my current location". Off for a
+  /// destination, where it reads "Select on map" (and is hidden without a map).
+  final bool offerCurrentLocation;
 
   /// Invoked with the chosen pickup as soon as one is tapped. Defaults to
   /// popping the screen and returning the location to the previous route.
@@ -77,7 +89,9 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
   /// location.
   Future<void> _pickOnMap(PickupSelectionViewModel vm) async {
     final pickup = await Navigator.of(context).push<PickupLocation>(
-      MaterialPageRoute(builder: (_) => const MapPickupScreen()),
+      MaterialPageRoute(
+        builder: (_) => MapPickupScreen(caption: widget.fieldLabel),
+      ),
     );
     if (pickup == null || !mounted) return;
     await _choose(vm, vm.selectFromMap(pickup));
@@ -116,6 +130,10 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (widget.header case final header?) ...[
+                          header,
+                          Divider(color: t.hairline, height: 1),
+                        ],
                         TextField(
                           controller: _controller,
                           autofocus: true,
@@ -136,17 +154,29 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                           ),
                         ),
                         Divider(color: t.hairline, height: 1),
-                        CurrentLocationButton(
-                          isBusy: vm.isLocating,
-                          onPressed: () async =>
-                              _choose(vm, await vm.useCurrentLocation()),
-                        ),
-                        SkylineRow(
-                          icon: Icons.map_rounded,
-                          title: 'Select on map',
-                          accent: true,
-                          onTap: () => _pickOnMap(vm),
-                        ),
+                        // One row covers both "I'm here" and "it's over
+                        // there": the map opens on the GPS fix, so the rider
+                        // confirms as-is or nudges the pin. Without a Maps key
+                        // there's no map, so it falls back to plain GPS.
+                        if (!widget.offerCurrentLocation) ...[
+                          if (GoogleMapsConfig.isConfigured)
+                            SkylineRow(
+                              icon: Icons.map_rounded,
+                              title: 'Select on map',
+                              accent: true,
+                              onTap: () => _pickOnMap(vm),
+                            ),
+                        ] else if (GoogleMapsConfig.isConfigured)
+                          CurrentLocationButton(
+                            subtitle: 'Opens the map to adjust the pin',
+                            onPressed: () => _pickOnMap(vm),
+                          )
+                        else
+                          CurrentLocationButton(
+                            isBusy: vm.isLocating,
+                            onPressed: () async =>
+                                _choose(vm, await vm.useCurrentLocation()),
+                          ),
                       ],
                     ),
                   ),
@@ -225,7 +255,9 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
           ),
           const SizedBox(height: Skyline.s12),
           Text(
-            'Search for a place, or use your current location.',
+            widget.offerCurrentLocation
+                ? 'Search for a place, or use your current location.'
+                : 'Search for a place, or select it on the map.',
             textAlign: TextAlign.center,
             style: t.body(size: 14),
           ),
