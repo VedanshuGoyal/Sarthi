@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
@@ -5,6 +7,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
+import '../../notifications/notification_providers.dart';
 import '../../profile/view/profile_screen.dart';
 import '../../ride/ride_providers.dart';
 import '../../ride/view/activity_panel.dart';
@@ -18,7 +21,8 @@ import 'home_screen.dart';
 /// a navigation rail, per the responsive-layout guideline. Tabs sit in an
 /// [IndexedStack] so switching keeps each one's scroll position. The shell
 /// owns the bookings refresh, so Activity and its badge stay current
-/// whichever tab is open.
+/// whichever tab is open, and the push registration: a "Driver assigned"
+/// notification refreshes the rides at once, and tapping one opens Activity.
 class UserHomeShell extends ConsumerStatefulWidget {
   const UserHomeShell({super.key, required this.user});
 
@@ -41,20 +45,31 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
   ];
 
   late final MyBookingsViewModel _bookings;
+  final List<StreamSubscription<void>> _push = [];
   int _index = 0;
 
   @override
   void initState() {
     super.initState();
     _bookings = ref.read(myBookingsViewModelProvider);
+    final push = ref.read(pushServiceProvider);
+    _push
+      ..add(push.arrivals.listen((_) => _bookings.load()))
+      ..add(push.taps.listen((_) => _select(_activityTab)));
     // Deferred: providers can't notify during a build.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _bookings.startPolling(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _bookings.startPolling();
+      unawaited(ref.read(pushRegistrationProvider).start());
+      final launchedBy = await push.takeLaunchTap();
+      if (launchedBy != null && mounted) _select(_activityTab);
+    });
   }
 
   @override
   void dispose() {
+    for (final sub in _push) {
+      sub.cancel();
+    }
     _bookings.stopPolling();
     super.dispose();
   }
@@ -65,9 +80,14 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
     if (index == _activityTab) _bookings.load();
   }
 
-  /// Revokes the session on the server (best-effort), then wipes it from memory
-  /// and secure storage — returning the app to onboarding.
+  /// Stops this phone's notifications and revokes the session on the server
+  /// (both best-effort), then wipes it from memory and secure storage —
+  /// returning the app to onboarding.
   Future<void> _logout() async {
+    await ref
+        .read(pushRegistrationProvider)
+        .stop()
+        .timeout(const Duration(seconds: 5), onTimeout: () {});
     final auth = ref.read(authControllerProvider.notifier);
     final token = auth.token;
     if (token != null) {

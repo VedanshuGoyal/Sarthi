@@ -11,7 +11,9 @@ import 'package:driver_app/features/documents/data/driver_kyc_repository.dart';
 import 'package:driver_app/features/documents/document_providers.dart';
 import 'package:driver_app/features/documents/domain/driver_kyc.dart';
 import 'package:driver_app/features/documents/view_model/document_registration_view_model.dart';
+import 'package:driver_app/core/services/push_service.dart';
 import 'package:driver_app/features/home/view/driver_home_shell.dart';
+import 'package:driver_app/features/notifications/notification_providers.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +53,7 @@ void main() {
       ProviderScope(
         overrides: [
           ridesRepositoryProvider.overrideWithValue(rides),
+          pushServiceProvider.overrideWithValue(PushService.off()),
           locationServiceProvider.overrideWithValue(
             const FakeLocationService(),
           ),

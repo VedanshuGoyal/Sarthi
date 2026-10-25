@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
@@ -5,6 +7,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../account/view/account_panel.dart';
 import '../../auth/domain/driver.dart';
 import '../../documents/document_providers.dart';
+import '../../notifications/notification_providers.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/earnings_panel.dart';
 import '../../rides/view/rides_panel.dart';
@@ -16,6 +19,10 @@ import 'duty_panel.dart';
 /// Phones get a bottom navigation bar; wide screens (tablets, the web build)
 /// a navigation rail, per the responsive-layout guideline. Panels sit in an
 /// [IndexedStack] so switching tabs keeps each one's scroll position.
+///
+/// The shell also owns push registration: a "New ride request" arriving
+/// while the app is open refreshes the feed at once, and tapping one opens
+/// Home, where the request is.
 class DriverHomeShell extends ConsumerStatefulWidget {
   const DriverHomeShell({super.key, required this.driver});
 
@@ -39,17 +46,44 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     (Icons.person_outline_rounded, Icons.person_rounded, 'Account'),
   ];
 
+  static const int _homeTab = 0;
+
+  final List<StreamSubscription<void>> _push = [];
   int _index = 0;
 
   @override
   void initState() {
     super.initState();
+    final push = ref.read(pushServiceProvider);
+    _push
+      ..add(push.arrivals.listen((_) => _refreshRequests()))
+      ..add(push.taps.listen((_) => _openRequests()));
     // Rides and earnings load themselves when first read; the KYC record
     // (for the Account panel) is shared with onboarding, so refresh it here.
     // Deferred: providers can't be written to during a build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       ref.read(documentRegistrationViewModelProvider).load();
+      unawaited(ref.read(pushRegistrationProvider).start());
+      final launchedBy = await push.takeLaunchTap();
+      if (launchedBy != null && mounted) _openRequests();
     });
+  }
+
+  @override
+  void dispose() {
+    for (final sub in _push) {
+      sub.cancel();
+    }
+    super.dispose();
+  }
+
+  /// Re-reads the open requests now rather than on the next poll. A no-op
+  /// while off duty.
+  void _refreshRequests() => ref.read(dutyViewModelProvider).refresh();
+
+  void _openRequests() {
+    _select(_homeTab);
+    _refreshRequests();
   }
 
   void _select(int index) {

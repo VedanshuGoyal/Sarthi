@@ -22,6 +22,7 @@ func NewRouter(
 	driverKYC *service.DriverKYCService,
 	driverRides *service.DriverRideService,
 	maps *service.MapsService,
+	notify *service.NotifyService,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -31,6 +32,7 @@ func NewRouter(
 	dk := NewDriverKYCHandler(driverKYC)
 	dr := NewDriverRideHandler(driverRides)
 	mp := NewMapsHandler(maps)
+	pt := NewPushTokenHandler(notify)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -61,6 +63,10 @@ func NewRouter(
 	// status, assigned driver and start code.
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 	mux.HandleFunc("GET /me/bookings", requireAuth(sessions, bk.List))
+
+	// This install's push token, for "driver assigned" notifications.
+	mux.HandleFunc("PUT /me/push-token", requireAuth(sessions, pt.SaveUser))
+	mux.HandleFunc("DELETE /me/push-token", requireAuth(sessions, pt.ForgetUser))
 
 	// Short-lived Ola Maps tokens for the app's place search; the OAuth client
 	// secret stays on the server.
@@ -94,6 +100,10 @@ func NewRouter(
 	mux.HandleFunc("POST /driver/rides/{id}/{action}", requireAuth(driverSessions, dr.Act))
 	mux.HandleFunc("GET /driver/earnings", requireAuth(driverSessions, dr.Earnings))
 	mux.HandleFunc("PUT /driver/duty", requireAuth(driverSessions, dr.SetDuty))
+
+	// This install's push token, for "new ride request" notifications.
+	mux.HandleFunc("PUT /driver/push-token", requireAuth(driverSessions, pt.SaveDriver))
+	mux.HandleFunc("DELETE /driver/push-token", requireAuth(driverSessions, pt.ForgetDriver))
 
 	return withCORS(logRequests(mux))
 }

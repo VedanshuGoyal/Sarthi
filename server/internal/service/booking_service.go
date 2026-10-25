@@ -48,6 +48,12 @@ type BookingStore interface {
 	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 }
 
+// RequestAlerter tells nearby drivers about a new ride request
+// (NotifyService). It returns at once; the alerts go out in the background.
+type RequestAlerter interface {
+	RideRequested(ctx context.Context, b domain.Booking, plan tripPlan)
+}
+
 // maxCustomerBookings caps the customer's bookings list.
 const maxCustomerBookings = 50
 
@@ -58,13 +64,15 @@ const maxCustomerBookings = 50
 // requests feed (see DriverRideService) until one accepts it. PostgreSQL is
 // the source of truth.
 type BookingService struct {
-	store BookingStore
-	now   func() time.Time
+	store  BookingStore
+	alerts RequestAlerter
+	now    func() time.Time
 }
 
-// NewBookingService wires the service to its store.
-func NewBookingService(store BookingStore) *BookingService {
-	return &BookingService{store: store, now: time.Now}
+// NewBookingService wires the service to its store and to the driver alerts
+// sent for each new booking (nil sends none).
+func NewBookingService(store BookingStore, alerts RequestAlerter) *BookingService {
+	return &BookingService{store: store, alerts: alerts, now: time.Now}
 }
 
 // Record validates and persists userID's confirmed booking of the given
@@ -101,6 +109,9 @@ func (s *BookingService) Record(ctx context.Context, userID, tripType string, de
 		"userId", userID,
 		"tripType", tripType,
 	)
+	if s.alerts != nil {
+		s.alerts.RideRequested(ctx, booking, plan)
+	}
 	return booking, nil
 }
 

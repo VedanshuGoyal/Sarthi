@@ -275,6 +275,31 @@ renderer (default since Maps SDK 18.2.0, which the plugin already uses); on the
 web this also replaces the deprecated `google.maps.Marker` and clears its
 console warning.
 
+## Push notifications (Firebase Cloud Messaging)
+
+Uber-style alerts: **"New ride request"** to every online driver within 50 km
+who can take the ride (KYC cleared, right gearbox, app reported in within
+10 min), and **"Driver assigned"** to the customer when a driver accepts.
+Tapping opens Home (driver) / Activity (customer).
+
+One Firebase project, two Android apps:
+
+1. [Firebase console](https://console.firebase.google.com) → add project (or
+   add Firebase to the existing Google Cloud project).
+2. Add Android apps `com.sarthi.user_app` and `com.sarthi.driver_app`.
+3. Download `google-services.json` (it lists both apps) and copy it to
+   **both** `apps/user_app/android/app/` and `apps/driver_app/android/app/`
+   (git-ignored). Rebuild the APKs.
+4. Project settings → Service accounts → *Generate new private key*. Point
+   the server at it: `FCM_CREDENTIALS_FILE=/path/to/key.json` in
+   `server/.env` (local) or `server/.env.prod` (VPS, see that file).
+
+Without the JSON the apps build and run with push off; without the key the
+server still stores device tokens but sends nothing. Server code:
+`internal/service/notify_service.go`, `internal/push/fcm`. App code:
+`lib/core/services/push_service.dart` + `lib/features/notifications/`.
+Local testing against a fake FCM: set `FCM_BASE_URL`.
+
 ## Verified end-to-end (2026-06-27)
 
 `colima start` → `docker compose up -d` → `go run ./cmd/server`, then the

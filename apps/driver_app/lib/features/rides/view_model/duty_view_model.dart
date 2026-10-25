@@ -9,10 +9,12 @@ import '../domain/ride.dart';
 /// The Home panel's state: whether the driver is on duty, and the open ride
 /// requests near them while they are.
 ///
-/// Rides are booked ahead, so there is no push dispatch yet — while online the
-/// feed refreshes every [pollEvery], each time re-reporting the driver's
-/// position (which keeps them in the backend's live presence index) and
-/// re-reading what's open near them. Offline, it stops polling and clears.
+/// Rides are booked ahead, so there is no one-driver dispatch — while online
+/// the feed refreshes every [pollEvery], each time re-reporting the driver's
+/// position (which keeps them in the backend's live presence index, and so
+/// in line for "New ride request" pushes) and re-reading what's open near
+/// them. A push arriving while the app is open refreshes it straight away.
+/// Offline, it stops polling and clears.
 class DutyViewModel extends ChangeNotifier {
   DutyViewModel({
     required this._repository,

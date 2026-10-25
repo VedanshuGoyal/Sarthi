@@ -59,7 +59,7 @@ func roundTripDetails() map[string]any {
 var bookingTestNow = time.Date(2026, 10, 24, 6, 0, 0, 0, time.UTC)
 
 func newTestBookingService(store BookingStore) *BookingService {
-	svc := NewBookingService(store)
+	svc := NewBookingService(store, nil)
 	svc.now = func() time.Time { return bookingTestNow }
 	return svc
 }

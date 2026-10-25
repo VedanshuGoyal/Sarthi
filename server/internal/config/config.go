@@ -30,6 +30,15 @@ type Config struct {
 	// Storage says where driver KYC images are kept.
 	Storage StorageConfig
 
+	// FCMCredentialsFile is the path to the Firebase service-account key
+	// (JSON) used to send push notifications. Optional: without it no pushes
+	// are sent, though the apps' device tokens are still stored.
+	FCMCredentialsFile string
+
+	// FCMBaseURL overrides the FCM endpoint — for local testing against a
+	// fake; empty means Google's.
+	FCMBaseURL string
+
 	// Secrets holds the keys protecting personal numbers at rest.
 	Secrets SecretsConfig
 }
@@ -144,8 +153,10 @@ func Load() (Config, error) {
 			ClientSecret: os.Getenv("OLA_MAPS_CLIENT_SECRET"),
 			TokenURL:     os.Getenv("OLA_MAPS_TOKEN_URL"),
 		},
-		Storage: storage,
-		Secrets: secrets,
+		Storage:            storage,
+		Secrets:            secrets,
+		FCMCredentialsFile: os.Getenv("FCM_CREDENTIALS_FILE"),
+		FCMBaseURL:         os.Getenv("FCM_BASE_URL"),
 	}, nil
 }
 

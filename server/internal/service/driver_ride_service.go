@@ -93,6 +93,12 @@ type StartCodeGuard interface {
 	Succeed(key string)
 }
 
+// AssignmentAlerter tells a customer a driver took their ride
+// (NotifyService). It returns at once; the alert goes out in the background.
+type AssignmentAlerter interface {
+	DriverAssigned(ctx context.Context, userID string, ride domain.DriverRide, driverName string)
+}
+
 // LatLng is a point the driver app reports.
 type LatLng struct{ Lat, Lng float64 }
 
@@ -100,26 +106,30 @@ type LatLng struct{ Lat, Lng float64 }
 // requests feed, accepting, the arrive → start → complete steps, handing a
 // ride back, and the earnings summary.
 //
-// Rides are booked ahead of time, so there is no push dispatch yet: every
-// eligible online driver sees the open requests near them and the first to
-// accept gets the ride (the store's conditional UPDATE decides the race).
+// Rides are booked ahead of time, so there is no one-driver dispatch: every
+// eligible online driver sees the open requests near them (and is pushed a
+// "new ride request", see NotifyService) and the first to accept gets the
+// ride (the store's conditional UPDATE decides the race).
 type DriverRideService struct {
 	store    DriverRideStore
 	profiles DriverProfileReader
 	presence DriverPresence
 	codes    StartCodeGuard
+	alerts   AssignmentAlerter
 	now      func() time.Time
 	newCode  func() (string, error)
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
-// reader, the live presence index and the start-code attempt limiter.
-func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard) *DriverRideService {
+// reader, the live presence index, the start-code attempt limiter and the
+// customer alert sent on accept (nil sends none).
+func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard, alerts AssignmentAlerter) *DriverRideService {
 	return &DriverRideService{
 		store:    store,
 		profiles: profiles,
 		presence: presence,
 		codes:    codes,
+		alerts:   alerts,
 		now:      time.Now,
 		newCode:  newStartOTP,
 	}
@@ -225,6 +235,9 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 	s.codes.Begin(rideID)
 	slog.InfoContext(ctx, "ride accepted", "driverId", driverID, "rideId", rideID)
 	ride, _, _ := toDriverRide(rb, true)
+	if s.alerts != nil {
+		s.alerts.DriverAssigned(ctx, rb.Booking.UserID, ride, profile.FullName)
+	}
 	return ride, nil
 }
 

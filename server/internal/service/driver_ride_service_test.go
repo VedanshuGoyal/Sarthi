@@ -175,7 +175,7 @@ func newRideService(store *fakeRideStore) *DriverRideService {
 		"auto":    {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionAutomatic},
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
-	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard())
+	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), nil)
 	svc.now = func() time.Time { return testNow }
 	codes := []string{"1111", "2222", "3333"}
 	svc.newCode = func() (string, error) {
@@ -400,7 +400,7 @@ func TestEarnings_istWindows(t *testing.T) {
 	store := &earningsSpy{fakeRideStore: newFakeRideStore(), capture: func(today, week, month time.Time) {
 		gotToday, gotWeek, gotMonth = today, week, month
 	}}
-	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard())
+	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), nil)
 	// Sunday 25 Oct 2026, 01:00 IST — still Saturday evening in UTC.
 	svc.now = func() time.Time { return time.Date(2026, 10, 24, 19, 30, 0, 0, time.UTC) }
 

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notification accent: Deep Signal's signal blue. -->
+    <color name="notification_accent">#2A93BE</color>
+</resources>

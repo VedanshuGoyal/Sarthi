@@ -9,6 +9,7 @@ import '../../auth/driver_auth_providers.dart';
 import '../../documents/document_providers.dart';
 import '../../documents/domain/driver_kyc.dart';
 import '../../documents/view/document_view_screen.dart';
+import '../../notifications/notification_providers.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/ride_format.dart';
 import '../../rides/view/widgets/ride_widgets.dart';
@@ -31,8 +32,9 @@ class AccountPanel extends ConsumerStatefulWidget {
 class _AccountPanelState extends ConsumerState<AccountPanel> {
   bool _loggingOut = false;
 
-  /// Goes off duty, revokes the session server-side (best-effort), then
-  /// clears it locally — which returns the app to the start screen.
+  /// Goes off duty, stops this phone's ride notifications and revokes the
+  /// session server-side (both best-effort), then clears it locally — which
+  /// returns the app to the start screen.
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -57,6 +59,10 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
 
     setState(() => _loggingOut = true);
     await ref.read(dutyViewModelProvider).setOnline(false);
+    await ref
+        .read(pushRegistrationProvider)
+        .stop()
+        .timeout(const Duration(seconds: 5), onTimeout: () {});
     final auth = ref.read(driverAuthControllerProvider.notifier);
     final token = auth.token;
     if (token != null) {

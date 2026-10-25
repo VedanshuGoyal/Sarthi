@@ -75,6 +75,9 @@ preflight() {
 
 	# Map search is optional: without Ola credentials the apps just show
 	# "Map search isn't set up yet." Worth flagging, not worth refusing over.
+	if [[ -z "${FCM_CREDENTIALS_FILE:-}" ]]; then
+		warn "FCM_CREDENTIALS_FILE not set — ride push notifications will be off"
+	fi
 	if [[ -z "${OLA_MAPS_CLIENT_ID:-}" || -z "${OLA_MAPS_CLIENT_SECRET:-}" ]]; then
 		warn "OLA_MAPS_CLIENT_ID/OLA_MAPS_CLIENT_SECRET not set — map search will be off"
 	fi
@@ -207,6 +210,7 @@ phase_service() {
 		FAST2SMS_OTP_ID=$FAST2SMS_OTP_ID
 		OLA_MAPS_CLIENT_ID=${OLA_MAPS_CLIENT_ID:-}
 		OLA_MAPS_CLIENT_SECRET=${OLA_MAPS_CLIENT_SECRET:-}
+		FCM_CREDENTIALS_FILE=${FCM_CREDENTIALS_FILE:-}
 		STORAGE_BACKEND=s3
 		S3_BUCKET=$S3_BUCKET
 		S3_REGION=${S3_REGION:-auto}

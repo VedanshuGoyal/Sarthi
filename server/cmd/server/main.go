@@ -20,6 +20,8 @@ import (
 	"github.com/sarthi/server/internal/config"
 	"github.com/sarthi/server/internal/maps/olamaps"
 	"github.com/sarthi/server/internal/memstore"
+	"github.com/sarthi/server/internal/push"
+	"github.com/sarthi/server/internal/push/fcm"
 	"github.com/sarthi/server/internal/repository"
 	"github.com/sarthi/server/internal/secret"
 	"github.com/sarthi/server/internal/service"
@@ -113,9 +115,23 @@ func run() error {
 	// from a dropdown when booking. PostgreSQL is the source of truth.
 	cars := service.NewCarService(repository.NewCarRepository(pool))
 
+	// Who is online right now, bucketed by H3 cell: the driver feed and the
+	// "new ride request" pushes both search it.
+	presence := memstore.NewDriverTracker(geo.DefaultResolution)
+	driverProfiles := repository.NewDriverKYCRepository(pool)
+
+	// Push notifications (FCM): "new ride request" to nearby online drivers,
+	// "driver assigned" to the customer.
+	pushSender, err := newPushSender(cfg.FCMCredentialsFile, cfg.FCMBaseURL)
+	if err != nil {
+		return err
+	}
+	notify := service.NewNotifyService(repository.NewPushTokenRepository(pool), pushSender, presence, driverProfiles)
+	defer notify.Wait()
+
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
-	// what the customer asked for. Matchmaking comes later.
-	bookings := service.NewBookingService(repository.NewBookingRepository(pool))
+	// what the customer asked for; each one alerts the drivers near it.
+	bookings := service.NewBookingService(repository.NewBookingRepository(pool), notify)
 
 	// Driver KYC: the Document View's images live in object storage, their
 	// metadata and the typed fields in PostgreSQL.
@@ -143,10 +159,11 @@ func run() error {
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
 	driverRides := service.NewDriverRideService(
 		repository.NewDriverRideRepository(pool),
-		repository.NewDriverKYCRepository(pool),
-		memstore.NewDriverTracker(geo.DefaultResolution),
+		driverProfiles,
+		presence,
 		// Wrong start-code attempts, keyed by ride id (5 per code).
 		memstore.NewOTPGuard(),
+		notify,
 	)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
@@ -165,7 +182,7 @@ func run() error {
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
-			driverAuthService, driverSessions, driverKYC, driverRides, mapsService),
+			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -187,6 +204,31 @@ func run() error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+// newPushSender builds the FCM client from the service-account key at path,
+// or returns nil (pushes off) when no path is configured. baseURL, when set,
+// replaces Google's endpoint (local testing).
+func newPushSender(path, baseURL string) (push.Sender, error) {
+	if path == "" {
+		slog.Warn("push: no FCM_CREDENTIALS_FILE set; ride notifications are off " +
+			"(device tokens are still stored)")
+		return nil, nil
+	}
+	key, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading FCM_CREDENTIALS_FILE: %w", err)
+	}
+	var opts []fcm.Option
+	if baseURL != "" {
+		opts = append(opts, fcm.WithBaseURL(baseURL))
+	}
+	client, err := fcm.New(key, opts...)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("push: FCM enabled", "project", client.ProjectID())
+	return client, nil
 }
 
 // newBlobStore builds the object store driver KYC images are kept in.
