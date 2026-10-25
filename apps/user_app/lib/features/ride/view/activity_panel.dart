@@ -5,6 +5,8 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../domain/my_booking.dart';
 import '../ride_providers.dart';
 import '../view_model/my_bookings_view_model.dart';
+import 'rate_ride_sheet.dart';
+import 'ride_details_screen.dart';
 import 'widgets/my_ride_card.dart';
 
 /// The Activity tab: the customer's bookings in two lists — Upcoming (not
@@ -12,6 +14,8 @@ import 'widgets/my_ride_card.dart';
 /// (finished or cancelled, latest first, with who drove and the fare).
 ///
 /// The signed-in shell keeps the list fresh; each list also pulls to refresh.
+/// Tapping a ride opens its details; an unrated completed ride's "Rate your
+/// trip" opens the rating sheet.
 class ActivityPanel extends ConsumerWidget {
   const ActivityPanel({super.key});
 
@@ -66,6 +70,14 @@ class ActivityPanel extends ConsumerWidget {
   }
 }
 
+/// Opens the details screen of the ride with [bookingId].
+Future<void> openRideDetails(BuildContext context, String bookingId) =>
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RideDetailsScreen(bookingId: bookingId),
+      ),
+    );
+
 class _BookingList extends StatelessWidget {
   const _BookingList({
     required this.vm,
@@ -102,7 +114,11 @@ class _BookingList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final booking in bookings) ...[
-            MyRideCard(booking: booking),
+            MyRideCard(
+              booking: booking,
+              onTap: () => openRideDetails(context, booking.id),
+              onRate: () => showRateRideSheet(context, booking),
+            ),
             const SizedBox(height: Skyline.s12),
           ],
         ],

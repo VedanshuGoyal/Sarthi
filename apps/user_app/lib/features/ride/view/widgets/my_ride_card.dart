@@ -1,46 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/my_booking.dart';
-import '../../domain/trip_type.dart';
+import 'booking_status_pill.dart';
+import 'driver_row.dart';
+import 'ride_format.dart';
+import 'star_rating.dart';
+import 'start_code_panel.dart';
 
 /// One booking. While it's active: the driver (with a call button that hands
 /// off to the phone's dialer) and the start code; once it's completed: who
-/// drove and the fare. Renders data only.
+/// drove, the fare, and the stars given — or a "Rate your trip" prompt;
+/// once cancelled: who cancelled and why. Renders data only; [onTap] opens
+/// the ride and [onRate] its rating.
 class MyRideCard extends StatelessWidget {
-  const MyRideCard({super.key, required this.booking});
+  const MyRideCard({super.key, required this.booking, this.onTap, this.onRate});
 
   final MyBooking booking;
+  final VoidCallback? onTap;
 
-  static IconData _icon(TripType type) => switch (type) {
-    TripType.oneWay => Icons.arrow_forward_rounded,
-    TripType.roundTrip => Icons.schedule_rounded,
-    TripType.multiStop => Icons.alt_route_rounded,
-  };
-
-  static String _label(TripType type) => switch (type) {
-    TripType.oneWay => 'One-Way',
-    TripType.roundTrip => 'Round Trip',
-    TripType.multiStop => 'Multi-Stop',
-  };
-
-  static String _when(BuildContext context, DateTime at) {
-    final l10n = MaterialLocalizations.of(context);
-    final now = DateTime.now();
-    final days = DateTime(
-      at.year,
-      at.month,
-      at.day,
-    ).difference(DateTime(now.year, now.month, now.day)).inDays;
-    final day = switch (days) {
-      -1 => 'Yesterday',
-      0 => 'Today',
-      1 => 'Tomorrow',
-      _ => l10n.formatMediumDate(at),
-    };
-    return '$day, ${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
-  }
+  /// Asks for the stars of an unrated, completed ride.
+  final VoidCallback? onRate;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +30,7 @@ class MyRideCard extends StatelessWidget {
     final waitingForDriver = b.status == BookingStatus.requested;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -62,22 +43,26 @@ class MyRideCard extends StatelessWidget {
                   color: t.primarySoft,
                   borderRadius: BorderRadius.circular(Skyline.radiusSm),
                 ),
-                child: Icon(_icon(b.tripType), color: t.primaryText, size: 20),
+                child: Icon(
+                  RideFormat.tripIcon(b.tripType),
+                  color: t.primaryText,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: Skyline.s12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_label(b.tripType), style: t.title(15)),
+                    Text(RideFormat.tripLabel(b.tripType), style: t.title(15)),
                     Text(
-                      _when(context, b.scheduledAt),
+                      RideFormat.when(context, b.scheduledAt),
                       style: t.body(size: 13),
                     ),
                   ],
                 ),
               ),
-              _StatusPill(status: b.status),
+              BookingStatusPill(status: b.status),
             ],
           ),
           const SizedBox(height: Skyline.s12),
@@ -94,16 +79,37 @@ class MyRideCard extends StatelessWidget {
               '${b.stopCount} ${b.stopCount == 1 ? 'stop' : 'stops'}',
               style: t.body(size: 13),
             ),
-          // A cancelled booking ends at its route; nothing more to show.
-          if (b.status != BookingStatus.cancelled)
-            const SizedBox(height: Skyline.s12),
-          if (b.status == BookingStatus.completed)
-            _CompletedRow(
-              driverName: b.driverName,
-              fare: b.fareEstimated ? '≈ ₹${b.fareRupees}' : '₹${b.fareRupees}',
+          const SizedBox(height: Skyline.s12),
+          if (b.status == BookingStatus.completed) ...[
+            _CompletedRow(driverName: b.driverName, fare: RideFormat.fare(b)),
+            const SizedBox(height: Skyline.s8),
+            if (b.myRating case final rating?)
+              Row(
+                children: [
+                  Text('You rated ', style: t.body(size: 13)),
+                  StarRow(stars: rating.stars, size: 16),
+                ],
+              )
+            else
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onRate ?? onTap,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 36),
+                  ),
+                  icon: const Icon(Icons.star_outline_rounded, size: 18),
+                  label: const Text('Rate your trip'),
+                ),
+              ),
+          ] else if (b.status == BookingStatus.cancelled)
+            Text(
+              b.cancellationSummary ?? 'This ride was cancelled.',
+              style: t.body(size: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             )
-          else if (b.status == BookingStatus.cancelled)
-            const SizedBox.shrink()
           else if (b.status == BookingStatus.expired)
             Text(
               'No driver accepted in time. Please book again.',
@@ -129,85 +135,13 @@ class MyRideCard extends StatelessWidget {
               ],
             )
           else if (b.driverName != null)
-            _DriverRow(name: b.driverName!, phone: b.driverPhone),
+            DriverRow(name: b.driverName!, phone: b.driverPhone),
           if (b.startOtp != null) ...[
             const SizedBox(height: Skyline.s12),
-            _StartCode(code: b.startOtp!),
+            StartCodePanel(code: b.startOtp!),
           ],
         ],
       ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
-
-  final BookingStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = SkylineTokens.of(context);
-    final strong =
-        status == BookingStatus.arrived || status == BookingStatus.inProgress;
-    final (fill, ink) = switch (status) {
-      _ when strong => (t.primary, t.onPrimary),
-      BookingStatus.completed => (t.sunken, t.success),
-      BookingStatus.cancelled ||
-      BookingStatus.expired => (t.sunken, t.inkMuted),
-      _ => (t.primarySoft, t.primaryText),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(status.label, style: t.label(size: 12, color: ink)),
-    );
-  }
-}
-
-class _DriverRow extends StatelessWidget {
-  const _DriverRow({required this.name, required this.phone});
-
-  final String name;
-  final String? phone;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = SkylineTokens.of(context);
-    final phone = this.phone;
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: t.sunken,
-          child: Text(
-            name.isEmpty ? '?' : name[0].toUpperCase(),
-            style: t.title(14, color: t.primaryText),
-          ),
-        ),
-        const SizedBox(width: Skyline.s12),
-        Expanded(
-          child: Text(
-            '$name is your driver',
-            style: t.title(14),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (phone != null)
-          IconButton.filled(
-            tooltip: 'Call driver',
-            style: IconButton.styleFrom(
-              backgroundColor: t.primarySoft,
-              foregroundColor: t.primaryText,
-            ),
-            onPressed: () => launchUrl(Uri(scheme: 'tel', path: phone)),
-            icon: const Icon(Icons.call_rounded, size: 20),
-          ),
-      ],
     );
   }
 }
@@ -235,60 +169,6 @@ class _CompletedRow extends StatelessWidget {
         const SizedBox(width: Skyline.s12),
         Text(fare, style: t.title(15)),
       ],
-    );
-  }
-}
-
-/// The start code, big and spaced out so it can be read aloud.
-class _StartCode extends StatelessWidget {
-  const _StartCode({required this.code});
-
-  final String code;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = SkylineTokens.of(context);
-    return Semantics(
-      label: 'Start code ${code.split('').join(' ')}',
-      excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Skyline.s16,
-          vertical: Skyline.s12,
-        ),
-        decoration: BoxDecoration(
-          color: t.primary,
-          borderRadius: BorderRadius.circular(Skyline.radius),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Start code',
-                    style: t.label(size: 13, color: t.onPrimary),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Share it with your driver when you meet.',
-                    style: t.body(
-                      size: 12.5,
-                      color: t.onPrimary.withValues(alpha: 0.75),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: Skyline.s12),
-            Text(
-              code.split('').join(' '),
-              style: t.figure(28, color: t.onPrimary),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

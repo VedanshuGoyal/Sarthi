@@ -6,11 +6,14 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import 'data/booking_repository.dart';
 import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'domain/car.dart';
 import 'domain/car_type.dart';
+import 'domain/driver_location.dart';
 import 'domain/geo_point.dart';
+import 'domain/my_booking.dart';
 import 'domain/pickup_location.dart';
 import 'domain/place_suggestion.dart';
 import 'domain/transmission.dart';
@@ -22,14 +25,17 @@ import 'view/one_way_details_screen.dart';
 import 'view/one_way_route_screen.dart';
 import 'view/one_way_review_screen.dart';
 import 'view/pickup_location_screen.dart';
+import 'view/ride_details_screen.dart';
 import 'view/trip_type_selector.dart';
 import 'view/widgets/add_car_sheet.dart';
+import 'view/widgets/cancel_ride_sheet.dart';
 import 'view/widgets/car_selector_field.dart';
 import 'view/widgets/fare_summary.dart';
 import 'view/widgets/map_pin_card.dart';
 import 'view/widgets/time_slot_picker.dart';
 import 'view_model/booking_details_view_model.dart';
 import 'view_model/multi_stop_planner_view_model.dart';
+import 'view_model/my_bookings_view_model.dart';
 import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
@@ -653,5 +659,163 @@ Widget addCarSheetPreview() => ProviderScope(
   child: const Align(
     alignment: Alignment.bottomCenter,
     child: Material(child: AddCarSheet()),
+  ),
+);
+
+// --- Ride details ------------------------------------------------------------
+// One booked ride across its life, as Activity opens it. The bookings list is
+// seeded with the ride and the repository answers the live-location poll
+// with a canned fix, so nothing touches the network.
+
+/// Answers the details screen's driver-location poll with a fix ~1.8 km from
+/// the pickup; every other call is unused in previews.
+class _PreviewBookingRepository extends BookingRepository {
+  @override
+  Future<DriverLocation?> driverLocation(String id) async => DriverLocation(
+    point: const GeoPoint(latitude: 28.6450, longitude: 77.2260),
+    heading: 200,
+    updatedAt: DateTime.now().subtract(const Duration(seconds: 8)),
+  );
+}
+
+MyBooking _ride({
+  required BookingStatus status,
+  bool driver = true,
+  String? otp,
+  DateTime? scheduledAt,
+  RideRating? myRating,
+  String? cancelReason,
+}) {
+  final at = scheduledAt ?? DateTime.now().add(const Duration(days: 1));
+  final started =
+      status == BookingStatus.inProgress || status == BookingStatus.completed;
+  return MyBooking(
+    id: 'preview-ride',
+    tripType: TripType.multiStop,
+    status: status,
+    scheduledAt: at,
+    pickupAddress: _bookingPickup.address,
+    pickupPoint: _bookingPickup.point,
+    stopCount: 2,
+    stops: [
+      BookingStop(
+        address: _plannerStopOne.location!.address,
+        task: _plannerStopOne.task,
+        departBy: at.add(const Duration(hours: 1)),
+      ),
+      BookingStop(
+        address: _plannerStopTwo.location!.address,
+        task: _plannerStopTwo.task,
+        departBy: at.add(const Duration(hours: 2)),
+      ),
+    ],
+    estimatedMinutes: 150,
+    farePaise: 64000,
+    fareEstimated: status != BookingStatus.completed,
+    carRegistration: 'DL01AB1234',
+    carType: CarType.sedan,
+    transmission: Transmission.manual,
+    driverName: driver ? 'Ravi Kumar' : null,
+    driverPhone: driver ? '+919800000001' : null,
+    driverRating: driver ? 4.7 : null,
+    driverRatingCount: driver ? 12 : 0,
+    startOtp: otp,
+    createdAt: at.subtract(const Duration(days: 1)),
+    acceptedAt: driver ? at.subtract(const Duration(hours: 20)) : null,
+    arrivedAt: started ? at.subtract(const Duration(minutes: 5)) : null,
+    startedAt: started ? at.add(const Duration(minutes: 2)) : null,
+    completedAt: status == BookingStatus.completed
+        ? at.add(const Duration(hours: 2, minutes: 40))
+        : null,
+    cancelledAt: status == BookingStatus.cancelled
+        ? at.subtract(const Duration(hours: 3))
+        : null,
+    cancelledBy: status == BookingStatus.cancelled ? 'customer' : null,
+    cancelReason: cancelReason,
+    myRating: myRating,
+  );
+}
+
+Widget _rideDetails(MyBooking ride) {
+  final repository = _PreviewBookingRepository();
+  return ProviderScope(
+    overrides: [
+      bookingRepositoryProvider.overrideWithValue(repository),
+      myBookingsViewModelProvider.overrideWith(
+        (ref) => MyBookingsViewModel(
+          repository: repository,
+          initialBookings: [ride],
+        ),
+      ),
+    ],
+    child: RideDetailsScreen(bookingId: ride.id),
+  );
+}
+
+@Preview(
+  name: 'Finding a driver',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsRequestedPreview() =>
+    _rideDetails(_ride(status: BookingStatus.requested, driver: false));
+
+@Preview(
+  name: 'Driver assigned',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsAcceptedPreview() =>
+    _rideDetails(_ride(status: BookingStatus.accepted, otp: '4821'));
+
+@Preview(
+  name: 'On trip (tracking)',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsInProgressPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.inProgress,
+    scheduledAt: DateTime.now().subtract(const Duration(minutes: 20)),
+  ),
+);
+
+@Preview(
+  name: 'Completed — rate',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsUnratedPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.completed,
+    scheduledAt: DateTime.now().subtract(const Duration(hours: 4)),
+  ),
+);
+
+@Preview(
+  name: 'Completed — rated',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsRatedPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.completed,
+    scheduledAt: DateTime.now().subtract(const Duration(days: 2)),
+    myRating: const RideRating(stars: 4, note: 'Careful driver, on time.'),
+  ),
+);
+
+@Preview(name: 'Cancelled', group: 'Ride details', theme: ridePreviewTheme)
+Widget rideDetailsCancelledPreview() => _rideDetails(
+  _ride(status: BookingStatus.cancelled, cancelReason: 'Plans changed'),
+);
+
+@Preview(name: 'Cancel sheet', group: 'Ride details', theme: ridePreviewTheme)
+Widget cancelRideSheetPreview() => Align(
+  alignment: Alignment.bottomCenter,
+  child: Material(
+    child: CancelRideSheet(
+      booking: _ride(status: BookingStatus.accepted, otp: '4821'),
+    ),
   ),
 );

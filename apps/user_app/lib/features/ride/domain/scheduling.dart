@@ -23,6 +23,11 @@ DateTime snapToQuarterHour(DateTime when) {
 /// `acceptCutoff`.
 const Duration driverAcceptCutoff = Duration(minutes: 30);
 
+/// How long before its start an assigned driver's live location becomes
+/// visible to the customer (and the driver app starts sharing it). Mirrors the
+/// server's tracking window.
+const Duration driverTrackingLead = Duration(minutes: 60);
+
 /// How far ahead a trip must be booked: the cutoff plus a quarter hour for a
 /// driver to accept. Mirrors the server's `minBookingLead`.
 const Duration minBookingLead = Duration(minutes: 45);

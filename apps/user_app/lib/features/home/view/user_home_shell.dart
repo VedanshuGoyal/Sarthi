@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../core/services/push_service.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
@@ -11,6 +12,7 @@ import '../../notifications/notification_providers.dart';
 import '../../profile/view/profile_screen.dart';
 import '../../ride/ride_providers.dart';
 import '../../ride/view/activity_panel.dart';
+import '../../ride/view/rate_ride_sheet.dart';
 import '../../ride/view_model/my_bookings_view_model.dart';
 import 'home_screen.dart';
 
@@ -22,7 +24,9 @@ import 'home_screen.dart';
 /// [IndexedStack] so switching keeps each one's scroll position. The shell
 /// owns the bookings refresh, so Activity and its badge stay current
 /// whichever tab is open, and the push registration: a "Driver assigned"
-/// notification refreshes the rides at once, and tapping one opens Activity.
+/// notification refreshes the rides at once, and tapping one opens Activity
+/// (and that ride, when it's in the list). It also asks for a rating when
+/// the bookings view model says a ride is waiting for one — once per ride.
 class UserHomeShell extends ConsumerStatefulWidget {
   const UserHomeShell({super.key, required this.user});
 
@@ -47,21 +51,23 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
   late final MyBookingsViewModel _bookings;
   final List<StreamSubscription<void>> _push = [];
   int _index = 0;
+  bool _askingForRating = false;
 
   @override
   void initState() {
     super.initState();
-    _bookings = ref.read(myBookingsViewModelProvider);
+    _bookings = ref.read(myBookingsViewModelProvider)
+      ..addListener(_maybeAskForRating);
     final push = ref.read(pushServiceProvider);
     _push
       ..add(push.arrivals.listen((_) => _bookings.load()))
-      ..add(push.taps.listen((_) => _select(_activityTab)));
+      ..add(push.taps.listen(_openFromPush));
     // Deferred: providers can't notify during a build.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _bookings.startPolling();
       unawaited(ref.read(pushRegistrationProvider).start());
       final launchedBy = await push.takeLaunchTap();
-      if (launchedBy != null && mounted) _select(_activityTab);
+      if (launchedBy != null && mounted) _openFromPush(launchedBy);
     });
   }
 
@@ -70,8 +76,38 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
     for (final sub in _push) {
       sub.cancel();
     }
-    _bookings.stopPolling();
+    _bookings
+      ..removeListener(_maybeAskForRating)
+      ..stopPolling();
     super.dispose();
+  }
+
+  /// A tapped notification opens Activity, and the ride it's about if it's
+  /// in the list (after a refresh, since the push may be news to the list).
+  Future<void> _openFromPush(PushEvent event) async {
+    _select(_activityTab);
+    final rideId = event.rideId;
+    if (rideId == null) return;
+    await _bookings.load();
+    if (!mounted || _bookings.byId(rideId) == null) return;
+    await openRideDetails(context, rideId);
+  }
+
+  /// Offers the rating sheet for the ride the view model picked — only over
+  /// the shell itself (never on top of a booking flow), and once per ride.
+  Future<void> _maybeAskForRating() async {
+    if (_askingForRating || !mounted) return;
+    final ride = _bookings.ratingPrompt;
+    if (ride == null || !(ModalRoute.isCurrentOf(context) ?? true)) return;
+    _askingForRating = true;
+    _bookings.markRatingAsked(ride.id);
+    final rated = await showRateRideSheet(context, ride);
+    _askingForRating = false;
+    if (rated == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thanks for rating your trip.')),
+      );
+    }
   }
 
   void _select(int index) {

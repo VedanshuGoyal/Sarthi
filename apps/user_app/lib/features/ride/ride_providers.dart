@@ -16,6 +16,7 @@ import 'view_model/my_bookings_view_model.dart';
 import 'view_model/one_way_details_view_model.dart';
 import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
+import 'view_model/ride_details_view_model.dart';
 import 'view_model/saved_cars_view_model.dart';
 import 'view_model/trip_start_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
@@ -64,6 +65,20 @@ final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
     );
   },
 );
+
+/// One ride's details screen (and the rating sheet): cancel, rate, and the
+/// driver's live location. A `family` keyed on the booking id — the ride
+/// itself is read from [myBookingsViewModelProvider], so the screen follows
+/// every list refresh. `autoDispose` so leaving the screen stops its polling
+/// and drops a half-written rating.
+final rideDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
+    .family<RideDetailsViewModel, String>((ref, bookingId) {
+      return RideDetailsViewModel(
+        repository: ref.watch(bookingRepositoryProvider),
+        bookings: ref.watch(myBookingsViewModelProvider),
+        bookingId: bookingId,
+      );
+    });
 
 /// The data seam for the customer's saved cars: on-device storage first, the
 /// backend (authenticated with the current session token, read on demand like
