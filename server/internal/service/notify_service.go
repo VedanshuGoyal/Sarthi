@@ -30,6 +30,8 @@ const (
 const (
 	pushTypeRideRequest    = "ride_request"
 	pushTypeDriverAssigned = "driver_assigned"
+	pushTypeDriverArrived  = "driver_arrived"
+	pushTypeDriverReleased = "driver_released"
 )
 
 const (
@@ -70,7 +72,10 @@ type NearbyDriverFinder interface {
 //
 //   - a customer books → every online driver within requestRadiusM of the
 //     pickup who could take it gets "New ride request";
-//   - a driver accepts → the customer gets "Driver assigned".
+//   - a driver accepts → the customer gets "Driver assigned";
+//   - the driver marks they're at the pickup → "Your driver has arrived";
+//   - the driver hands the ride back → "Your driver cancelled", and the
+//     other nearby drivers get the request again while it's still open.
 //
 // Sends run in the background so a slow push never delays the booking or
 // accept response. Without a sender (no FCM credentials) nothing is sent,
@@ -136,77 +141,101 @@ func (s *NotifyService) ForgetDriverDevice(ctx context.Context, driverID, token 
 // the pickup is.
 func (s *NotifyService) RideRequested(ctx context.Context, b domain.Booking, plan tripPlan) {
 	s.background(ctx, func(ctx context.Context) {
-		closesIn := plan.ScheduledAt.Add(-acceptCutoff).Sub(s.now())
-		if closesIn <= 0 {
-			return
-		}
-		nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM, maxAlertedDrivers)
-		if err != nil {
-			slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
-			return
-		}
-		distance := map[string]float64{}
-		var ids []string
-		for _, n := range nearby {
-			if s.now().Sub(n.Driver.Location.UpdatedAt) > presenceFresh {
-				continue
-			}
-			p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
-			if err != nil || (p.KYCStatus != domain.KYCSubmitted && p.KYCStatus != domain.KYCVerified) ||
-				!canDrive(p.Transmission, plan.Car) {
-				continue
-			}
-			ids = append(ids, n.Driver.ID)
-			distance[n.Driver.ID] = n.DistanceM
-		}
-		if len(ids) == 0 {
-			slog.InfoContext(ctx, "push: no online drivers near request", "rideId", b.ID)
-			return
-		}
-		byDriver, err := s.tokens.ForDrivers(ctx, ids)
-		if err != nil {
-			slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", b.ID, "error", err)
-			return
-		}
-
-		fare, estimated := b.FarePaise, b.FareEstimated
-		if fare == 0 {
-			fare, estimated = plan.Fare()
-		}
-		title := "New ride request · " + formatFare(fare, estimated)
-		sent := 0
-		for driverID, tokens := range byDriver {
-			body := fmt.Sprintf("%s · %s · %s away", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan),
-				formatDistance(distance[driverID]))
-			if plan.Pickup.Address != "" {
-				body += "\nPickup: " + plan.Pickup.Address
-			}
-			for _, token := range tokens {
-				if s.send(ctx, push.Message{
-					Token:   token,
-					Title:   title,
-					Body:    body,
-					Channel: channelRideRequests,
-					Tag:     "ride-" + b.ID,
-					Data:    map[string]string{"type": pushTypeRideRequest, "rideId": b.ID},
-					TTL:     closesIn,
-				}) {
-					sent++
-				}
-			}
-		}
-		slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver), "devices", sent)
+		s.alertDrivers(ctx, b, plan, "")
 	})
+}
+
+// DriverReleased tells the customer their driver handed booking b back and,
+// while it's still open to drivers, alerts the other drivers near it.
+func (s *NotifyService) DriverReleased(ctx context.Context, b domain.Booking, plan tripPlan, driverID string) {
+	s.background(ctx, func(ctx context.Context) {
+		name := s.driverName(ctx, driverID)
+		if name == "" {
+			name = "Your driver"
+		}
+		open := plan.ScheduledAt.Add(-acceptCutoff).After(s.now())
+		body := fmt.Sprintf("%s can't make your ride on %s. We're finding you another driver.",
+			name, formatWhen(plan.ScheduledAt))
+		if !open {
+			body = fmt.Sprintf("%s can't make your ride on %s, and it starts too soon to find another driver. Please book again.",
+				name, formatWhen(plan.ScheduledAt))
+		}
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeDriverReleased, "Your driver cancelled", body,
+			max(plan.ScheduledAt.Sub(s.now()), 10*time.Minute))
+		if open {
+			s.alertDrivers(ctx, b, plan, driverID)
+		}
+	})
+}
+
+// alertDrivers sends "New ride request" for b to every eligible online
+// driver near its pickup, except skip.
+func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan tripPlan, skip string) {
+	closesIn := plan.ScheduledAt.Add(-acceptCutoff).Sub(s.now())
+	if closesIn <= 0 {
+		return
+	}
+	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM, maxAlertedDrivers)
+	if err != nil {
+		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
+		return
+	}
+	distance := map[string]float64{}
+	var ids []string
+	for _, n := range nearby {
+		if n.Driver.ID == skip || s.now().Sub(n.Driver.Location.UpdatedAt) > presenceFresh {
+			continue
+		}
+		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
+		if err != nil || (p.KYCStatus != domain.KYCSubmitted && p.KYCStatus != domain.KYCVerified) ||
+			!canDrive(p.Transmission, plan.Car) {
+			continue
+		}
+		ids = append(ids, n.Driver.ID)
+		distance[n.Driver.ID] = n.DistanceM
+	}
+	if len(ids) == 0 {
+		slog.InfoContext(ctx, "push: no online drivers near request", "rideId", b.ID)
+		return
+	}
+	byDriver, err := s.tokens.ForDrivers(ctx, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", b.ID, "error", err)
+		return
+	}
+
+	fare, estimated := b.FarePaise, b.FareEstimated
+	if fare == 0 {
+		fare, estimated = plan.Fare()
+	}
+	title := "New ride request · " + formatFare(fare, estimated)
+	sent := 0
+	for driverID, tokens := range byDriver {
+		body := fmt.Sprintf("%s · %s · %s away", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan),
+			formatDistance(distance[driverID]))
+		if plan.Pickup.Address != "" {
+			body += "\nPickup: " + plan.Pickup.Address
+		}
+		for _, token := range tokens {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   title,
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "ride-" + b.ID,
+				Data:    map[string]string{"type": pushTypeRideRequest, "rideId": b.ID},
+				TTL:     closesIn,
+			}) {
+				sent++
+			}
+		}
+	}
+	slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver), "devices", sent)
 }
 
 // DriverAssigned tells customer userID that driverName took their ride.
 func (s *NotifyService) DriverAssigned(ctx context.Context, userID string, ride domain.DriverRide, driverName string) {
 	s.background(ctx, func(ctx context.Context) {
-		tokens, err := s.tokens.ForUser(ctx, userID)
-		if err != nil {
-			slog.WarnContext(ctx, "push: loading customer tokens failed", "rideId", ride.ID, "error", err)
-			return
-		}
 		name := strings.TrimSpace(driverName)
 		if name == "" {
 			name = "A driver"
@@ -215,23 +244,58 @@ func (s *NotifyService) DriverAssigned(ctx context.Context, userID string, ride 
 		if ride.Pickup.Address != "" {
 			body += "\nPickup: " + ride.Pickup.Address
 		}
-		ttl := max(ride.ScheduledAt.Sub(s.now()), 10*time.Minute)
-		sent := 0
-		for _, token := range tokens {
-			if s.send(ctx, push.Message{
-				Token:   token,
-				Title:   "Driver assigned",
-				Body:    body,
-				Channel: channelRideUpdates,
-				Tag:     "ride-" + ride.ID,
-				Data:    map[string]string{"type": pushTypeDriverAssigned, "rideId": ride.ID},
-				TTL:     ttl,
-			}) {
-				sent++
-			}
-		}
-		slog.InfoContext(ctx, "push: driver assigned sent", "rideId", ride.ID, "devices", sent)
+		s.tellCustomer(ctx, userID, ride.ID, pushTypeDriverAssigned, "Driver assigned", body,
+			max(ride.ScheduledAt.Sub(s.now()), 10*time.Minute))
 	})
+}
+
+// DriverArrived tells customer userID that their driver is at the pickup.
+// The start code stays in the app, off the lock screen.
+func (s *NotifyService) DriverArrived(ctx context.Context, userID, driverID string, ride domain.DriverRide) {
+	s.background(ctx, func(ctx context.Context) {
+		name := s.driverName(ctx, driverID)
+		if name == "" {
+			name = "Your driver"
+		}
+		body := name + " is at the pickup. Share the start code from the app to begin."
+		if ride.Pickup.Address != "" {
+			body += "\nPickup: " + ride.Pickup.Address
+		}
+		s.tellCustomer(ctx, userID, ride.ID, pushTypeDriverArrived, "Your driver has arrived", body, 30*time.Minute)
+	})
+}
+
+// tellCustomer sends one ride update to every install of userID.
+func (s *NotifyService) tellCustomer(ctx context.Context, userID, rideID, kind, title, body string, ttl time.Duration) {
+	tokens, err := s.tokens.ForUser(ctx, userID)
+	if err != nil {
+		slog.WarnContext(ctx, "push: loading customer tokens failed", "rideId", rideID, "error", err)
+		return
+	}
+	sent := 0
+	for _, token := range tokens {
+		if s.send(ctx, push.Message{
+			Token:   token,
+			Title:   title,
+			Body:    body,
+			Channel: channelRideUpdates,
+			Tag:     "ride-" + rideID,
+			Data:    map[string]string{"type": kind, "rideId": rideID},
+			TTL:     ttl,
+		}) {
+			sent++
+		}
+	}
+	slog.InfoContext(ctx, "push: customer update sent", "type", kind, "rideId", rideID, "devices", sent)
+}
+
+// driverName is driverID's name from KYC, or "" if it can't be read.
+func (s *NotifyService) driverName(ctx context.Context, driverID string) string {
+	p, err := s.profiles.FindProfile(ctx, driverID)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.FullName)
 }
 
 // Wait blocks until in-flight sends finish (graceful shutdown).

@@ -253,3 +253,73 @@ func keys(m map[string]push.Message) []string {
 	}
 	return out
 }
+
+func TestDriverArrived_tellsTheCustomer(t *testing.T) {
+	svc, tokens, sender, _ := newNotifyTest(t)
+	_ = tokens.SaveForUser(context.Background(), "u1", "tok-phone")
+
+	svc.DriverArrived(context.Background(), "u1", "missing-driver", domain.DriverRide{
+		ID: "ride-4", Pickup: domain.RidePlace{Address: "India Gate"},
+	})
+	svc.Wait()
+
+	m := sender.byToken()["tok-phone"]
+	if m.Title != "Your driver has arrived" || m.Data["type"] != pushTypeDriverArrived || m.Channel != channelRideUpdates {
+		t.Fatalf("message = %+v", m)
+	}
+	// No KYC name on file → a generic subject, and never the start code.
+	want := "Your driver is at the pickup. Share the start code from the app to begin.\nPickup: India Gate"
+	if m.Body != want {
+		t.Errorf("body = %q, want %q", m.Body, want)
+	}
+}
+
+func TestDriverReleased_tellsCustomerAndRealertsOthers(t *testing.T) {
+	svc, tokens, sender, tr := newNotifyTest(t)
+	fresh := testNow.Add(-time.Minute)
+	placeDriver(t, tr, "auto", gateLat, gateLng, fresh) // dropped the ride
+	placeDriver(t, tr, "both", gateLat, gateLng, fresh)
+	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
+	_ = tokens.SaveForDriver(context.Background(), "both", "tok-both")
+	_ = tokens.SaveForUser(context.Background(), "u1", "tok-phone")
+
+	rb := openRide("ride-5", testNow.Add(3*time.Hour), 4, "automatic")
+	rb.Booking.UserID = "u1"
+	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
+	plan.ScheduledAt = *rb.Booking.ScheduledAt
+	svc.DriverReleased(context.Background(), rb.Booking, plan, "auto")
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 2 || got["tok-auto"].Token != "" {
+		t.Fatalf("sent to %v, want the customer and the other driver", keys(got))
+	}
+	c := got["tok-phone"]
+	if c.Title != "Your driver cancelled" || c.Data["type"] != pushTypeDriverReleased ||
+		!strings.Contains(c.Body, "We're finding you another driver.") {
+		t.Errorf("customer message = %+v", c)
+	}
+	if d := got["tok-both"]; d.Data["type"] != pushTypeRideRequest || d.Data["rideId"] != "ride-5" {
+		t.Errorf("driver message = %+v", d)
+	}
+}
+
+func TestDriverReleased_tooLateToRebook(t *testing.T) {
+	svc, tokens, sender, tr := newNotifyTest(t)
+	placeDriver(t, tr, "both", gateLat, gateLng, testNow)
+	_ = tokens.SaveForDriver(context.Background(), "both", "tok-both")
+	_ = tokens.SaveForUser(context.Background(), "u1", "tok-phone")
+
+	rb := openRide("ride-6", testNow.Add(20*time.Minute), 2, "")
+	rb.Booking.UserID = "u1"
+	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
+	plan.ScheduledAt = *rb.Booking.ScheduledAt
+	svc.DriverReleased(context.Background(), rb.Booking, plan, "auto")
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 1 || !strings.HasSuffix(got["tok-phone"].Body, "Please book again.") {
+		t.Fatalf("sent %v (customer body %q), want only the customer, told to book again",
+			keys(got), got["tok-phone"].Body)
+	}
+}

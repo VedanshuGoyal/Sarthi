@@ -279,8 +279,10 @@ console warning.
 
 Uber-style alerts: **"New ride request"** to every online driver within 50 km
 who can take the ride (KYC cleared, right gearbox, app reported in within
-10 min), and **"Driver assigned"** to the customer when a driver accepts.
-Tapping opens Home (driver) / Activity (customer).
+10 min); to the customer **"Driver assigned"** on accept, **"Your driver has
+arrived"** when the driver marks arrival, and **"Your driver cancelled"** when
+the driver hands the ride back (nearby drivers then get the request again
+while it's still open). Tapping opens Home (driver) / Activity (customer).
 
 One Firebase project, two Android apps:
 

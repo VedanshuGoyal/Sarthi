@@ -483,3 +483,56 @@ func TestNewStartOTP_isFourDigits(t *testing.T) {
 		}
 	}
 }
+
+// recordingAlerts captures the ride alerts DriverRideService raises.
+type recordingAlerts struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (r *recordingAlerts) add(e string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+
+func (r *recordingAlerts) DriverAssigned(_ context.Context, userID string, ride domain.DriverRide, _ string) {
+	r.add("assigned " + userID + " " + ride.ID)
+}
+
+func (r *recordingAlerts) DriverArrived(_ context.Context, userID, driverID string, ride domain.DriverRide) {
+	r.add("arrived " + userID + " " + driverID + " " + ride.ID)
+}
+
+func (r *recordingAlerts) DriverReleased(_ context.Context, b domain.Booking, _ tripPlan, driverID string) {
+	r.add("released " + b.UserID + " " + driverID + " " + b.ID)
+}
+
+func TestRideAlerts_acceptArriveRelease(t *testing.T) {
+	ride := openRide("r1", testNow.Add(3*time.Hour), 2, "automatic")
+	ride.Booking.UserID = "u1"
+	store := newFakeRideStore(ride)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+	ctx := context.Background()
+
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Arrive(ctx, "auto", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Release(ctx, "auto", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	// A failed release (no longer theirs) raises nothing.
+	if err := svc.Release(ctx, "auto", "r1"); err == nil {
+		t.Fatal("second release should fail")
+	}
+
+	want := []string{"assigned u1 r1", "arrived u1 auto r1", "released u1 auto r1"}
+	if strings.Join(alerts.events, "|") != strings.Join(want, "|") {
+		t.Errorf("alerts = %q, want %q", alerts.events, want)
+	}
+}

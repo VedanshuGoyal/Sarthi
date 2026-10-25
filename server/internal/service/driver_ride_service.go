@@ -93,10 +93,14 @@ type StartCodeGuard interface {
 	Succeed(key string)
 }
 
-// AssignmentAlerter tells a customer a driver took their ride
-// (NotifyService). It returns at once; the alert goes out in the background.
-type AssignmentAlerter interface {
+// RideAlerter tells the customer how their ride is going — a driver took
+// it, is at the pickup, or handed it back — and, for a handed-back ride, the
+// other drivers near it (NotifyService). Each call returns at once; the
+// alerts go out in the background.
+type RideAlerter interface {
 	DriverAssigned(ctx context.Context, userID string, ride domain.DriverRide, driverName string)
+	DriverArrived(ctx context.Context, userID, driverID string, ride domain.DriverRide)
+	DriverReleased(ctx context.Context, b domain.Booking, plan tripPlan, driverID string)
 }
 
 // LatLng is a point the driver app reports.
@@ -115,15 +119,15 @@ type DriverRideService struct {
 	profiles DriverProfileReader
 	presence DriverPresence
 	codes    StartCodeGuard
-	alerts   AssignmentAlerter
+	alerts   RideAlerter
 	now      func() time.Time
 	newCode  func() (string, error)
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
 // reader, the live presence index, the start-code attempt limiter and the
-// customer alert sent on accept (nil sends none).
-func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard, alerts AssignmentAlerter) *DriverRideService {
+// customer alerts sent on accept, arrival and release (nil sends none).
+func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard, alerts RideAlerter) *DriverRideService {
 	return &DriverRideService{
 		store:    store,
 		profiles: profiles,
@@ -307,11 +311,20 @@ func (s *DriverRideService) Complete(ctx context.Context, driverID, rideID strin
 }
 
 // Release hands an accepted ride back to the open pool, before it starts.
+// The customer is told, and — while the ride is still open to drivers — the
+// other drivers near it are alerted again.
 func (s *DriverRideService) Release(ctx context.Context, driverID, rideID string) error {
+	// Read the ride first: once released it's no longer this driver's.
+	before, findErr := s.store.FindByID(ctx, rideID)
 	if err := s.store.Release(ctx, rideID, driverID); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "ride released", "driverId", driverID, "rideId", rideID)
+	if s.alerts != nil && findErr == nil {
+		if _, plan, ok := toDriverRide(before, false); ok {
+			s.alerts.DriverReleased(ctx, before.Booking, plan, driverID)
+		}
+	}
 	return nil
 }
 
@@ -350,6 +363,9 @@ func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string
 	}
 	slog.InfoContext(ctx, "ride advanced", "driverId", driverID, "rideId", rideID, "status", to)
 	ride, _, _ := toDriverRide(rb, true)
+	if to == domain.RideStatusArrived && s.alerts != nil {
+		s.alerts.DriverArrived(ctx, rb.Booking.UserID, driverID, ride)
+	}
 	return ride, nil
 }
 
