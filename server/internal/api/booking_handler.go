@@ -61,7 +61,7 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	booking, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details)
-	if errors.Is(err, service.ErrInvalidBooking) {
+	if errors.Is(err, service.ErrInvalidBooking) || errors.Is(err, service.ErrBookingTooSoon) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

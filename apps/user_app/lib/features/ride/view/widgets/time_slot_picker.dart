@@ -5,10 +5,12 @@ import '../../domain/scheduling.dart' as scheduling;
 /// Opens the quarter-hour slot picker in a modal bottom sheet and resolves with
 /// the chosen slot, or null if the sheet is dismissed. The booking screens use
 /// this instead of [showTimePicker] so a trip can only start on a 15-minute
-/// boundary — the policy in `domain/scheduling.dart`.
+/// boundary — the policy in `domain/scheduling.dart`. Slots [isAvailable]
+/// rejects (too soon to find a driver) are shown greyed out.
 Future<TimeOfDay?> showTimeSlotPicker(
   BuildContext context, {
   required TimeOfDay initial,
+  bool Function(TimeOfDay slot)? isAvailable,
 }) {
   return showModalBottomSheet<TimeOfDay>(
     context: context,
@@ -16,6 +18,7 @@ Future<TimeOfDay?> showTimeSlotPicker(
     builder: (sheetContext) => SafeArea(
       child: TimeSlotPicker(
         selected: initial,
+        isAvailable: isAvailable,
         onSelected: (slot) => Navigator.of(sheetContext).pop(slot),
       ),
     ),
@@ -34,10 +37,15 @@ class TimeSlotPicker extends StatefulWidget {
     super.key,
     required this.selected,
     required this.onSelected,
+    this.isAvailable,
   });
 
   final TimeOfDay selected;
   final ValueChanged<TimeOfDay> onSelected;
+
+  /// Whether a slot can be picked; others are greyed out and inert. Null
+  /// offers every slot.
+  final bool Function(TimeOfDay slot)? isAvailable;
 
   /// All slots in day order: 00:00, 00:15, … 23:45.
   static const int slotCount =
@@ -129,6 +137,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
               itemCount: TimeSlotPicker.slotCount,
               itemBuilder: (context, index) {
                 final slot = TimeSlotPicker.slotAt(index);
+                final available = widget.isAvailable?.call(slot) ?? true;
                 return _SlotTile(
                   label: l10n.formatTimeOfDay(
                     slot,
@@ -137,7 +146,7 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
                     ),
                   ),
                   isSelected: index == selectedIndex,
-                  onTap: () => widget.onSelected(slot),
+                  onTap: available ? () => widget.onSelected(slot) : null,
                 );
               },
             ),
@@ -158,7 +167,9 @@ class _SlotTile extends StatelessWidget {
 
   final String label;
   final bool isSelected;
-  final VoidCallback onTap;
+
+  /// Null when the slot can't be picked.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +191,8 @@ class _SlotTile extends StatelessWidget {
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                   color: isSelected
                       ? scheme.onPrimaryContainer
+                      : onTap == null
+                      ? scheme.onSurface.withValues(alpha: 0.38)
                       : scheme.onSurface,
                 ),
               ),

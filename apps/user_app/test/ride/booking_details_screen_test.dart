@@ -13,6 +13,9 @@ import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/booking_details_screen.dart';
 import 'package:user_app/features/ride/view_model/booking_details_view_model.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
+import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
+
+import '../support/fake_location_repository.dart';
 
 const _pickup = PickupLocation(
   address: 'Connaught Place, New Delhi',
@@ -31,6 +34,14 @@ const _luxury = Car(
   registration: 'DL53LX9000',
   type: CarType.luxury,
   transmission: Transmission.automatic,
+);
+
+/// Fills the pickup row as if GPS had found [_pickup], without the plugin.
+Override _gpsPickup() => tripStartViewModelProvider.overrideWith(
+  (ref) => TripStartViewModel(
+    repository: FakeLocationRepository(),
+    initialStart: _pickup,
+  ),
 );
 
 /// Seeds the saved-car dropdown so no network request is made. The repository
@@ -53,10 +64,9 @@ Future<void> _pump(
 
   return tester.pumpWidget(
     ProviderScope(
-      overrides: [_savedCars()],
+      overrides: [_savedCars(), _gpsPickup()],
       child: MaterialApp(
         home: BookingDetailsScreen(
-          pickup: _pickup,
           onConfirmed: onOk == null ? null : (_, booking) => onOk(booking),
         ),
       ),
@@ -71,7 +81,10 @@ void main() {
     await _pump(tester);
 
     // Every requested control is on screen.
-    expect(find.text('Connaught Place, New Delhi'), findsOneWidget); // pickup echo
+    expect(
+      find.text('Connaught Place, New Delhi'),
+      findsOneWidget,
+    ); // pickup echo
     // The saved-car dropdown awaits a pick, with the add-car entry point.
     expect(find.text('Select your car'), findsOneWidget);
     expect(find.text('Add a car'), findsOneWidget);
@@ -93,7 +106,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_savedCars(cars: const [])],
-        child: const MaterialApp(home: BookingDetailsScreen(pickup: _pickup)),
+        child: const MaterialApp(home: BookingDetailsScreen()),
       ),
     );
 
@@ -123,14 +136,14 @@ void main() {
       ProviderScope(
         overrides: [
           _savedCars(),
+          _gpsPickup(),
           bookingDetailsViewModelProvider.overrideWith(
-            (ref, pickup) => BookingDetailsViewModel(
-              pickup: pickup,
+            (ref) => BookingDetailsViewModel(
               initialScheduledAt: DateTime(2026, 7, 18, 12),
             ),
           ),
         ],
-        child: const MaterialApp(home: BookingDetailsScreen(pickup: _pickup)),
+        child: const MaterialApp(home: BookingDetailsScreen()),
       ),
     );
 
@@ -193,14 +206,15 @@ void main() {
       ProviderScope(
         overrides: [
           _savedCars(),
+          _gpsPickup(),
           bookingDetailsViewModelProvider.overrideWith(
-            (ref, pickup) => BookingDetailsViewModel(
-              pickup: pickup,
+            (ref) => BookingDetailsViewModel(
               initialScheduledAt: DateTime(2026, 7, 18, 12),
+              clock: () => DateTime(2026, 7, 18, 9),
             ),
           ),
         ],
-        child: const MaterialApp(home: BookingDetailsScreen(pickup: _pickup)),
+        child: const MaterialApp(home: BookingDetailsScreen()),
       ),
     );
 
@@ -235,5 +249,67 @@ void main() {
     expect(received!.pickup.address, 'Connaught Place, New Delhi');
     expect(received!.car, _sedan);
     expect(received!.scheduledAt.isAfter(DateTime.now()), isTrue);
+  });
+
+  testWidgets('the pickup row shows the GPS spot, tappable to change', (
+    tester,
+  ) async {
+    await _pump(tester);
+    expect(find.text('Connaught Place, New Delhi'), findsOneWidget);
+    expect(find.text('Pickup · tap to change'), findsOneWidget);
+  });
+
+  testWidgets('without a pickup, confirm waits for one', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          _savedCars(),
+          // GPS found nothing usable (never located, no remembered spot).
+          tripStartViewModelProvider.overrideWith(
+            (ref) => TripStartViewModel(repository: FakeLocationRepository()),
+          ),
+          bookingDetailsViewModelProvider.overrideWith(
+            (ref) => BookingDetailsViewModel(initialCar: _sedan),
+          ),
+        ],
+        child: const MaterialApp(home: BookingDetailsScreen()),
+      ),
+    );
+
+    expect(find.text('Choose a pickup'), findsOneWidget);
+    expect(find.text('Choose your pickup to continue.'), findsOneWidget);
+    final confirm = tester.widget<SarthiPrimaryButton>(
+      find.widgetWithText(SarthiPrimaryButton, 'Confirm booking'),
+    );
+    expect(confirm.onPressed, isNull);
+  });
+
+  testWidgets('changing the pickup keeps the other choices', (tester) async {
+    RoundTripBooking? received;
+    await _pump(tester, onOk: (b) => received = b);
+    await tester.tap(find.text('Select your car'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
+    await tester.pumpAndSettle();
+
+    const elsewhere = PickupLocation(
+      address: 'Khan Market, New Delhi',
+      point: GeoPoint(latitude: 28.6003, longitude: 77.2270),
+    );
+    ProviderScope.containerOf(
+      tester.element(find.byType(BookingDetailsScreen)),
+    ).read(tripStartViewModelProvider).setStart(elsewhere);
+    await tester.pumpAndSettle();
+    expect(find.text('Khan Market, New Delhi'), findsOneWidget);
+
+    await tester.tap(
+      find.widgetWithText(SarthiPrimaryButton, 'Confirm booking'),
+    );
+    await tester.pumpAndSettle();
+    expect(received!.pickup.address, 'Khan Market, New Delhi');
+    expect(received!.car, _sedan);
   });
 }

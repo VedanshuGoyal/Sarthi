@@ -5,9 +5,8 @@ import 'package:flutter/foundation.dart';
 import '../data/booking_repository.dart';
 import '../domain/my_booking.dart';
 
-/// The customer's bookings, for the home screen's "Your rides" section and
-/// the Activity tab: who is driving, where they are in the trip, the start
-/// code to share, and the finished trips.
+/// The customer's bookings, for the Activity tab: who is driving, where
+/// they are in the trip, the start code to share, and the finished trips.
 ///
 /// There is no push channel yet, so while the signed-in shell is up it
 /// refreshes every [pollEvery] — often enough that "Driver assigned" and the

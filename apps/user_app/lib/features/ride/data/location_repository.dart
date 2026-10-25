@@ -273,10 +273,27 @@ class LocationRepository {
   /// Reads the device's current position and reverse-geocodes it into a
   /// confirmable pickup. Throws a [LocationPermissionException] /
   /// [LocationServiceDisabledException] when GPS is unavailable.
+  ///
+  /// The result is remembered for the app session ([lastKnownHere]); a fix
+  /// within [_sameSpotMetres] of it reuses that address instead of calling
+  /// the reverse-geocoder again.
   Future<PickupLocation> currentLocation() async {
     final point = await _positionFetcher();
-    return reverseGeocode(point);
+    final last = _lastHere;
+    if (last != null && last.point.distanceTo(point) < _sameSpotMetres) {
+      return last;
+    }
+    return _lastHere = await reverseGeocode(point);
   }
+
+  /// How far the device can move before its address is looked up again.
+  static const double _sameSpotMetres = 50;
+
+  PickupLocation? _lastHere;
+
+  /// Where [currentLocation] last found the device this session, if anywhere
+  /// — instant, for screens that show it while a fresh fix comes in.
+  PickupLocation? get lastKnownHere => _lastHere;
 
   /// The device's raw coordinates, with no reverse-geocode round-trip — used to
   /// centre the map picker on the user before they start panning. Throws a

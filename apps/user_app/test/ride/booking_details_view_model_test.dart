@@ -36,13 +36,13 @@ const _luxury = Car(
 void main() {
   group('BookingDetailsViewModel', () {
     test('defaults: 2 hours, pre-filled time, awaiting a car', () {
-      final vm = BookingDetailsViewModel(pickup: _pickup);
+      final vm = BookingDetailsViewModel();
       check(vm.hours).equals(2);
       check(vm.car).isNull();
       // The start time is pre-filled, so only the car is still needed.
       check(vm.scheduledAt).isNotNull();
       check(vm.canConfirm).isFalse();
-      check(vm.booking).isNull();
+      check(vm.bookingFrom(_pickup)).isNull();
     });
 
     test('defaultScheduledAt is one hour out, rounded to the nearest 15 min', () {
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('hours clamp to the allowed range and notify only on change', () {
-      final vm = BookingDetailsViewModel(pickup: _pickup);
+      final vm = BookingDetailsViewModel();
       var notifications = 0;
       vm.addListener(() => notifications++);
 
@@ -85,13 +85,13 @@ void main() {
     });
 
     test('picking a car is enough to confirm (time is pre-filled)', () {
-      final vm = BookingDetailsViewModel(pickup: _pickup);
+      final vm = BookingDetailsViewModel();
       check(vm.canConfirm).isFalse();
 
       vm.selectCar(_suv);
       check(vm.canConfirm).isTrue();
 
-      final booking = vm.booking;
+      final booking = vm.bookingFrom(_pickup);
       check(booking).isNotNull();
       check(booking!.car).equals(_suv);
       check(booking.hours).equals(2);
@@ -102,13 +102,14 @@ void main() {
     // A fixed midday start keeps these fares free of the after-10pm surcharge.
     final noon = DateTime(2026, 7, 18, 12);
 
+    // "Now" for the seeded July starts — early that morning, so they're
+    // bookable.
+    DateTime julyMorning() => DateTime(2026, 7, 18, 6);
+
     test(
       'fare tracks the hours at the standard rate until a car is chosen',
       () {
-        final vm = BookingDetailsViewModel(
-          pickup: _pickup,
-          initialScheduledAt: noon,
-        );
+        final vm = BookingDetailsViewModel(initialScheduledAt: noon);
         vm.setHours(1);
         check(vm.fare).equals(139);
         vm.setHours(2);
@@ -124,8 +125,8 @@ void main() {
       'choosing a luxury car re-prices at the premium rate and quotes it',
       () {
         final vm = BookingDetailsViewModel(
-          pickup: _pickup,
           initialScheduledAt: noon,
+          clock: julyMorning,
         );
         vm.setHours(3);
         check(vm.fare).equals(340); // standard preview
@@ -138,14 +139,13 @@ void main() {
         check(vm.fare).equals(340);
 
         // The confirmed booking carries the quoted fare.
-        check(vm.booking!.fare).equals(340);
+        check(vm.bookingFrom(_pickup)!.fare).equals(340);
       },
     );
 
     test('a ride running past 10pm adds the flat + per-night-hour surcharge', () {
       // Starts 8pm for 3h → finishes 11pm: 1 hour after 10pm.
       final vm = BookingDetailsViewModel(
-        pickup: _pickup,
         initialHours: 3,
         initialScheduledAt: DateTime(2026, 7, 18, 20),
       );
@@ -163,7 +163,6 @@ void main() {
 
     test('a ride finishing by 10pm carries no night surcharge', () {
       final vm = BookingDetailsViewModel(
-        pickup: _pickup,
         initialHours: 2,
         initialScheduledAt: DateTime(2026, 7, 18, 20), // 8pm–10pm exactly
       );
@@ -173,14 +172,32 @@ void main() {
 
     test('honours seeded initial state', () {
       final vm = BookingDetailsViewModel(
-        pickup: _pickup,
         initialHours: 6,
         initialScheduledAt: DateTime(2026, 7, 18, 9, 30),
         initialCar: _luxury,
+        clock: julyMorning,
       );
       check(vm.canConfirm).isTrue();
       check(vm.hours).equals(6);
       check(vm.car).equals(_luxury);
+    });
+
+    test('a start under 45 minutes away blocks confirming', () {
+      final vm = BookingDetailsViewModel(
+        initialScheduledAt: DateTime(2026, 7, 18, 6, 30),
+        initialCar: _sedan,
+        clock: julyMorning, // 06:00
+      );
+      check(vm.isTooSoon).isTrue();
+      check(vm.canConfirm).isFalse();
+      check(vm.bookingFrom(_pickup)).isNull();
+
+      // 06:45 is the earliest slot offered; 06:30 isn't.
+      check(vm.isStartAvailable(DateTime(2026, 7, 18, 6, 45))).isTrue();
+      check(vm.isStartAvailable(DateTime(2026, 7, 18, 6, 30))).isFalse();
+
+      vm.setScheduledAt(DateTime(2026, 7, 18, 6, 45));
+      check(vm.canConfirm).isTrue();
     });
   });
 }

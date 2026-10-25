@@ -1,7 +1,7 @@
 name: user_app
 description: "MOJUD — the customer-facing ride-hailing app."
 publish_to: 'none'
-version: 1.2.0+3
+version: 1.2.1+4
 
 environment:
   sdk: ^3.12.2

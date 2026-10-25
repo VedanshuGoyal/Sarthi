@@ -229,6 +229,31 @@ func TestRequests_filtersAndHidesCustomer(t *testing.T) {
 	}
 }
 
+func TestRequests_closeHalfAnHourBeforeTheStart(t *testing.T) {
+	store := newFakeRideStore(
+		openRide("in-31m", testNow.Add(31*time.Minute), 2, "automatic"),
+		openRide("in-29m", testNow.Add(29*time.Minute), 2, "automatic"),
+	)
+	svc := newRideService(store)
+	ctx := context.Background()
+
+	got, err := svc.Requests(ctx, "auto", nil)
+	if err != nil {
+		t.Fatalf("Requests: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "in-31m" {
+		t.Fatalf("requests = %+v, want only in-31m", got)
+	}
+
+	// Accepting from a stale feed is refused the same way.
+	if _, err := svc.Accept(ctx, "auto", "in-29m"); !errors.Is(err, ErrRideClosed) || !errors.Is(err, repository.ErrRideUnavailable) {
+		t.Errorf("accept in-29m: err = %v, want ErrRideClosed (an ErrRideUnavailable)", err)
+	}
+	if _, err := svc.Accept(ctx, "auto", "in-31m"); err != nil {
+		t.Errorf("accept in-31m: err = %v, want nil", err)
+	}
+}
+
 func TestRequests_requiresClearedKYC(t *testing.T) {
 	svc := newRideService(newFakeRideStore())
 	if _, err := svc.Requests(context.Background(), "pending", nil); !errors.Is(err, ErrDriverNotCleared) {

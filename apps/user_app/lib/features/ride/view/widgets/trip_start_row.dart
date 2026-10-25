@@ -3,8 +3,8 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../domain/pickup_location.dart';
 
-/// The "From" row on top of the One-Way route step: the starting point,
-/// filled from GPS, tappable to change.
+/// The "From" row on top of the One-Way route step (and Round Trip's pickup
+/// row): the starting point, filled from GPS, tappable to change.
 ///
 /// Render-only: shows [start] (or a locating / "choose one" state) and emits
 /// [onTap]. The parent owns the GPS call and the picker.
@@ -14,6 +14,7 @@ class TripStartRow extends StatelessWidget {
     required this.start,
     required this.isLocating,
     this.isCurrentLocation = false,
+    this.label = 'Starting point',
     this.onTap,
   });
 
@@ -23,6 +24,9 @@ class TripStartRow extends StatelessWidget {
 
   /// Whether [start] came from GPS, so the row can say so.
   final bool isCurrentLocation;
+
+  /// What the place is called on this step — "Starting point", "Pickup".
+  final String label;
   final VoidCallback? onTap;
 
   @override
@@ -34,11 +38,11 @@ class TripStartRow extends StatelessWidget {
         s.address,
         isCurrentLocation
             ? 'From your current location · tap to change'
-            : 'Starting point · tap to change',
+            : '$label · tap to change',
       ),
-      (null, true) => ('Finding your location…', 'Starting point'),
+      (null, true) => ('Finding your location…', label),
       (null, false) => (
-        'Choose a starting point',
+        'Choose a ${label.toLowerCase()}',
         "Couldn't use your current location",
       ),
     };

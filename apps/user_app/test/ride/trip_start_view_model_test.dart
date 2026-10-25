@@ -21,6 +21,12 @@ const _home = PickupLocation(
   placeId: 'r1',
 );
 
+/// A fresh fix a little way from [_here].
+const _moved = PickupLocation(
+  address: 'Next street, New Delhi',
+  point: GeoPoint(latitude: 28.6150, longitude: 77.2100),
+);
+
 /// A repository whose GPS fix arrives only when the test completes it.
 class _SlowGpsRepository extends FakeLocationRepository {
   final fix = Completer<PickupLocation>();
@@ -95,6 +101,51 @@ void main() {
 
       check(await first).equals(_here);
       check(await second).equals(_here);
+    });
+
+    group('with a spot remembered from earlier', () {
+      test('opens filled, without the locating state', () {
+        final vm = TripStartViewModel(
+          repository: FakeLocationRepository(lastKnown: _here, current: _moved),
+        );
+        check(vm.start).equals(_here);
+        check(vm.isCurrentLocation).isTrue();
+        check(vm.isLocating).isFalse();
+      });
+
+      test('a fresh fix replaces it quietly', () async {
+        final repo = _SlowGpsRepository()..lastKnown = _here;
+        final vm = TripStartViewModel(repository: repo);
+        final pending = vm.locate();
+        check(vm.isLocating).isFalse();
+        check(vm.start).equals(_here);
+
+        repo.fix.complete(_moved);
+        check(await pending).equals(_moved);
+        check(vm.start).equals(_moved);
+      });
+
+      test('a failed fix keeps the remembered spot', () async {
+        final vm = TripStartViewModel(
+          repository: FakeLocationRepository(
+            lastKnown: _here,
+            currentError: const LocationPermissionException('Allow location'),
+          ),
+        );
+        check(await vm.locate()).equals(_here);
+        check(vm.error).isNull();
+      });
+
+      test('a manual pick wins over the refresh', () async {
+        final repo = _SlowGpsRepository()..lastKnown = _here;
+        final vm = TripStartViewModel(repository: repo);
+        final pending = vm.locate();
+
+        vm.setStart(_home);
+        repo.fix.complete(_moved);
+        check(await pending).equals(_home);
+        check(vm.start).equals(_home);
+      });
     });
   });
 }

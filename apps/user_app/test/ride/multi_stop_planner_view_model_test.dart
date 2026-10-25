@@ -27,6 +27,8 @@ MultiStopPlannerViewModel _vm({List<StopDraft>? stops}) =>
       start: _start,
       initialScheduledAt: _nineAm,
       initialStops: stops,
+      // Early that morning, so the 9am start is bookable.
+      clock: () => DateTime(2026, 7, 18, 7),
     );
 
 /// Fills stop [id] completely: place, task, and a leave-by [at].

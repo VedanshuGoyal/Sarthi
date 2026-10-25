@@ -55,9 +55,18 @@ func roundTripDetails() map[string]any {
 	}
 }
 
+// bookingTestNow is two hours before roundTripDetails' start (08:00 UTC).
+var bookingTestNow = time.Date(2026, 10, 24, 6, 0, 0, 0, time.UTC)
+
+func newTestBookingService(store BookingStore) *BookingService {
+	svc := NewBookingService(store)
+	svc.now = func() time.Time { return bookingTestNow }
+	return svc
+}
+
 func TestBookingService_Record_persists(t *testing.T) {
 	store := &fakeBookingStore{}
-	svc := NewBookingService(store)
+	svc := newTestBookingService(store)
 
 	// A leading/trailing space on the trip type is trimmed before storing.
 	got, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails())
@@ -84,7 +93,7 @@ func TestBookingService_Record_persists(t *testing.T) {
 
 func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	store := &fakeBookingStore{}
-	svc := NewBookingService(store)
+	svc := newTestBookingService(store)
 	details := map[string]any{"hours": 4}
 
 	if _, err := svc.Record(context.Background(), "u1", "  ", details); !errors.Is(err, ErrInvalidBooking) {
@@ -104,7 +113,7 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 
 func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 	wantErr := errors.New("db down")
-	svc := NewBookingService(&fakeBookingStore{err: wantErr})
+	svc := newTestBookingService(&fakeBookingStore{err: wantErr})
 
 	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
@@ -127,7 +136,7 @@ func TestBookingService_ListMine_showsStartCodeOnlyWhileDriverIsComing(t *testin
 		{Booking: booking("driving", domain.RideStatusInProgress), Driver: driver},
 		{Booking: domain.Booking{ID: "junk", TripType: TripRoundTrip, Details: map[string]any{}}},
 	}}
-	got, err := NewBookingService(store).ListMine(context.Background(), "u1")
+	got, err := newTestBookingService(store).ListMine(context.Background(), "u1")
 	if err != nil {
 		t.Fatalf("ListMine: %v", err)
 	}
@@ -145,5 +154,70 @@ func TestBookingService_ListMine_showsStartCodeOnlyWhileDriverIsComing(t *testin
 	}
 	if got[0].Pickup.Address != "India Gate, New Delhi" || got[0].FarePaise != 44000 {
 		t.Errorf("booking = %+v", got[0])
+	}
+}
+
+func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	start := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC) // roundTripDetails
+
+	// 30 minutes ahead: it would close to drivers the moment it's booked.
+	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
+	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, ErrBookingTooSoon) {
+		t.Errorf("30 min ahead: err = %v, want ErrBookingTooSoon", err)
+	}
+	if store.insertHit {
+		t.Error("Insert must not be called for a too-soon booking")
+	}
+
+	// The earliest slot, submitted a couple of minutes later: still accepted.
+	svc.now = func() time.Time { return start.Add(-43 * time.Minute) }
+	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); err != nil {
+		t.Errorf("43 min ahead: err = %v, want nil", err)
+	}
+}
+
+func TestBookingService_ListMine_expiresUntakenRequests(t *testing.T) {
+	at := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	booking := func(id string, status domain.RideStatus) domain.UserBooking {
+		return domain.UserBooking{Booking: domain.Booking{
+			ID: id, TripType: TripRoundTrip, Details: roundTripDetails(),
+			Status: status, ScheduledAt: &at,
+		}}
+	}
+	store := &fakeBookingStore{listed: []domain.UserBooking{
+		booking("open", domain.RideStatusRequested),
+		booking("taken", domain.RideStatusAccepted),
+	}}
+	svc := newTestBookingService(store)
+
+	statuses := func() map[string]domain.RideStatus {
+		got, err := svc.ListMine(context.Background(), "u1")
+		if err != nil {
+			t.Fatalf("ListMine: %v", err)
+		}
+		out := map[string]domain.RideStatus{}
+		for _, b := range got {
+			out[b.ID] = b.Status
+		}
+		return out
+	}
+
+	// Exactly 30 minutes before the start: still open to drivers.
+	svc.now = func() time.Time { return at.Add(-30 * time.Minute) }
+	if got := statuses(); got["open"] != domain.RideStatusRequested {
+		t.Errorf("at the cutoff: open = %q, want requested", got["open"])
+	}
+
+	// A minute later nobody can take it — the customer sees it expired; a
+	// ride a driver already took is untouched.
+	svc.now = func() time.Time { return at.Add(-29 * time.Minute) }
+	got := statuses()
+	if got["open"] != domain.RideStatusExpired {
+		t.Errorf("past the cutoff: open = %q, want expired", got["open"])
+	}
+	if got["taken"] != domain.RideStatusAccepted {
+		t.Errorf("past the cutoff: taken = %q, want accepted", got["taken"])
 	}
 }

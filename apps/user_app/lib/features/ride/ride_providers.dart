@@ -53,7 +53,7 @@ final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
   );
 });
 
-/// The customer's bookings for the home screen's "Your rides" section.
+/// The customer's bookings for the Activity tab.
 /// Rebuilt per signed-in user, so a different account on the same phone never
 /// sees the previous one's rides or start codes.
 final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
@@ -95,8 +95,9 @@ final pickupSelectionViewModelProvider =
       );
     });
 
-/// The One-Way route step's starting point, located from GPS as soon as the
-/// step opens. `autoDispose` so each visit re-reads the current location.
+/// The starting point for One-Way's "From" row and Round Trip's pickup row,
+/// located from GPS as soon as the step opens. `autoDispose` so each visit re-checks the current location —
+/// quietly, behind the last known spot, after the first fix.
 final tripStartViewModelProvider =
     ChangeNotifierProvider.autoDispose<TripStartViewModel>((ref) {
       return TripStartViewModel(
@@ -113,14 +114,14 @@ final mapPickupViewModelProvider =
       );
     });
 
-/// The booking-details step's view model (hours, schedule, car, transmission).
+/// The booking-details step's view model (hours, schedule, car).
 ///
-/// A `family` keyed on the confirmed [PickupLocation] — the step's one input,
-/// known only at navigation time. `autoDispose` so backing out of the screen
-/// resets the choices to their defaults for the next visit.
-final bookingDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
-    .family<BookingDetailsViewModel, PickupLocation>((ref, pickup) {
-      return BookingDetailsViewModel(pickup: pickup);
+/// `autoDispose` so backing out of the screen resets the choices to their
+/// defaults for the next visit. The pickup lives in
+/// [tripStartViewModelProvider], so changing it keeps these choices.
+final bookingDetailsViewModelProvider =
+    ChangeNotifierProvider.autoDispose<BookingDetailsViewModel>((ref) {
+      return BookingDetailsViewModel();
     });
 
 /// The Multi-Stop planner's view model (start time + the ordered stop drafts).

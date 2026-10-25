@@ -17,16 +17,14 @@ import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/one_way_route_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
-import '../../ride/view/widgets/my_rides_section.dart';
 import '../../ride/view/widgets/ride_theme.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 /// The Home tab of [UserHomeShell], shown after a customer signs in.
 ///
-/// Greets the user, shows any unfinished bookings ([MyRidesSection] — with
-/// the driver and start code once one accepts), then hosts the
-/// [TripTypeSelector] so they can pick how they want to travel, above a short
-/// "how it works" card. The body is centred and
+/// Greets the user, then hosts the [TripTypeSelector] so they can pick how
+/// they want to travel, above a short "how it works" card. Their bookings
+/// live in the Activity tab. The body is centred and
 /// width-capped on large screens and scrolls on short ones, per the
 /// responsive-layout guideline.
 class HomeScreen extends ConsumerWidget {
@@ -47,7 +45,7 @@ class HomeScreen extends ConsumerWidget {
   ) async {
     try {
       await send(ref.read(bookingRepositoryProvider));
-      // Show the new booking under "Your rides" straight away.
+      // Show the new booking in Activity straight away.
       ref.read(myBookingsViewModelProvider).load();
       return true;
     } on BookingSubmitException {
@@ -58,8 +56,8 @@ class HomeScreen extends ConsumerWidget {
   /// The snackbar tail noting a booking that didn't reach the backend.
   static const String _notSentNote = " We couldn't reach the server.";
 
-  /// Routes the tapped trip choice to its next step. Round Trip advances to
-  /// the pickup-location step, then the booking-details step; Multi-Stop to the
+  /// Routes the tapped trip choice to its next step. Round Trip opens the
+  /// booking page (pickup pre-filled from GPS); Multi-Stop to the
   /// starting-point step, then the trip planner; One-Way to the route step
   /// (start pre-filled from GPS, destination to type), then the details step.
   Future<void> _onTripSelected(
@@ -69,14 +67,10 @@ class HomeScreen extends ConsumerWidget {
   ) async {
     switch (type) {
       case TripType.roundTrip:
-        final pickup = await Navigator.of(context).push<PickupLocation>(
-          MaterialPageRoute(builder: (_) => const PickupLocationScreen()),
-        );
-        if (pickup == null || !context.mounted) return;
+        // Straight to the booking page: the pickup is pre-filled from GPS
+        // and tapped to change.
         final booking = await Navigator.of(context).push<RoundTripBooking>(
-          MaterialPageRoute(
-            builder: (_) => BookingDetailsScreen(pickup: pickup),
-          ),
+          MaterialPageRoute(builder: (_) => const BookingDetailsScreen()),
         );
         if (booking != null && context.mounted) {
           final sent = await _sendToServer(
@@ -212,7 +206,6 @@ class HomeScreen extends ConsumerWidget {
                     style: text.headlineMedium,
                   ),
                   const SizedBox(height: Skyline.s24),
-                  const MyRidesSection(),
                   Text('Book a driver', style: t.title(16)),
                   const SizedBox(height: Skyline.s12),
                   TripTypeSelector(

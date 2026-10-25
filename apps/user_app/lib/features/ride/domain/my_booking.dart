@@ -1,3 +1,4 @@
+import 'scheduling.dart';
 import 'trip_type.dart';
 
 /// Where one of the customer's bookings stands, as the backend reports it.
@@ -7,7 +8,10 @@ enum BookingStatus {
   arrived('arrived', 'Driver at pickup'),
   inProgress('in_progress', 'On trip'),
   completed('completed', 'Completed'),
-  cancelled('cancelled', 'Cancelled');
+  cancelled('cancelled', 'Cancelled'),
+
+  /// No driver took it before it closed, 30 minutes before the start.
+  expired('expired', 'No driver found');
 
   const BookingStatus(this.wireName, this.label);
 
@@ -19,8 +23,9 @@ enum BookingStatus {
   static BookingStatus fromWire(String? value) => BookingStatus.values
       .firstWhere((s) => s.wireName == value, orElse: () => requested);
 
-  /// Not finished yet — worth showing on the home screen.
-  bool get isActive => this != completed && this != cancelled;
+  /// Not finished yet — an upcoming ride.
+  bool get isActive =>
+      this != completed && this != cancelled && this != expired;
 }
 
 /// One of the customer's bookings: what they booked, where it stands, the
@@ -73,7 +78,11 @@ class MyBooking {
   };
 
   /// Parses one booking, or null for one this app version can't read.
-  static MyBooking? tryParse(Object? json) {
+  ///
+  /// A request still open past [driverAcceptCutoff] before its start reads
+  /// as [BookingStatus.expired] even if the server hasn't said so — older
+  /// servers don't. [now] is a seam for tests.
+  static MyBooking? tryParse(Object? json, {DateTime? now}) {
     if (json is! Map<String, dynamic>) return null;
     final id = json['id'];
     final scheduledAt = json['scheduledAt'] is String
@@ -85,10 +94,17 @@ class MyBooking {
     final car = json['car'];
     final driver = json['driver'];
     final otp = json['startOtp'];
+    var status = BookingStatus.fromWire(json['status'] as String?);
+    if (status == BookingStatus.requested &&
+        (now ?? DateTime.now()).isAfter(
+          scheduledAt.subtract(driverAcceptCutoff),
+        )) {
+      status = BookingStatus.expired;
+    }
     return MyBooking(
       id: id,
       tripType: _tripType(json['tripType']),
-      status: BookingStatus.fromWire(json['status'] as String?),
+      status: status,
       scheduledAt: scheduledAt,
       pickupAddress: pickup['address'] as String? ?? '',
       destinationAddress: destination is Map

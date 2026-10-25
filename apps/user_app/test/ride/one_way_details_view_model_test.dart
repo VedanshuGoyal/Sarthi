@@ -63,7 +63,10 @@ void main() {
     });
 
     test('changing the schedule notifies and lands in the draft', () {
-      final vm = OneWayDetailsViewModel(route: _route)..selectCar(_sedan);
+      final vm = OneWayDetailsViewModel(
+        route: _route,
+        clock: () => DateTime(2026, 7, 1), // well before the new start
+      )..selectCar(_sedan);
       var notifications = 0;
       vm.addListener(() => notifications++);
 
@@ -94,10 +97,23 @@ void main() {
         route: _route,
         initialScheduledAt: DateTime(2026, 7, 20, 9, 30),
         initialCar: _sedan,
+        clock: () => DateTime(2026, 7, 20, 6),
       );
       check(vm.canContinue).isTrue();
       check(vm.scheduledAt).equals(DateTime(2026, 7, 20, 9, 30));
       check(vm.car).equals(_sedan);
+    });
+
+    test('a start under 45 minutes away blocks continuing', () {
+      final vm = OneWayDetailsViewModel(
+        route: _route,
+        initialScheduledAt: DateTime(2026, 7, 20, 6, 30),
+        initialCar: _sedan,
+        clock: () => DateTime(2026, 7, 20, 6),
+      );
+      check(vm.isTooSoon).isTrue();
+      check(vm.canContinue).isFalse();
+      check(vm.draft).isNull();
     });
   });
 }

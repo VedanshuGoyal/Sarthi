@@ -23,6 +23,11 @@ var ErrDriverNotCleared = errors.New("finish document verification to start taki
 // a car whose gearbox they didn't sign up to drive.
 var ErrTransmissionMismatch = errors.New("this ride's car has a gearbox you don't drive")
 
+// ErrRideClosed is returned when a driver tries to accept a ride that starts
+// within acceptCutoff. It wraps ErrRideUnavailable, so the app drops it from
+// the feed like a ride someone else took.
+var ErrRideClosed = fmt.Errorf("this ride starts too soon to take: %w", repository.ErrRideUnavailable)
+
 // ErrRideClash is returned when accepting a ride would overlap one the driver
 // already has.
 var ErrRideClash = errors.New("this ride overlaps one you've already accepted")
@@ -44,10 +49,6 @@ const (
 	// still appear in their feed — roughly a metro area, since rides are
 	// booked ahead and the driver travels to the pickup.
 	requestRadiusM = 50_000
-
-	// requestGrace keeps a ride whose start time has just passed in the feed,
-	// so a customer who booked "now" can still be picked up.
-	requestGrace = 30 * time.Minute
 
 	// rideGap is the minimum gap between two rides a driver holds: time to
 	// get from one drop-off to the next pickup.
@@ -124,7 +125,8 @@ func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, p
 	}
 }
 
-// Requests returns the open rides driverID can take, soonest first. With a
+// Requests returns the open rides driverID can take, soonest first — those
+// starting more than acceptCutoff from now. With a
 // location, rides further than requestRadiusM are left out and each carries
 // its distance. The customer's details stay hidden until a ride is accepted.
 func (s *DriverRideService) Requests(ctx context.Context, driverID string, at *LatLng) ([]domain.DriverRide, error) {
@@ -132,7 +134,7 @@ func (s *DriverRideService) Requests(ctx context.Context, driverID string, at *L
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.store.ListOpen(ctx, driverID, s.now().Add(-requestGrace), maxRequests)
+	rows, err := s.store.ListOpen(ctx, driverID, s.now().Add(acceptCutoff), maxRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -188,6 +190,9 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 	_, plan, ok := toDriverRide(target, false)
 	if !ok {
 		return domain.DriverRide{}, repository.ErrRideUnavailable
+	}
+	if closedToDrivers(plan.ScheduledAt, s.now()) {
+		return domain.DriverRide{}, ErrRideClosed
 	}
 	if !canDrive(profile.Transmission, plan.Car) {
 		return domain.DriverRide{}, ErrTransmissionMismatch

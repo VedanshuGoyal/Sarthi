@@ -5,7 +5,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../domain/my_booking.dart';
 import '../ride_providers.dart';
 import '../view_model/my_bookings_view_model.dart';
-import 'widgets/my_rides_section.dart';
+import 'widgets/my_ride_card.dart';
 
 /// The Activity tab: the customer's bookings in two lists — Upcoming (not
 /// finished yet, soonest first, with driver and start code) and Completed

@@ -4,8 +4,11 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../domain/pickup_location.dart';
 import '../domain/round_trip_booking.dart';
+import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/booking_details_view_model.dart';
+import '../view_model/trip_start_view_model.dart';
+import 'pickup_location_screen.dart';
 import 'widgets/add_car_sheet.dart';
 import 'widgets/car_selector_field.dart';
 import 'widgets/fare_summary.dart';
@@ -13,23 +16,20 @@ import 'widgets/ride_theme.dart';
 import 'widgets/hours_selector.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/time_slot_picker.dart';
+import 'widgets/trip_start_row.dart';
 
-/// Step 3 of a Round Trip booking: how long, when, and what kind of car.
+/// The Round Trip booking page: pickup, how long, when, and which car.
 ///
-/// Given the confirmed [pickup], the customer picks the hire duration, a start
-/// date/time, and one of their saved cars from the same dropdown One-Way uses
-/// (adding a car inline when needed). On confirm the assembled
-/// [RoundTripBooking] is handed back via [onConfirmed]. State lives in
-/// [bookingDetailsViewModelProvider], keyed on the pickup; this view only
-/// renders it and drives the date/time pickers.
+/// The pickup row on top is filled from GPS as the page opens
+/// ([tripStartViewModelProvider], shared with One-Way's "From" row); tapping
+/// it opens the pickup search to change it. Below, the customer picks the hire
+/// duration, a start date/time, and one of their saved cars from the same
+/// dropdown One-Way uses (adding a car inline when needed). On confirm the
+/// assembled [RoundTripBooking] is handed back via [onConfirmed]. Form state
+/// lives in [bookingDetailsViewModelProvider]; this view only renders it and
+/// drives the pickers.
 class BookingDetailsScreen extends ConsumerWidget {
-  const BookingDetailsScreen({
-    super.key,
-    required this.pickup,
-    this.onConfirmed,
-  });
-
-  final PickupLocation pickup;
+  const BookingDetailsScreen({super.key, this.onConfirmed});
 
   /// Invoked with the assembled booking when the CTA is tapped. Defaults to
   /// popping the screen and returning the booking to the previous route.
@@ -59,10 +59,21 @@ class BookingDetailsScreen extends ConsumerWidget {
     final picked = await showTimeSlotPicker(
       context,
       initial: TimeOfDay.fromDateTime(vm.scheduledAt),
+      isAvailable: (slot) =>
+          vm.isStartAvailable(ScheduleField.withTime(vm.scheduledAt, slot)),
     );
     if (picked != null) {
       vm.setScheduledAt(ScheduleField.withTime(vm.scheduledAt, picked));
     }
+  }
+
+  /// Opens the pickup search; whatever the customer picks replaces the GPS
+  /// spot.
+  Future<void> _pickPickup(BuildContext context, TripStartViewModel vm) async {
+    final pickup = await Navigator.of(context).push<PickupLocation>(
+      MaterialPageRoute(builder: (_) => const PickupLocationScreen()),
+    );
+    if (pickup != null) vm.setStart(pickup);
   }
 
   void _confirm(BuildContext context, RoundTripBooking booking) {
@@ -94,14 +105,24 @@ class BookingDetailsScreen extends ConsumerWidget {
   Future<void> _addCar(BuildContext context, WidgetRef ref) async {
     final car = await showAddCarSheet(context);
     if (car == null || !context.mounted) return;
-    ref.read(bookingDetailsViewModelProvider(pickup)).selectCar(car);
+    ref.read(bookingDetailsViewModelProvider).selectCar(car);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final vm = ref.watch(bookingDetailsViewModelProvider(pickup));
+    final vm = ref.watch(bookingDetailsViewModelProvider);
+    final start = ref.watch(tripStartViewModelProvider);
     final savedCars = ref.watch(savedCarsViewModelProvider);
     final theme = Theme.of(context);
+    final pickup = start.start;
+    final booking = pickup == null ? null : vm.bookingFrom(pickup);
+    final String? hint = switch ((pickup, vm.car)) {
+      (null, _) when start.isLocating => 'Finding your location…',
+      (null, _) => 'Choose your pickup to continue.',
+      (_, null) => 'Choose your car to continue.',
+      _ when vm.isTooSoon => tooSoonHint,
+      _ => null,
+    };
 
     return Theme(
       data: rideSurfaceTheme(context),
@@ -117,7 +138,13 @@ class BookingDetailsScreen extends ConsumerWidget {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                       children: [
-                        _PickupSummary(address: vm.pickup.address),
+                        TripStartRow(
+                          label: 'Pickup',
+                          start: pickup,
+                          isLocating: start.isLocating,
+                          isCurrentLocation: start.isCurrentLocation,
+                          onTap: () => _pickPickup(context, start),
+                        ),
                         const SizedBox(height: 24),
                         _Section(
                           title: 'How long?',
@@ -173,11 +200,11 @@ class BookingDetailsScreen extends ConsumerWidget {
                             onDisclaimerTap: () => _showFareNote(context),
                           ),
                         ),
-                        if (!vm.canConfirm)
+                        if (hint != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Text(
-                              'Choose your car to continue.',
+                              hint,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -186,9 +213,9 @@ class BookingDetailsScreen extends ConsumerWidget {
                           ),
                         SarthiPrimaryButton(
                           label: 'Confirm booking',
-                          onPressed: vm.canConfirm
-                              ? () => _confirm(context, vm.booking!)
-                              : null,
+                          onPressed: booking == null
+                              ? null
+                              : () => _confirm(context, booking),
                         ),
                       ],
                     ),
@@ -201,17 +228,6 @@ class BookingDetailsScreen extends ConsumerWidget {
       ),
     );
   }
-}
-
-/// A compact, read-only banner echoing the pickup chosen on the previous step.
-class _PickupSummary extends StatelessWidget {
-  const _PickupSummary({required this.address});
-
-  final String address;
-
-  @override
-  Widget build(BuildContext context) =>
-      SkylinePlaceSummary(label: 'Pickup', address: address);
 }
 
 /// A titled section: a heading (with optional [subtitle]) above its [child].

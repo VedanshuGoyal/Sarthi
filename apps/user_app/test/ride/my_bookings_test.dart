@@ -12,13 +12,14 @@ import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/trip_type.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/activity_panel.dart';
-import 'package:user_app/features/ride/view/widgets/my_rides_section.dart';
+import 'package:user_app/features/ride/view/widgets/my_ride_card.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 
 Map<String, dynamic> _booking({
   required String id,
   required String status,
-  String scheduledAt = '2026-10-26T09:00:00+05:30',
+  // Far ahead, so an open request isn't read as expired whenever tests run.
+  String scheduledAt = '2030-10-26T09:00:00+05:30',
   bool withDriver = false,
   String? otp,
 }) => {
@@ -82,7 +83,7 @@ void main() {
           _booking(
             id: 'later',
             status: 'requested',
-            scheduledAt: '2026-10-27T09:00:00+05:30',
+            scheduledAt: '2030-10-27T09:00:00+05:30',
           ),
           _booking(id: 'done', status: 'completed'),
           _booking(id: 'soon', status: 'arrived', withDriver: true, otp: '1'),
@@ -151,6 +152,50 @@ void main() {
       find.textContaining('as soon as one accepts').evaluate(),
     ).isNotEmpty();
     check(find.text('Start code').evaluate()).isEmpty();
+  });
+
+  test('an open request reads as expired once it closes to drivers', () {
+    final json = _booking(
+      id: 'a',
+      status: 'requested',
+      scheduledAt: '2026-10-26T09:00:00+05:30',
+    );
+    final start = DateTime.parse('2026-10-26T09:00:00+05:30');
+
+    check(
+      MyBooking.tryParse(
+        json,
+        now: start.subtract(const Duration(minutes: 31)),
+      )!.status,
+    ).equals(BookingStatus.requested);
+    final late = MyBooking.tryParse(
+      json,
+      now: start.subtract(const Duration(minutes: 29)),
+    )!;
+    check(late.status).equals(BookingStatus.expired);
+    check(late.status.isActive).isFalse();
+
+    // The server's own "expired" reads the same, and a taken ride never
+    // expires.
+    check(
+      MyBooking.tryParse(_booking(id: 'b', status: 'expired'))!.status,
+    ).equals(BookingStatus.expired);
+    check(
+      MyBooking.tryParse(
+        _booking(id: 'c', status: 'accepted', withDriver: true),
+        now: start,
+      )!.status,
+    ).equals(BookingStatus.accepted);
+  });
+
+  testWidgets('an expired booking says no driver was found', (tester) async {
+    await pumpCard(
+      tester,
+      MyBooking.tryParse(_booking(id: 'a', status: 'expired'))!,
+    );
+    check(find.text('No driver found').evaluate()).isNotEmpty();
+    check(find.textContaining('book again').evaluate()).isNotEmpty();
+    check(find.textContaining('as soon as one accepts').evaluate()).isEmpty();
   });
 
   testWidgets('a completed ride shows who drove and the fare', (tester) async {

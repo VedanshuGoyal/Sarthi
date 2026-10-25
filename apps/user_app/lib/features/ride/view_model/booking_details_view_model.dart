@@ -9,24 +9,34 @@ import '../domain/scheduling.dart' as scheduling;
 /// Drives Round Trip's "booking details" step (hours, schedule, which car).
 ///
 /// A [ChangeNotifier] per the MVVM guideline: it owns the transient form state
-/// for a single [pickup] and exposes command methods the view calls. It holds
+/// and exposes command methods the view calls. The pickup is not part of it —
+/// the screen's pickup row owns that (see `TripStartViewModel`) and hands it
+/// to [bookingFrom]. It holds
 /// no business logic and never touches widgets, the network, or storage — the
 /// saved-car *list* lives in the saved-cars view model; this one only holds
 /// which car was picked.
 class BookingDetailsViewModel extends ChangeNotifier {
-  /// [pickup] is the confirmed location from the previous step. The `initial*`
-  /// seams let previews and tests start in a given state without tapping
-  /// through the UI; production starts with the defaults.
+  /// The `initial*` seams let previews and tests start in a given state
+  /// without tapping through the UI; production starts with the defaults.
+  /// [clock] is the "now" the too-soon checks use (a seam for tests).
   BookingDetailsViewModel({
-    required this.pickup,
     int initialHours = 2,
     DateTime? initialScheduledAt,
     Car? initialCar,
-  }) : _hours = initialHours.clamp(minHours, maxHours),
-       _scheduledAt = initialScheduledAt ?? defaultScheduledAt(),
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now,
+       _hours = initialHours.clamp(minHours, maxHours),
+       _scheduledAt = initialScheduledAt ?? defaultScheduledAt(clock?.call()),
        _car = initialCar;
 
-  final PickupLocation pickup;
+  final DateTime Function() _clock;
+
+  /// Whether the chosen start is too soon for a driver to accept in time.
+  bool get isTooSoon => scheduling.isTooSoonToBook(_scheduledAt, _clock());
+
+  /// Whether the time picker may offer [start] (see `earliestStart`).
+  bool isStartAvailable(DateTime start) =>
+      !start.isBefore(scheduling.earliestStart(_clock()));
 
   /// Bounds on how long a driver can be hired for in one Round Trip.
   static const int minHours = 1;
@@ -98,13 +108,14 @@ class BookingDetailsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// True once every required choice is made — gates the CTA. Hours and the
-  /// start time always have a value (the schedule is pre-filled); only the car
-  /// must still be chosen.
-  bool get canConfirm => _car != null;
+  /// True once every choice on this form is made — with a pickup, gates the
+  /// CTA. Hours and the start time always have a value (the schedule is
+  /// pre-filled); the car must still be chosen, and the start must not be
+  /// too soon.
+  bool get canConfirm => _car != null && !isTooSoon;
 
-  /// The assembled request, or null until [canConfirm].
-  RoundTripBooking? get booking => canConfirm
+  /// The assembled request from [pickup], or null until [canConfirm].
+  RoundTripBooking? bookingFrom(PickupLocation pickup) => canConfirm
       ? RoundTripBooking(
           pickup: pickup,
           hours: _hours,

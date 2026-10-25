@@ -1,41 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/my_booking.dart';
 import '../../domain/trip_type.dart';
-import '../../ride_providers.dart';
-import '../../view_model/my_bookings_view_model.dart';
-
-/// The home screen's "Your rides" section: each unfinished booking with its
-/// status, the driver once one accepts, and the start code to give them.
-///
-/// Renders nothing while the customer has no active bookings, so a new
-/// customer's home stays about booking. The signed-in shell keeps the list
-/// fresh (see [MyBookingsViewModel.startPolling]).
-class MyRidesSection extends ConsumerWidget {
-  const MyRidesSection({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final active = ref.watch(myBookingsViewModelProvider).active;
-    if (active.isEmpty) return const SizedBox.shrink();
-    final t = SkylineTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Your rides', style: t.title(16)),
-        const SizedBox(height: Skyline.s12),
-        for (final booking in active) ...[
-          MyRideCard(booking: booking),
-          const SizedBox(height: Skyline.s12),
-        ],
-        const SizedBox(height: Skyline.s12),
-      ],
-    );
-  }
-}
 
 /// One booking. While it's active: the driver (with a call button that hands
 /// off to the phone's dialer) and the start code; once it's completed: who
@@ -136,6 +104,11 @@ class MyRideCard extends StatelessWidget {
             )
           else if (b.status == BookingStatus.cancelled)
             const SizedBox.shrink()
+          else if (b.status == BookingStatus.expired)
+            Text(
+              'No driver accepted in time. Please book again.',
+              style: t.body(size: 13),
+            )
           else if (waitingForDriver)
             Row(
               children: [
@@ -180,7 +153,8 @@ class _StatusPill extends StatelessWidget {
     final (fill, ink) = switch (status) {
       _ when strong => (t.primary, t.onPrimary),
       BookingStatus.completed => (t.sunken, t.success),
-      BookingStatus.cancelled => (t.sunken, t.inkMuted),
+      BookingStatus.cancelled ||
+      BookingStatus.expired => (t.sunken, t.inkMuted),
       _ => (t.primarySoft, t.primaryText),
     };
     return Container(

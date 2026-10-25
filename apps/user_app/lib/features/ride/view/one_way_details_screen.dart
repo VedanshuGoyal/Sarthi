@@ -4,6 +4,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../domain/one_way_trip.dart';
 import '../domain/pickup_location.dart';
+import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/one_way_details_view_model.dart';
 import 'one_way_review_screen.dart';
@@ -64,6 +65,8 @@ class OneWayDetailsScreen extends ConsumerWidget {
     final picked = await showTimeSlotPicker(
       context,
       initial: TimeOfDay.fromDateTime(vm.scheduledAt),
+      isAvailable: (slot) =>
+          vm.isStartAvailable(ScheduleField.withTime(vm.scheduledAt, slot)),
     );
     if (picked != null) {
       vm.setScheduledAt(ScheduleField.withTime(vm.scheduledAt, picked));
@@ -255,7 +258,9 @@ class OneWayDetailsScreen extends ConsumerWidget {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: Text(
-                                'Choose your car to continue.',
+                                vm.car == null
+                                    ? 'Choose your car to continue.'
+                                    : tooSoonHint,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,

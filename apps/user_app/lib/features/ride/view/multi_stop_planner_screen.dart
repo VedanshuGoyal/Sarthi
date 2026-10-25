@@ -4,6 +4,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../domain/multi_stop_trip.dart';
 import '../domain/pickup_location.dart';
+import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/multi_stop_planner_view_model.dart';
 import 'pickup_location_screen.dart';
@@ -66,10 +67,17 @@ class _MultiStopPlannerScreenState
     return picked == null ? null : ScheduleField.withDate(current, picked);
   }
 
-  Future<DateTime?> _pickTime(DateTime current) async {
+  /// [isAvailable] greys out the times it rejects (too-soon trip starts).
+  Future<DateTime?> _pickTime(
+    DateTime current, {
+    bool Function(DateTime when)? isAvailable,
+  }) async {
     final picked = await showTimeSlotPicker(
       context,
       initial: TimeOfDay.fromDateTime(current),
+      isAvailable: isAvailable == null
+          ? null
+          : (slot) => isAvailable(ScheduleField.withTime(current, slot)),
     );
     return picked == null ? null : ScheduleField.withTime(current, picked);
   }
@@ -80,7 +88,10 @@ class _MultiStopPlannerScreenState
   }
 
   Future<void> _pickStartTime(MultiStopPlannerViewModel vm) async {
-    final when = await _pickTime(vm.scheduledAt);
+    final when = await _pickTime(
+      vm.scheduledAt,
+      isAvailable: vm.isStartAvailable,
+    );
     if (when != null) vm.setScheduledAt(when);
   }
 
@@ -246,6 +257,8 @@ class _MultiStopPlannerScreenState
           '$count ${count == 1 ? 'stop' : 'stops'} · wraps up by '
           '${l10n.formatMediumDate(endsAt)}, '
           '${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(endsAt))}';
+    } else if (vm.isTooSoon) {
+      text = tooSoonHint;
     } else {
       text =
           'Give every stop a location, a task, and a leave-by time to '

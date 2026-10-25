@@ -50,6 +50,9 @@ const (
 	RideStatusInProgress RideStatus = "in_progress" // rider on board
 	RideStatusCompleted  RideStatus = "completed"   // finished, fare settled
 	RideStatusCancelled  RideStatus = "cancelled"   // aborted by either party
+	// RideStatusExpired is reported, never stored: a requested ride no driver
+	// took before it closed to drivers.
+	RideStatusExpired RideStatus = "expired"
 )
 
 // Location is a geographic point reported by a device, with the bearing the

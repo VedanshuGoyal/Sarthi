@@ -18,15 +18,27 @@ import '../domain/scheduling.dart' as scheduling;
 class OneWayDetailsViewModel extends ChangeNotifier {
   /// [route] is the start/destination pair from the previous steps. The
   /// `initial*` seams let previews and tests start in a given state without
-  /// tapping through the UI; production starts with the defaults.
+  /// tapping through the UI; production starts with the defaults. [clock] is
+  /// the "now" the too-soon checks use (a seam for tests).
   OneWayDetailsViewModel({
     required this.route,
     DateTime? initialScheduledAt,
     Car? initialCar,
-  }) : _scheduledAt = initialScheduledAt ?? scheduling.defaultScheduledAt(),
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now,
+       _scheduledAt =
+           initialScheduledAt ?? scheduling.defaultScheduledAt(clock?.call()),
        _car = initialCar;
 
   final OneWayRoute route;
+  final DateTime Function() _clock;
+
+  /// Whether the chosen start is too soon for a driver to accept in time.
+  bool get isTooSoon => scheduling.isTooSoonToBook(_scheduledAt, _clock());
+
+  /// Whether the time picker may offer [start] (see `earliestStart`).
+  bool isStartAvailable(DateTime start) =>
+      !start.isBefore(scheduling.earliestStart(_clock()));
 
   PickupLocation get start => route.start;
   PickupLocation get destination => route.destination;
@@ -53,8 +65,9 @@ class OneWayDetailsViewModel extends ChangeNotifier {
   }
 
   /// True once every required choice is made — gates the CTA. The start time
-  /// always has a value, so only a car must be chosen.
-  bool get canContinue => _car != null;
+  /// always has a value, so a car must be chosen and the start must not be
+  /// too soon.
+  bool get canContinue => _car != null && !isTooSoon;
 
   /// The choices to hand to the review step, or null until [canContinue].
   OneWayDraft? get draft => canContinue

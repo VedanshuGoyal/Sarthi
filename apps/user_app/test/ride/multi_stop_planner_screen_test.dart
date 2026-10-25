@@ -46,6 +46,8 @@ Future<void> _pump(
             start: start,
             initialScheduledAt: _nineAm,
             initialStops: stops,
+            // Early that morning, so the 9am start is bookable.
+            clock: () => DateTime(2026, 7, 18, 7),
           ),
         ),
       ],
@@ -81,7 +83,10 @@ void main() {
   ) async {
     await _pump(tester);
 
-    expect(find.text('Connaught Place, New Delhi'), findsOneWidget); // start echo
+    expect(
+      find.text('Connaught Place, New Delhi'),
+      findsOneWidget,
+    ); // start echo
     expect(find.text('Stop 1'), findsOneWidget);
     expect(find.text('Choose location'), findsOneWidget);
     expect(find.text('Select date'), findsOneWidget); // no leave-by yet

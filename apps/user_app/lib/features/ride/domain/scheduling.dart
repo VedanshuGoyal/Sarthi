@@ -18,6 +18,38 @@ DateTime snapToQuarterHour(DateTime when) {
   ).add(Duration(minutes: steps * scheduleIntervalMinutes));
 }
 
+/// How long before its start an unassigned booking stops taking drivers. One
+/// nobody took by then is shown as "No driver found". Mirrors the server's
+/// `acceptCutoff`.
+const Duration driverAcceptCutoff = Duration(minutes: 30);
+
+/// How far ahead a trip must be booked: the cutoff plus a quarter hour for a
+/// driver to accept. Mirrors the server's `minBookingLead`.
+const Duration minBookingLead = Duration(minutes: 45);
+
+/// The earliest start a customer can pick at [now]: [minBookingLead] ahead,
+/// rounded up to the next quarter hour.
+DateTime earliestStart([DateTime? now]) {
+  final soonest = (now ?? DateTime.now()).add(minBookingLead);
+  final snapped = snapToQuarterHour(soonest);
+  return snapped.isBefore(soonest)
+      ? snapped.add(const Duration(minutes: scheduleIntervalMinutes))
+      : snapped;
+}
+
+/// What the booking forms say when the chosen start is too soon.
+const String tooSoonHint =
+    'Pick a start at least 45 minutes from now, so a driver can accept it.';
+
+/// Minutes forgiven for time spent on the form after picking the earliest
+/// slot. Mirrors the server's `bookingLeadSlack`.
+const Duration bookingLeadSlack = Duration(minutes: 5);
+
+/// Whether [scheduledAt] is too soon to book at [now] — the gate on confirming
+/// (see [earliestStart] for what the picker offers).
+bool isTooSoonToBook(DateTime scheduledAt, [DateTime? now]) => scheduledAt
+    .isBefore((now ?? DateTime.now()).add(minBookingLead - bookingLeadSlack));
+
 /// The pre-filled start time for a new booking: one hour from [now], rounded to
 /// the nearest quarter hour (seconds/millis dropped). A sensible "soon, but not
 /// right now" default the customer can nudge. [now] is a seam for tests.

@@ -50,18 +50,31 @@ class StopDraft {
 class MultiStopPlannerViewModel extends ChangeNotifier {
   /// [start] is the confirmed starting point from the previous step. The
   /// `initial*` seams let previews and tests start in a given state without
-  /// tapping through the UI; production begins with one blank stop.
+  /// tapping through the UI; production begins with one blank stop. [clock]
+  /// is the "now" the too-soon checks use (a seam for tests).
   MultiStopPlannerViewModel({
     required this.start,
     DateTime? initialScheduledAt,
     List<StopDraft>? initialStops,
-  }) : _scheduledAt = initialScheduledAt ?? scheduling.defaultScheduledAt(),
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now,
+       _scheduledAt =
+           initialScheduledAt ?? scheduling.defaultScheduledAt(clock?.call()),
        _stops = [...?initialStops] {
     if (_stops.isEmpty) _stops.add(const StopDraft(id: 0));
     _nextId = _stops.map((s) => s.id).reduce((a, b) => a > b ? a : b) + 1;
   }
 
   final PickupLocation start;
+  final DateTime Function() _clock;
+
+  /// Whether the chosen start is too soon for a driver to accept in time.
+  bool get isTooSoon => scheduling.isTooSoonToBook(_scheduledAt, _clock());
+
+  /// Whether the time picker may offer [when] as the trip start (see
+  /// `earliestStart`).
+  bool isStartAvailable(DateTime when) =>
+      !when.isBefore(scheduling.earliestStart(_clock()));
 
   /// A plan needs at least one errand, and stays a day plan — not a route
   /// sheet — by capping how many stops one driver is handed.
@@ -178,10 +191,12 @@ class MultiStopPlannerViewModel extends ChangeNotifier {
     return last;
   }
 
-  /// True once every stop is complete and the timeline runs forward — gates
-  /// the CTA.
+  /// True once every stop is complete, the timeline runs forward and the start
+  /// isn't too soon — gates the CTA.
   bool get canConfirm =>
-      _stops.every((stop) => stop.isComplete) && _timeErrors.isEmpty;
+      !isTooSoon &&
+      _stops.every((stop) => stop.isComplete) &&
+      _timeErrors.isEmpty;
 
   /// The assembled trip, or null until [canConfirm].
   MultiStopTrip? get trip => canConfirm

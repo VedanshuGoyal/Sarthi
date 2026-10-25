@@ -16,6 +16,7 @@ class FakeLocationRepository extends LocationRepository {
     this.currentError,
     this.reverseError,
     this.recents = const [],
+    this.lastKnown,
   }) : super(tokenProvider: _noToken);
 
   static Future<String> _noToken() async => 'fake-token';
@@ -44,6 +45,12 @@ class FakeLocationRepository extends LocationRepository {
 
   /// What [recentPickups] returns and what [rememberPickup] prepends to.
   List<PickupLocation> recents;
+
+  /// What [lastKnownHere] returns — a spot "remembered" from earlier.
+  PickupLocation? lastKnown;
+
+  @override
+  PickupLocation? get lastKnownHere => lastKnown;
 
   /// Every query string passed to [autocomplete], in order.
   final List<String> queries = [];

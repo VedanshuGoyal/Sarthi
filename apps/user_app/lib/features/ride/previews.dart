@@ -35,6 +35,7 @@ import 'view_model/one_way_review_view_model.dart';
 import 'view_model/pickup_selection_view_model.dart';
 import 'view_model/saved_cars_view_model.dart';
 import 'view_model/trip_selection_view_model.dart';
+import 'view_model/trip_start_view_model.dart';
 
 /// Shared Sarthi theme applied to every ride-flow preview.
 PreviewThemeData ridePreviewTheme() => PreviewThemeData(
@@ -312,16 +313,21 @@ Widget _booking({
   return ProviderScope(
     overrides: [
       _savedCars(cars: cars),
+      tripStartViewModelProvider.overrideWith(
+        (ref) => TripStartViewModel(
+          repository: _PreviewLocationRepository(),
+          initialStart: _bookingPickup,
+        ),
+      ),
       bookingDetailsViewModelProvider.overrideWith(
-        (ref, pickup) => BookingDetailsViewModel(
-          pickup: pickup,
+        (ref) => BookingDetailsViewModel(
           initialHours: hours,
           initialScheduledAt: scheduledAt,
           initialCar: car,
         ),
       ),
     ],
-    child: const BookingDetailsScreen(pickup: _bookingPickup),
+    child: const BookingDetailsScreen(),
   );
 }
 

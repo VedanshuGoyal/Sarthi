@@ -7,6 +7,10 @@ import '../domain/service_area.dart';
 /// Owns the "From" half of the One-Way route step: the starting point, filled
 /// from GPS on open so the customer only has to type a destination.
 ///
+/// After the first fix of the session the row opens already filled with that
+/// spot ([LocationRepository.lastKnownHere]) and a fresh fix replaces it
+/// quietly — no "Finding your location…" on every visit.
+///
 /// A failed or out-of-area fix isn't an error screen — [start] stays null and
 /// the view asks the customer to choose a starting point instead. Talks only
 /// to [LocationRepository], per the MVVM guideline.
@@ -14,7 +18,14 @@ class TripStartViewModel extends ChangeNotifier {
   /// [initialStart] is a seam for previews/tests to render a filled row
   /// without a GPS round-trip; [locate] is then a no-op.
   TripStartViewModel({required this._repository, PickupLocation? initialStart})
-    : _start = initialStart;
+    : _start = initialStart {
+    final last = _repository.lastKnownHere;
+    if (_start == null && last != null && ServiceArea.contains(last.point)) {
+      _start = last;
+      _isCurrentLocation = true;
+      _needsRefresh = true;
+    }
+  }
 
   final LocationRepository _repository;
   bool _disposed = false;
@@ -39,11 +50,44 @@ class TripStartViewModel extends ChangeNotifier {
 
   Future<PickupLocation?>? _locating;
 
+  /// Whether [start] is the remembered spot, still to be confirmed by a
+  /// fresh fix.
+  bool _needsRefresh = false;
+
   /// Fills [start] from the device location. Safe to call repeatedly: a fix
-  /// already in flight is shared, and a start already set is kept.
+  /// already in flight is shared, and a start already set is kept. A
+  /// remembered start is refreshed in the background; the returned future
+  /// waits for that, so a route never leaves with a stale spot.
   Future<PickupLocation?> locate() {
-    if (_start != null) return Future.value(_start);
-    return _locating ??= _locate();
+    if (_start == null) return _locating ??= _locate();
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      _locating = _refresh();
+    }
+    return _locating ?? Future.value(_start);
+  }
+
+  /// Re-reads the device location behind a remembered start, without the
+  /// locating state. A failed fix keeps the remembered spot.
+  Future<PickupLocation?> _refresh() async {
+    try {
+      final here = await _repository.currentLocation();
+      // A manual pick may have landed meanwhile — it wins.
+      if (!_isCurrentLocation) return _start;
+      if (ServiceArea.contains(here.point)) {
+        _start = here;
+      } else {
+        _start = null;
+        _isCurrentLocation = false;
+        _error = ServiceArea.outsideMessage;
+      }
+    } on LocationException {
+      // Keep the remembered spot.
+    } finally {
+      _locating = null;
+      _notify();
+    }
+    return _start;
   }
 
   Future<PickupLocation?> _locate() async {

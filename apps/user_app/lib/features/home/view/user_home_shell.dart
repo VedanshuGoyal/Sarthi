@@ -11,13 +11,13 @@ import '../../ride/view/activity_panel.dart';
 import '../../ride/view_model/my_bookings_view_model.dart';
 import 'home_screen.dart';
 
-/// The signed-in customer's app: three tabs — Home (book a driver, see the
-/// rides underway), Activity (upcoming and completed rides) and Account.
+/// The signed-in customer's app: three tabs — Home (book a driver),
+/// Activity (upcoming and completed rides) and Account.
 ///
 /// Phones get a bottom navigation bar; wide screens (tablets, the web build)
 /// a navigation rail, per the responsive-layout guideline. Tabs sit in an
 /// [IndexedStack] so switching keeps each one's scroll position. The shell
-/// owns the bookings refresh, so Home's "Your rides" and Activity stay current
+/// owns the bookings refresh, so Activity and its badge stay current
 /// whichever tab is open.
 class UserHomeShell extends ConsumerStatefulWidget {
   const UserHomeShell({super.key, required this.user});

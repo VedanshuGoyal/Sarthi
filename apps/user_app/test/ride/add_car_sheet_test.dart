@@ -11,6 +11,9 @@ import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/booking_details_screen.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
+import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
+
+import '../support/fake_location_repository.dart';
 
 const _pickup = PickupLocation(
   address: 'Connaught Place, New Delhi',
@@ -60,8 +63,14 @@ Future<void> _pump(WidgetTester tester, _FakeCarsRepository repo) {
         savedCarsViewModelProvider.overrideWith(
           (ref) => SavedCarsViewModel(repository: repo),
         ),
+        tripStartViewModelProvider.overrideWith(
+          (ref) => TripStartViewModel(
+            repository: FakeLocationRepository(),
+            initialStart: _pickup,
+          ),
+        ),
       ],
-      child: const MaterialApp(home: BookingDetailsScreen(pickup: _pickup)),
+      child: const MaterialApp(home: BookingDetailsScreen()),
     ),
   );
 }

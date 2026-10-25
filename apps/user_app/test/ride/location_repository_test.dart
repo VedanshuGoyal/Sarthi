@@ -321,6 +321,43 @@ void main() {
       check(pickup.address).equals('Home, New Delhi');
     });
 
+    test('remembers the spot and skips the lookup when still there', () async {
+      var lookups = 0;
+      var position = const GeoPoint(latitude: 28.6139, longitude: 77.2090);
+      final repo = LocationRepository(
+        client: MockClient((_) async {
+          lookups++;
+          return http.Response(
+            jsonEncode({
+              'results': [
+                {'formatted_address': 'Spot $lookups'},
+              ],
+            }),
+            200,
+          );
+        }),
+        tokenProvider: () async => 'test-token',
+        baseUrl: 'https://maps.test',
+        positionFetcher: () async => position,
+      );
+      check(repo.lastKnownHere).isNull();
+
+      check((await repo.currentLocation()).address).equals('Spot 1');
+      check(
+        repo.lastKnownHere,
+      ).isNotNull().has((p) => p.address, 'address').equals('Spot 1');
+
+      // ~20 m away: same address, no second lookup.
+      position = const GeoPoint(latitude: 28.6141, longitude: 77.2090);
+      check((await repo.currentLocation()).address).equals('Spot 1');
+      check(lookups).equals(1);
+
+      // ~500 m away: looked up again.
+      position = const GeoPoint(latitude: 28.6184, longitude: 77.2090);
+      check((await repo.currentLocation()).address).equals('Spot 2');
+      check(repo.lastKnownHere!.address).equals('Spot 2');
+    });
+
     test('propagates a permission failure from the fetcher', () async {
       final repo = LocationRepository(
         tokenProvider: () async => 'test-token',
