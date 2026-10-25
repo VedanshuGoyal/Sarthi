@@ -6,7 +6,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'core/brand/mojud_brand.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
-import 'features/home/view/home_screen.dart';
+import 'features/home/view/user_home_shell.dart';
 import 'features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
     show RideSurfaces;
 import 'features/splash/view/splash_screen.dart';
@@ -56,7 +56,7 @@ class _AppRoot extends ConsumerWidget {
       // A storage read failure just means "not logged in" — start onboarding.
       error: (_, __) => const RegistrationScreen(),
       data: (session) => session != null
-          ? HomeScreen(user: session.user)
+          ? UserHomeShell(user: session.user)
           : const RegistrationScreen(),
     );
   }

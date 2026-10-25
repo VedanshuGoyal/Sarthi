@@ -5,10 +5,11 @@ import 'package:flutter/foundation.dart';
 import '../data/booking_repository.dart';
 import '../domain/my_booking.dart';
 
-/// The customer's bookings for the home screen's "Your rides" section: who
-/// is driving, where they are in the trip, and the start code to share.
+/// The customer's bookings, for the home screen's "Your rides" section and
+/// the Activity tab: who is driving, where they are in the trip, the start
+/// code to share, and the finished trips.
 ///
-/// There is no push channel yet, so while a screen shows the section it
+/// There is no push channel yet, so while the signed-in shell is up it
 /// refreshes every [pollEvery] — often enough that "Driver assigned" and the
 /// start code appear without the customer pulling to refresh.
 class MyBookingsViewModel extends ChangeNotifier {
@@ -22,6 +23,7 @@ class MyBookingsViewModel extends ChangeNotifier {
 
   List<MyBooking> _bookings = const [];
   bool _isLoading = false;
+  bool _hasLoaded = false;
   String? _error;
   Timer? _timer;
   bool _disposed = false;
@@ -31,7 +33,16 @@ class MyBookingsViewModel extends ChangeNotifier {
       _bookings.where((b) => b.status.isActive).toList()
         ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
+  /// Finished bookings — completed or cancelled — latest first.
+  List<MyBooking> get past =>
+      _bookings.where((b) => !b.status.isActive).toList()
+        ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+
   bool get isLoading => _isLoading;
+
+  /// Whether a load has finished at least once — until then an empty list
+  /// means "not fetched yet", not "no rides".
+  bool get hasLoaded => _hasLoaded;
 
   /// The last load failure, safe to show.
   String? get error => _error;
@@ -47,6 +58,7 @@ class MyBookingsViewModel extends ChangeNotifier {
       _error = e.message;
     } finally {
       _isLoading = false;
+      _hasLoaded = true;
       _notify();
     }
   }

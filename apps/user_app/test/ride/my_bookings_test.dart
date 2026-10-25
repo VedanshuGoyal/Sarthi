@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:checks/checks.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -9,6 +10,8 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/ride/data/booking_repository.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/trip_type.dart';
+import 'package:user_app/features/ride/ride_providers.dart';
+import 'package:user_app/features/ride/view/activity_panel.dart';
 import 'package:user_app/features/ride/view/widgets/my_rides_section.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 
@@ -90,6 +93,30 @@ void main() {
     check(vm.active.map((b) => b.id)).deepEquals(['soon', 'later']);
   });
 
+  test('past holds finished and cancelled rides, latest first', () async {
+    final vm = MyBookingsViewModel(
+      repository: _repo({
+        'bookings': [
+          _booking(
+            id: 'old',
+            status: 'completed',
+            scheduledAt: '2026-10-20T09:00:00+05:30',
+          ),
+          _booking(id: 'open', status: 'requested'),
+          _booking(
+            id: 'new',
+            status: 'cancelled',
+            scheduledAt: '2026-10-24T09:00:00+05:30',
+          ),
+        ],
+      }),
+    );
+    check(vm.hasLoaded).isFalse();
+    await vm.load();
+    check(vm.hasLoaded).isTrue();
+    check(vm.past.map((b) => b.id)).deepEquals(['new', 'old']);
+  });
+
   Future<void> pumpCard(WidgetTester tester, MyBooking booking) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -124,5 +151,51 @@ void main() {
       find.textContaining('as soon as one accepts').evaluate(),
     ).isNotEmpty();
     check(find.text('Start code').evaluate()).isEmpty();
+  });
+
+  testWidgets('a completed ride shows who drove and the fare', (tester) async {
+    await pumpCard(
+      tester,
+      MyBooking.tryParse(
+        _booking(id: 'a', status: 'completed', withDriver: true),
+      )!,
+    );
+    check(find.text('Completed').evaluate()).isNotEmpty();
+    check(find.text('Driven by Ravi Kumar').evaluate()).isNotEmpty();
+    check(find.text('≈ ₹196').evaluate()).isNotEmpty();
+    check(find.byTooltip('Call driver').evaluate()).isEmpty();
+  });
+
+  testWidgets('Activity splits rides into Upcoming and Completed', (
+    tester,
+  ) async {
+    final vm = MyBookingsViewModel(
+      repository: _repo({
+        'bookings': [
+          _booking(id: 'a', status: 'accepted', withDriver: true, otp: '4821'),
+          _booking(id: 'b', status: 'completed', withDriver: true),
+          _booking(id: 'c', status: 'cancelled'),
+        ],
+      }),
+    );
+    await vm.load();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [myBookingsViewModelProvider.overrideWith((ref) => vm)],
+        child: MaterialApp(
+          theme: SkylineTheme.light(),
+          home: const ActivityPanel(),
+        ),
+      ),
+    );
+
+    check(find.text('Upcoming · 1').evaluate()).isNotEmpty();
+    check(find.text('Completed · 2').evaluate()).isNotEmpty();
+    check(find.text('4 8 2 1').evaluate()).isNotEmpty();
+
+    await tester.tap(find.text('Completed · 2'));
+    await tester.pumpAndSettle();
+    check(find.text('Driven by Ravi Kumar').evaluate()).isNotEmpty();
+    check(find.text('Cancelled').evaluate()).isNotEmpty();
   });
 }

@@ -12,34 +12,13 @@ import '../../view_model/my_bookings_view_model.dart';
 /// status, the driver once one accepts, and the start code to give them.
 ///
 /// Renders nothing while the customer has no active bookings, so a new
-/// customer's home stays about booking. While on screen it keeps the list
+/// customer's home stays about booking. The signed-in shell keeps the list
 /// fresh (see [MyBookingsViewModel.startPolling]).
-class MyRidesSection extends ConsumerStatefulWidget {
+class MyRidesSection extends ConsumerWidget {
   const MyRidesSection({super.key});
 
   @override
-  ConsumerState<MyRidesSection> createState() => _MyRidesSectionState();
-}
-
-class _MyRidesSectionState extends ConsumerState<MyRidesSection> {
-  late final MyBookingsViewModel _vm;
-
-  @override
-  void initState() {
-    super.initState();
-    _vm = ref.read(myBookingsViewModelProvider);
-    // Deferred: providers can't notify during a build.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _vm.startPolling());
-  }
-
-  @override
-  void dispose() {
-    _vm.stopPolling();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final active = ref.watch(myBookingsViewModelProvider).active;
     if (active.isEmpty) return const SizedBox.shrink();
     final t = SkylineTokens.of(context);
@@ -58,8 +37,9 @@ class _MyRidesSectionState extends ConsumerState<MyRidesSection> {
   }
 }
 
-/// One active booking. Renders data only; the call button hands off to the
-/// phone's dialer.
+/// One booking. While it's active: the driver (with a call button that hands
+/// off to the phone's dialer) and the start code; once it's completed: who
+/// drove and the fare. Renders data only.
 class MyRideCard extends StatelessWidget {
   const MyRideCard({super.key, required this.booking});
 
@@ -86,6 +66,7 @@ class MyRideCard extends StatelessWidget {
       at.day,
     ).difference(DateTime(now.year, now.month, now.day)).inDays;
     final day = switch (days) {
+      -1 => 'Yesterday',
       0 => 'Today',
       1 => 'Tomorrow',
       _ => l10n.formatMediumDate(at),
@@ -145,8 +126,17 @@ class MyRideCard extends StatelessWidget {
               '${b.stopCount} ${b.stopCount == 1 ? 'stop' : 'stops'}',
               style: t.body(size: 13),
             ),
-          const SizedBox(height: Skyline.s12),
-          if (waitingForDriver)
+          // A cancelled booking ends at its route; nothing more to show.
+          if (b.status != BookingStatus.cancelled)
+            const SizedBox(height: Skyline.s12),
+          if (b.status == BookingStatus.completed)
+            _CompletedRow(
+              driverName: b.driverName,
+              fare: b.fareEstimated ? '≈ ₹${b.fareRupees}' : '₹${b.fareRupees}',
+            )
+          else if (b.status == BookingStatus.cancelled)
+            const SizedBox.shrink()
+          else if (waitingForDriver)
             Row(
               children: [
                 SizedBox.square(
@@ -187,16 +177,19 @@ class _StatusPill extends StatelessWidget {
     final t = SkylineTokens.of(context);
     final strong =
         status == BookingStatus.arrived || status == BookingStatus.inProgress;
+    final (fill, ink) = switch (status) {
+      _ when strong => (t.primary, t.onPrimary),
+      BookingStatus.completed => (t.sunken, t.success),
+      BookingStatus.cancelled => (t.sunken, t.inkMuted),
+      _ => (t.primarySoft, t.primaryText),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: strong ? t.primary : t.primarySoft,
+        color: fill,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        status.label,
-        style: t.label(size: 12, color: strong ? t.onPrimary : t.primaryText),
-      ),
+      child: Text(status.label, style: t.label(size: 12, color: ink)),
     );
   }
 }
@@ -240,6 +233,33 @@ class _DriverRow extends StatelessWidget {
             onPressed: () => launchUrl(Uri(scheme: 'tel', path: phone)),
             icon: const Icon(Icons.call_rounded, size: 20),
           ),
+      ],
+    );
+  }
+}
+
+/// A completed trip's footer: who drove, and what it cost.
+class _CompletedRow extends StatelessWidget {
+  const _CompletedRow({required this.driverName, required this.fare});
+
+  final String? driverName;
+  final String fare;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            driverName == null ? 'Trip completed' : 'Driven by $driverName',
+            style: t.body(size: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: Skyline.s12),
+        Text(fare, style: t.title(15)),
       ],
     );
   }

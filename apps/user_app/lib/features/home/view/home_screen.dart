@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/brand/mojud_logo.dart';
-import '../../auth/auth_controller.dart';
-import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
-import '../../profile/view/profile_screen.dart';
 import '../../profile/view/widgets/user_avatar.dart';
 import '../../ride/data/booking_repository.dart';
 import '../../ride/domain/multi_stop_trip.dart';
@@ -24,7 +21,7 @@ import '../../ride/view/widgets/my_rides_section.dart';
 import '../../ride/view/widgets/ride_theme.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
-/// Landing screen shown after a customer finishes registering.
+/// The Home tab of [UserHomeShell], shown after a customer signs in.
 ///
 /// Greets the user, shows any unfinished bookings ([MyRidesSection] — with
 /// the driver and start code once one accepts), then hosts the
@@ -33,40 +30,13 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 /// width-capped on large screens and scrolls on short ones, per the
 /// responsive-layout guideline.
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key, required this.user});
+  const HomeScreen({super.key, required this.user, this.onOpenAccount});
 
   final AuthUser user;
 
-  /// Revokes the session on the server (best-effort), then wipes it from memory
-  /// and secure storage — returning the app to onboarding.
-  Future<void> _logout(WidgetRef ref) async {
-    final auth = ref.read(authControllerProvider.notifier);
-    final token = auth.token;
-    if (token != null) {
-      try {
-        await ref.read(authRepositoryProvider).logout(token);
-      } catch (_) {
-        // Already clearing locally; a failed server revoke shouldn't block it.
-      }
-    }
-    await auth.signOut();
-  }
-
-  /// Opens the account page. Logging out from it pops back here first, so the
-  /// root swap to onboarding isn't hidden under a stale profile route.
-  void _openProfile(BuildContext context, WidgetRef ref) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ProfileScreen(
-          user: user,
-          onLogout: () {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-            _logout(ref);
-          },
-        ),
-      ),
-    );
-  }
+  /// Invoked when the customer taps their avatar — the shell switches to the
+  /// Account tab. When null the avatar is display-only.
+  final VoidCallback? onOpenAccount;
 
   /// Sends the confirmed booking to the backend right away so the server has
   /// its details on record. Returns whether the server acknowledged it; a
@@ -217,7 +187,7 @@ class HomeScreen extends ConsumerWidget {
               child: IconButton(
                 icon: UserAvatar(name: user.name, radius: 17),
                 tooltip: 'Your profile',
-                onPressed: () => _openProfile(context, ref),
+                onPressed: onOpenAccount,
               ),
             ),
           ],
