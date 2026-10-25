@@ -64,6 +64,13 @@ func NewRouter(
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 	mux.HandleFunc("GET /me/bookings", requireAuth(sessions, bk.List))
 
+	// Before the trip starts the customer can cancel it; once it's done they
+	// rate the driver; while the driver is on the way (or driving) they can
+	// see where the driver is.
+	mux.HandleFunc("POST /me/bookings/{id}/cancel", requireAuth(sessions, bk.Cancel))
+	mux.HandleFunc("POST /me/bookings/{id}/rating", requireAuth(sessions, bk.Rate))
+	mux.HandleFunc("GET /me/bookings/{id}/driver-location", requireAuth(sessions, bk.DriverLocation))
+
 	// This install's push token, for "driver assigned" notifications.
 	mux.HandleFunc("PUT /me/push-token", requireAuth(sessions, pt.SaveUser))
 	mux.HandleFunc("DELETE /me/push-token", requireAuth(sessions, pt.ForgetUser))
@@ -93,13 +100,18 @@ func NewRouter(
 	mux.HandleFunc("GET /driver/kyc/documents/{kind}/content", requireAuth(driverSessions, dk.DocumentContent))
 
 	// Driver ride panels: open requests near the driver, their own rides,
-	// the accept → arrive → start → complete steps, earnings, and the
-	// online/offline switch. Scoped to the session's driver like KYC.
+	// the accept → arrive → start → complete steps (and rating the customer
+	// after), earnings, and the online/offline switch. Scoped to the
+	// session's driver like KYC.
 	mux.HandleFunc("GET /driver/rides/requests", requireAuth(driverSessions, dr.Requests))
 	mux.HandleFunc("GET /driver/rides", requireAuth(driverSessions, dr.Mine))
 	mux.HandleFunc("POST /driver/rides/{id}/{action}", requireAuth(driverSessions, dr.Act))
 	mux.HandleFunc("GET /driver/earnings", requireAuth(driverSessions, dr.Earnings))
 	mux.HandleFunc("PUT /driver/duty", requireAuth(driverSessions, dr.SetDuty))
+
+	// The driver's position while on a ride, for the customer's live map.
+	// Separate from duty: sharing it doesn't put the driver online.
+	mux.HandleFunc("PUT /driver/location", requireAuth(driverSessions, dr.ShareLocation))
 
 	// This install's push token, for "new ride request" notifications.
 	mux.HandleFunc("PUT /driver/push-token", requireAuth(driverSessions, pt.SaveDriver))

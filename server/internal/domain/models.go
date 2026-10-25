@@ -64,6 +64,16 @@ type Location struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// LiveLocation is the latest position a driver's app shared while on the way
+// to, or driving, a customer — what the customer's map shows. Heading is the
+// bearing in degrees clockwise from North, when the device reported one.
+type LiveLocation struct {
+	Lat       float64   `json:"lat"`
+	Lng       float64   `json:"lng"`
+	Heading   *float64  `json:"heading,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // Driver is a registered driver together with their live state. The persistent
 // fields (ID, PhoneE164, Name, Vehicle, CreatedAt) come from PostgreSQL; Status
 // and Location are the real-time fields held in memstore and never trusted from
@@ -250,6 +260,14 @@ type Booking struct {
 	ArrivedAt     *time.Time     `json:"arrivedAt,omitempty"`
 	StartedAt     *time.Time     `json:"startedAt,omitempty"`
 	CompletedAt   *time.Time     `json:"completedAt,omitempty"`
+	CancelledAt   *time.Time     `json:"cancelledAt,omitempty"`
+	CancelledBy   string         `json:"cancelledBy,omitempty"`
+	CancelReason  string         `json:"cancelReason,omitempty"`
+
+	// DriverRating is what the customer gave the driver, CustomerRating what
+	// the driver gave the customer — each set once, after completion.
+	DriverRating   *RideRating `json:"driverRating,omitempty"`
+	CustomerRating *RideRating `json:"customerRating,omitempty"`
 
 	// StartOTP is the code the driver must enter to start the ride, issued on
 	// accept. Never serialised from here: only the customer's own bookings
@@ -257,11 +275,30 @@ type Booking struct {
 	StartOTP string `json:"-"`
 }
 
+// CancelledByCustomer is the cancelled_by of a ride the customer cancelled.
+const CancelledByCustomer = "customer"
+
+// RideRating is the stars (1–5) one side of a completed ride gave the other,
+// with an optional note.
+type RideRating struct {
+	Stars int    `json:"stars"`
+	Note  string `json:"note,omitempty"`
+}
+
+// RatingSummary is someone's mean rating over the rides they were rated on.
+type RatingSummary struct {
+	Average float64 `json:"average"`
+	Count   int     `json:"count"`
+}
+
 // RideCustomer is who a driver is driving for. Only revealed to the driver a
-// ride is assigned to.
+// ride is assigned to. Rating is the customer's average from drivers, nil
+// until they have one.
 type RideCustomer struct {
-	Name      string `json:"name"`
-	PhoneE164 string `json:"phoneE164"`
+	Name        string   `json:"name"`
+	PhoneE164   string   `json:"phoneE164"`
+	Rating      *float64 `json:"rating,omitempty"`
+	RatingCount int      `json:"ratingCount"`
 }
 
 // RideBooking is a booking together with the customer who made it, as the
@@ -271,10 +308,13 @@ type RideBooking struct {
 	Customer RideCustomer
 }
 
-// RideDriver is the driver assigned to a customer's booking.
+// RideDriver is the driver assigned to a customer's booking. Rating is the
+// driver's average from customers, nil until they have one.
 type RideDriver struct {
-	Name      string `json:"name"`
-	PhoneE164 string `json:"phoneE164"`
+	Name        string   `json:"name"`
+	PhoneE164   string   `json:"phoneE164"`
+	Rating      *float64 `json:"rating,omitempty"`
+	RatingCount int      `json:"ratingCount"`
 }
 
 // UserBooking is a booking together with its assigned driver (nil until one
@@ -286,22 +326,34 @@ type UserBooking struct {
 
 // CustomerBooking is a booking as the customer app shows it: what was booked,
 // where it stands, who is driving, and — while the driver is on the way or
-// waiting at the pickup — the code to give them to start the trip.
+// waiting at the pickup — the code to give them to start the trip. MyRating
+// is what the customer rated the driver, once they have.
 type CustomerBooking struct {
-	ID            string      `json:"id"`
-	TripType      string      `json:"tripType"`
-	Status        RideStatus  `json:"status"`
-	ScheduledAt   time.Time   `json:"scheduledAt"`
-	EndsAt        time.Time   `json:"endsAt"`
-	FarePaise     int64       `json:"farePaise"`
-	FareEstimated bool        `json:"fareEstimated"`
-	Pickup        RidePlace   `json:"pickup"`
-	Destination   *RidePlace  `json:"destination,omitempty"`
-	StopCount     int         `json:"stopCount,omitempty"`
-	Car           *RideCar    `json:"car,omitempty"`
-	Driver        *RideDriver `json:"driver,omitempty"`
-	StartOTP      string      `json:"startOtp,omitempty"`
-	CreatedAt     time.Time   `json:"createdAt"`
+	ID               string      `json:"id"`
+	TripType         string      `json:"tripType"`
+	Status           RideStatus  `json:"status"`
+	ScheduledAt      time.Time   `json:"scheduledAt"`
+	EndsAt           time.Time   `json:"endsAt"`
+	FarePaise        int64       `json:"farePaise"`
+	FareEstimated    bool        `json:"fareEstimated"`
+	Pickup           RidePlace   `json:"pickup"`
+	Destination      *RidePlace  `json:"destination,omitempty"`
+	StopCount        int         `json:"stopCount,omitempty"`
+	Stops            []RideStop  `json:"stops,omitempty"`
+	Hours            int         `json:"hours,omitempty"`
+	EstimatedMinutes int         `json:"estimatedMinutes,omitempty"`
+	Car              *RideCar    `json:"car,omitempty"`
+	Driver           *RideDriver `json:"driver,omitempty"`
+	StartOTP         string      `json:"startOtp,omitempty"`
+	CreatedAt        time.Time   `json:"createdAt"`
+	AcceptedAt       *time.Time  `json:"acceptedAt,omitempty"`
+	ArrivedAt        *time.Time  `json:"arrivedAt,omitempty"`
+	StartedAt        *time.Time  `json:"startedAt,omitempty"`
+	CompletedAt      *time.Time  `json:"completedAt,omitempty"`
+	CancelledAt      *time.Time  `json:"cancelledAt,omitempty"`
+	CancelledBy      string      `json:"cancelledBy,omitempty"`
+	CancelReason     string      `json:"cancelReason,omitempty"`
+	MyRating         *RideRating `json:"myRating,omitempty"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.
@@ -351,6 +403,12 @@ type DriverRide struct {
 	ArrivedAt        *time.Time    `json:"arrivedAt,omitempty"`
 	StartedAt        *time.Time    `json:"startedAt,omitempty"`
 	CompletedAt      *time.Time    `json:"completedAt,omitempty"`
+	CancelledAt      *time.Time    `json:"cancelledAt,omitempty"`
+	CancelledBy      string        `json:"cancelledBy,omitempty"`
+	CancelReason     string        `json:"cancelReason,omitempty"`
+
+	// MyRating is what this driver rated the customer, once they have.
+	MyRating *RideRating `json:"myRating,omitempty"`
 }
 
 // EarningsPeriod is what a driver earned over one window: the summed fares of
@@ -361,12 +419,14 @@ type EarningsPeriod struct {
 }
 
 // DriverEarnings is the earnings panel's summary. Windows are calendar
-// periods in IST: today, this week (from Monday) and this month.
+// periods in IST: today, this week (from Monday) and this month. Rating is
+// the driver's average from customers, nil until they have one.
 type DriverEarnings struct {
-	Today EarningsPeriod `json:"today"`
-	Week  EarningsPeriod `json:"week"`
-	Month EarningsPeriod `json:"month"`
-	Total EarningsPeriod `json:"total"`
+	Today  EarningsPeriod `json:"today"`
+	Week   EarningsPeriod `json:"week"`
+	Month  EarningsPeriod `json:"month"`
+	Total  EarningsPeriod `json:"total"`
+	Rating *RatingSummary `json:"rating,omitempty"`
 }
 
 // Ride is a single trip request and its full lifecycle. Completed rides are the

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -122,6 +123,18 @@ func (f *fakeRideStore) Decline(_ context.Context, id, driverID string) error {
 	return nil
 }
 
+func (f *fakeRideStore) RateCustomer(_ context.Context, id, driverID string, r domain.RideRating) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rb, ok := f.rides[id]
+	if !ok || rb.Booking.DriverID != driverID || rb.Booking.Status != domain.RideStatusCompleted ||
+		rb.Booking.CustomerRating != nil {
+		return repository.ErrRideStateConflict
+	}
+	rb.Booking.CustomerRating = &r
+	return nil
+}
+
 func (f *fakeRideStore) Earnings(context.Context, string, time.Time, time.Time, time.Time) (domain.DriverEarnings, error) {
 	return domain.DriverEarnings{}, nil
 }
@@ -175,7 +188,7 @@ func newRideService(store *fakeRideStore) *DriverRideService {
 		"auto":    {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionAutomatic},
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
-	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), nil)
+	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
 	svc.now = func() time.Time { return testNow }
 	codes := []string{"1111", "2222", "3333"}
 	svc.newCode = func() (string, error) {
@@ -400,7 +413,7 @@ func TestEarnings_istWindows(t *testing.T) {
 	store := &earningsSpy{fakeRideStore: newFakeRideStore(), capture: func(today, week, month time.Time) {
 		gotToday, gotWeek, gotMonth = today, week, month
 	}}
-	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), nil)
+	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
 	// Sunday 25 Oct 2026, 01:00 IST — still Saturday evening in UTC.
 	svc.now = func() time.Time { return time.Date(2026, 10, 24, 19, 30, 0, 0, time.UTC) }
 
@@ -534,5 +547,90 @@ func TestRideAlerts_acceptArriveRelease(t *testing.T) {
 	want := []string{"assigned u1 r1", "arrived u1 auto r1", "released u1 auto r1"}
 	if strings.Join(alerts.events, "|") != strings.Join(want, "|") {
 		t.Errorf("alerts = %q, want %q", alerts.events, want)
+	}
+}
+
+func TestRateCustomer(t *testing.T) {
+	done := openRide("done", testNow.Add(-6*time.Hour), 2, "automatic")
+	done.Booking.Status, done.Booking.DriverID = domain.RideStatusCompleted, "auto"
+	coming := openRide("coming", testNow.Add(6*time.Hour), 2, "automatic")
+	coming.Booking.Status, coming.Booking.DriverID = domain.RideStatusAccepted, "auto"
+	store := newFakeRideStore(done, coming)
+	svc := newRideService(store)
+	ctx := context.Background()
+
+	if _, err := svc.RateCustomer(ctx, "auto", "done", 9, ""); !errors.Is(err, ErrInvalidRating) {
+		t.Errorf("9 stars: err = %v, want ErrInvalidRating", err)
+	}
+	ride, err := svc.RateCustomer(ctx, "auto", "done", 3, "Kept me waiting")
+	if err != nil {
+		t.Fatalf("RateCustomer: %v", err)
+	}
+	if ride.MyRating == nil || ride.MyRating.Stars != 3 || ride.Customer == nil {
+		t.Errorf("ride = %+v, want myRating 3 and the customer", ride)
+	}
+	for _, tc := range []struct{ driver, ride string }{
+		{"auto", "done"},   // twice
+		{"auto", "coming"}, // not finished
+		{"both", "done"},   // not theirs
+	} {
+		if _, err := svc.RateCustomer(ctx, tc.driver, tc.ride, 5, ""); !errors.Is(err, ErrCannotRateRide) ||
+			!errors.Is(err, repository.ErrRideStateConflict) {
+			t.Errorf("%s rating %s: err = %v, want ErrCannotRateRide", tc.driver, tc.ride, err)
+		}
+	}
+}
+
+func TestCustomerCancelledRide_isGoneForDrivers(t *testing.T) {
+	gone := openRide("gone", testNow.Add(5*time.Hour), 2, "automatic")
+	gone.Booking.Status = domain.RideStatusCancelled
+	cancelledAt := testNow.Add(-time.Minute)
+	held := openRide("held", testNow.Add(8*time.Hour), 2, "automatic")
+	held.Booking.Status, held.Booking.DriverID = domain.RideStatusCancelled, "auto"
+	held.Booking.CancelledAt, held.Booking.CancelledBy, held.Booking.CancelReason =
+		&cancelledAt, domain.CancelledByCustomer, "Plans changed"
+	store := newFakeRideStore(gone, held)
+	svc := newRideService(store)
+	ctx := context.Background()
+
+	if feed, _ := svc.Requests(ctx, "auto", nil); len(feed) != 0 {
+		t.Errorf("feed = %d rides, want none", len(feed))
+	}
+	if _, err := svc.Accept(ctx, "auto", "gone"); !errors.Is(err, repository.ErrRideUnavailable) {
+		t.Errorf("accepting a cancelled ride: err = %v, want ErrRideUnavailable", err)
+	}
+
+	// The driver who had it sees it cancelled, with why — and it doesn't
+	// block the hours it held.
+	mine, _ := svc.MyRides(ctx, "auto")
+	if len(mine) != 1 || mine[0].Status != domain.RideStatusCancelled ||
+		mine[0].CancelReason != "Plans changed" || mine[0].CancelledBy != domain.CancelledByCustomer {
+		t.Fatalf("my rides = %+v", mine)
+	}
+	store.rides["clash"] = ptr(openRide("clash", testNow.Add(8*time.Hour), 2, "automatic"))
+	if _, err := svc.Accept(ctx, "auto", "clash"); err != nil {
+		t.Errorf("accepting over a cancelled ride's hours: %v", err)
+	}
+}
+
+func TestShareLocation(t *testing.T) {
+	store := newFakeRideStore()
+	live := memstore.NewLiveLocations()
+	svc := newRideService(store)
+	svc.live = live
+	ctx := context.Background()
+
+	for _, bad := range [][2]float64{{91, 0}, {0, 181}, {-90.5, 10}, {math.NaN(), 0}} {
+		if err := svc.ShareLocation(ctx, "auto", bad[0], bad[1], nil); !errors.Is(err, ErrInvalidLocation) {
+			t.Errorf("%v: err = %v, want ErrInvalidLocation", bad, err)
+		}
+	}
+	heading := -90.0
+	if err := svc.ShareLocation(ctx, "auto", 28.6, 77.2, &heading); err != nil {
+		t.Fatalf("ShareLocation: %v", err)
+	}
+	got, ok := live.Latest("auto")
+	if !ok || got.Lat != 28.6 || got.Heading == nil || *got.Heading != 270 || !got.UpdatedAt.Equal(testNow) {
+		t.Errorf("stored %+v, %v; want the fix at testNow, heading 270", got, ok)
 	}
 }

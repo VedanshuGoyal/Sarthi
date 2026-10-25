@@ -32,6 +32,7 @@ const (
 	pushTypeDriverAssigned = "driver_assigned"
 	pushTypeDriverArrived  = "driver_arrived"
 	pushTypeDriverReleased = "driver_released"
+	pushTypeRideCancelled  = "ride_cancelled"
 )
 
 const (
@@ -75,7 +76,9 @@ type NearbyDriverFinder interface {
 //   - a driver accepts → the customer gets "Driver assigned";
 //   - the driver marks they're at the pickup → "Your driver has arrived";
 //   - the driver hands the ride back → "Your driver cancelled", and the
-//     other nearby drivers get the request again while it's still open.
+//     other nearby drivers get the request again while it's still open;
+//   - the customer cancels a ride a driver had taken → "Ride cancelled" to
+//     that driver.
 //
 // Sends run in the background so a slow push never delays the booking or
 // accept response. Without a sender (no FCM credentials) nothing is sent,
@@ -262,6 +265,41 @@ func (s *NotifyService) DriverArrived(ctx context.Context, userID, driverID stri
 			body += "\nPickup: " + ride.Pickup.Address
 		}
 		s.tellCustomer(ctx, userID, ride.ID, pushTypeDriverArrived, "Your driver has arrived", body, 30*time.Minute)
+	})
+}
+
+// RideCancelled tells the driver who had booking b that the customer
+// cancelled it, and why if they said.
+func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, plan tripPlan) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("The customer cancelled their ride on %s (%s).",
+			formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan))
+		if b.CancelReason != "" {
+			body += "\nReason: " + b.CancelReason
+		}
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{b.DriverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", b.ID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[b.DriverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "Ride cancelled",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "ride-" + b.ID,
+				Data:    map[string]string{"type": pushTypeRideCancelled, "rideId": b.ID},
+				TTL:     max(plan.ScheduledAt.Sub(s.now()), 10*time.Minute),
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeRideCancelled, "rideId", b.ID, "devices", sent)
 	})
 }
 

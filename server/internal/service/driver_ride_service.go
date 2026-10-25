@@ -36,6 +36,11 @@ var ErrRideClash = errors.New("this ride overlaps one you've already accepted")
 // another is still underway.
 var ErrRideInProgress = errors.New("finish your current ride before starting another")
 
+// ErrCannotRateRide is returned when a driver rates a ride that isn't
+// completed, isn't theirs, or that they already rated.
+var ErrCannotRateRide = fmt.Errorf("you can rate a customer once, after the ride is completed: %w",
+	repository.ErrRideStateConflict)
+
 // ErrStartOTPIncorrect is returned when the code a driver enters to start a
 // ride doesn't match the one in the customer's app.
 var ErrStartOTPIncorrect = errors.New("that code doesn't match — ask the customer for the code in their app")
@@ -69,6 +74,7 @@ type DriverRideStore interface {
 	Advance(ctx context.Context, id, driverID string, from, to domain.RideStatus, at time.Time) (domain.RideBooking, error)
 	Release(ctx context.Context, id, driverID string) error
 	Decline(ctx context.Context, id, driverID string) error
+	RateCustomer(ctx context.Context, id, driverID string, rating domain.RideRating) error
 	Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error)
 }
 
@@ -91,6 +97,12 @@ type StartCodeGuard interface {
 	Begin(key string)
 	RecordFailure(key string) (invalidated bool)
 	Succeed(key string)
+}
+
+// LiveLocationSink keeps the positions drivers' apps share while on a ride
+// (memstore.LiveLocations).
+type LiveLocationSink interface {
+	Put(driverID string, loc domain.LiveLocation)
 }
 
 // RideAlerter tells the customer how their ride is going — a driver took
@@ -119,20 +131,23 @@ type DriverRideService struct {
 	profiles DriverProfileReader
 	presence DriverPresence
 	codes    StartCodeGuard
+	live     LiveLocationSink
 	alerts   RideAlerter
 	now      func() time.Time
 	newCode  func() (string, error)
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
-// reader, the live presence index, the start-code attempt limiter and the
-// customer alerts sent on accept, arrival and release (nil sends none).
-func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard, alerts RideAlerter) *DriverRideService {
+// reader, the live presence index, the start-code attempt limiter, the
+// positions shared for customers' live maps and the customer alerts sent on
+// accept, arrival and release (nil sends none).
+func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, presence DriverPresence, codes StartCodeGuard, live LiveLocationSink, alerts RideAlerter) *DriverRideService {
 	return &DriverRideService{
 		store:    store,
 		profiles: profiles,
 		presence: presence,
 		codes:    codes,
+		live:     live,
 		alerts:   alerts,
 		now:      time.Now,
 		newCode:  newStartOTP,
@@ -328,6 +343,42 @@ func (s *DriverRideService) Release(ctx context.Context, driverID, rideID string
 	return nil
 }
 
+// RateCustomer records the stars driverID gives the customer of their
+// completed ride, once, and returns the ride.
+func (s *DriverRideService) RateCustomer(ctx context.Context, driverID, rideID string, stars int, note string) (domain.DriverRide, error) {
+	rating, err := newRating(stars, note)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	err = s.store.RateCustomer(ctx, rideID, driverID, rating)
+	if errors.Is(err, repository.ErrRideStateConflict) {
+		return domain.DriverRide{}, ErrCannotRateRide
+	}
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	slog.InfoContext(ctx, "customer rated", "driverId", driverID, "rideId", rideID, "stars", stars)
+	rb, err := s.store.FindByID(ctx, rideID)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	ride, _, _ := toDriverRide(rb, true)
+	return ride, nil
+}
+
+// ShareLocation records where driverID is, for the live map of any customer
+// whose ride they're on the way to or driving. The app sends it only within
+// a ride's tracking window, and customers can only read it within theirs
+// (see BookingService.DriverLocation). It doesn't put the driver online.
+func (s *DriverRideService) ShareLocation(ctx context.Context, driverID string, lat, lng float64, heading *float64) error {
+	loc, err := newLiveLocation(lat, lng, heading, s.now())
+	if err != nil {
+		return err
+	}
+	s.live.Put(driverID, loc)
+	return nil
+}
+
 // Earnings sums driverID's completed rides for today, this week (from
 // Monday) and this month, in IST, and over all time.
 func (s *DriverRideService) Earnings(ctx context.Context, driverID string) (domain.DriverEarnings, error) {
@@ -426,6 +477,10 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 		ArrivedAt:        b.ArrivedAt,
 		StartedAt:        b.StartedAt,
 		CompletedAt:      b.CompletedAt,
+		CancelledAt:      b.CancelledAt,
+		CancelledBy:      b.CancelledBy,
+		CancelReason:     b.CancelReason,
+		MyRating:         b.CustomerRating,
 	}
 	if withCustomer {
 		c := rb.Customer

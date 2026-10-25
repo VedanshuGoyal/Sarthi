@@ -323,3 +323,38 @@ func TestDriverReleased_tooLateToRebook(t *testing.T) {
 			keys(got), got["tok-phone"].Body)
 	}
 }
+
+func TestRideCancelled_tellsTheDriver(t *testing.T) {
+	svc, tokens, sender, _ := newNotifyTest(t)
+	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
+	_ = tokens.SaveForDriver(context.Background(), "both", "tok-both")
+
+	rb := openRide("ride-7", testNow.Add(3*time.Hour), 4, "automatic")
+	rb.Booking.DriverID, rb.Booking.CancelReason = "auto", "Plans changed"
+	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
+	plan.ScheduledAt = *rb.Booking.ScheduledAt
+	svc.RideCancelled(context.Background(), rb.Booking, plan)
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 1 {
+		t.Fatalf("sent to %v, want only the driver who had the ride", keys(got))
+	}
+	m := got["tok-auto"]
+	if m.Title != "Ride cancelled" || m.Channel != channelRideRequests ||
+		m.Data["type"] != pushTypeRideCancelled || m.Data["rideId"] != "ride-7" {
+		t.Errorf("message = %+v", m)
+	}
+	want := "The customer cancelled their ride on Sun 25 Oct, 12:00 PM (Round trip, 4 h).\nReason: Plans changed"
+	if m.Body != want {
+		t.Errorf("body = %q, want %q", m.Body, want)
+	}
+
+	// No driver yet: nobody to tell.
+	rb.Booking.DriverID = ""
+	svc.RideCancelled(context.Background(), rb.Booking, plan)
+	svc.Wait()
+	if n := len(sender.byToken()); n != 1 {
+		t.Errorf("sent %d messages after an unassigned cancel, want still 1", n)
+	}
+}

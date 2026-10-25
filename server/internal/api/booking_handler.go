@@ -2,10 +2,12 @@ package api
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/repository"
 	"github.com/sarthi/server/internal/service"
 )
 
@@ -40,6 +42,29 @@ type bookingsResponse struct {
 	Bookings []domain.CustomerBooking `json:"bookings"`
 }
 
+// oneBookingResponse is one booking after a change the customer made.
+type oneBookingResponse struct {
+	Booking domain.CustomerBooking `json:"booking"`
+}
+
+// cancelRequest is the POST /me/bookings/{id}/cancel body. The reason is
+// optional; an empty or missing body cancels without one.
+type cancelRequest struct {
+	Reason string `json:"reason"`
+}
+
+// ratingRequest is the body of a rating, from either app.
+type ratingRequest struct {
+	Stars int    `json:"stars"`
+	Note  string `json:"note"`
+}
+
+// driverLocationResponse is where the customer's driver is; Location is
+// null until they share a position.
+type driverLocationResponse struct {
+	Location *domain.LiveLocation `json:"location"`
+}
+
 // List handles GET /me/bookings: the customer's bookings with status, driver
 // and start code.
 func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -70,4 +95,62 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, bookingResponse{ID: booking.ID, Status: "received"})
+}
+
+// Cancel handles POST /me/bookings/{id}/cancel.
+func (h *BookingHandler) Cancel(w http.ResponseWriter, r *http.Request) {
+	var req cancelRequest
+	if err := decodeJSON(r, &req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	b, err := h.svc.Cancel(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Reason)
+	if err != nil {
+		writeBookingError(w, err, "could not cancel the ride")
+		return
+	}
+	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})
+}
+
+// Rate handles POST /me/bookings/{id}/rating.
+func (h *BookingHandler) Rate(w http.ResponseWriter, r *http.Request) {
+	var req ratingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "send the rating as {\"stars\": 5}")
+		return
+	}
+	b, err := h.svc.RateDriver(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Stars, req.Note)
+	if err != nil {
+		writeBookingError(w, err, "could not save your rating")
+		return
+	}
+	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})
+}
+
+// DriverLocation handles GET /me/bookings/{id}/driver-location.
+func (h *BookingHandler) DriverLocation(w http.ResponseWriter, r *http.Request) {
+	loc, err := h.svc.DriverLocation(r.Context(), userIDFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		writeBookingError(w, err, "could not find your driver")
+		return
+	}
+	writeJSON(w, http.StatusOK, driverLocationResponse{Location: loc})
+}
+
+// writeBookingError maps the customer's booking errors to statuses and the
+// codes the app branches on.
+func writeBookingError(w http.ResponseWriter, err error, fallback string) {
+	switch {
+	case errors.Is(err, repository.ErrBookingNotFound):
+		writeErrorCode(w, http.StatusNotFound, "booking_not_found", err.Error(), 0)
+	case errors.Is(err, repository.ErrBookingStateConflict):
+		writeErrorCode(w, http.StatusConflict, "booking_state", err.Error(), 0)
+	case errors.Is(err, service.ErrInvalidRating):
+		writeErrorCode(w, http.StatusBadRequest, "invalid_rating", err.Error(), 0)
+	case errors.Is(err, service.ErrNotTracking):
+		writeErrorCode(w, http.StatusConflict, "not_tracking", err.Error(), 0)
+	default:
+		slog.Error("bookings: request failed", "error", err)
+		writeError(w, http.StatusInternalServerError, fallback)
+	}
 }

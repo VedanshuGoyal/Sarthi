@@ -72,10 +72,18 @@ func (h *DriverRideHandler) Mine(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ridesResponse{Rides: rides})
 }
 
+// locationRequest is the PUT /driver/location body. Heading is optional.
+type locationRequest struct {
+	Lat     *float64 `json:"lat"`
+	Lng     *float64 `json:"lng"`
+	Heading *float64 `json:"heading"`
+}
+
 // Act handles POST /driver/rides/{id}/{action}, where action is accept,
-// decline, arrive, start, complete or release. Start takes a {"otp": "1234"}
-// body. Accept and the three steps answer with the updated ride; decline and
-// release with 204.
+// decline, arrive, start, complete, release or rate. Start takes a
+// {"otp": "1234"} body, rate a {"stars": 4, "note": "…"} one. Accept, the
+// three steps and rate answer with the updated ride; decline and release
+// with 204.
 func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	driverID, rideID := userIDFrom(ctx), r.PathValue("id")
@@ -102,6 +110,13 @@ func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 		err = h.svc.Decline(ctx, driverID, rideID)
 	case "release":
 		err = h.svc.Release(ctx, driverID, rideID)
+	case "rate":
+		var req ratingRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "send the rating as {\"stars\": 5}")
+			return
+		}
+		ride, err = h.svc.RateCustomer(ctx, driverID, rideID, req.Stars, req.Note)
 	default:
 		writeError(w, http.StatusNotFound, "unknown ride action")
 		return
@@ -145,6 +160,26 @@ func (h *DriverRideHandler) SetDuty(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"online": req.Online})
 }
 
+// ShareLocation handles PUT /driver/location: the driver's position for the
+// live map of the customer they're on the way to or driving.
+func (h *DriverRideHandler) ShareLocation(w http.ResponseWriter, r *http.Request) {
+	var req locationRequest
+	if err := decodeJSON(r, &req); err != nil || req.Lat == nil || req.Lng == nil {
+		writeError(w, http.StatusBadRequest, "send the position as {\"lat\": 28.6, \"lng\": 77.2}")
+		return
+	}
+	err := h.svc.ShareLocation(r.Context(), userIDFrom(r.Context()), *req.Lat, *req.Lng, req.Heading)
+	if errors.Is(err, service.ErrInvalidLocation) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		writeRideError(w, err, "could not share your location")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // queryLatLng reads optional ?lat=&lng=. ok is false only when they are
 // present but not numbers.
 func queryLatLng(r *http.Request) (*service.LatLng, bool) {
@@ -181,6 +216,8 @@ func writeRideError(w http.ResponseWriter, err error, fallback string) {
 		writeErrorCode(w, http.StatusConflict, "ride_in_progress", err.Error(), 0)
 	case errors.Is(err, service.ErrStartOTPIncorrect):
 		writeErrorCode(w, http.StatusUnprocessableEntity, "start_otp_incorrect", err.Error(), 0)
+	case errors.Is(err, service.ErrInvalidRating):
+		writeErrorCode(w, http.StatusBadRequest, "invalid_rating", err.Error(), 0)
 	case errors.Is(err, service.ErrStartOTPReset):
 		writeErrorCode(w, http.StatusUnprocessableEntity, "start_otp_reset", err.Error(), 0)
 	case errors.Is(err, repository.ErrDriverNotFound):

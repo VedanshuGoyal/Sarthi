@@ -118,10 +118,12 @@ func run() error {
 	// Who is online right now, bucketed by H3 cell: the driver feed and the
 	// "new ride request" pushes both search it.
 	presence := memstore.NewDriverTracker(geo.DefaultResolution)
+	// Where each driver is while on a ride, for the customer's live map.
+	liveLocations := memstore.NewLiveLocations()
 	driverProfiles := repository.NewDriverKYCRepository(pool)
 
 	// Push notifications (FCM): "new ride request" to nearby online drivers,
-	// "driver assigned" to the customer.
+	// ride updates to the customer, "ride cancelled" to the driver.
 	pushSender, err := newPushSender(cfg.FCMCredentialsFile, cfg.FCMBaseURL)
 	if err != nil {
 		return err
@@ -130,8 +132,9 @@ func run() error {
 	defer notify.Wait()
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
-	// what the customer asked for; each one alerts the drivers near it.
-	bookings := service.NewBookingService(repository.NewBookingRepository(pool), notify)
+	// what the customer asked for; each one alerts the drivers near it, and
+	// the customer can cancel it, rate the driver and watch them on the way.
+	bookings := service.NewBookingService(repository.NewBookingRepository(pool), notify, liveLocations)
 
 	// Driver KYC: the Document View's images live in object storage, their
 	// metadata and the typed fields in PostgreSQL.
@@ -163,6 +166,7 @@ func run() error {
 		presence,
 		// Wrong start-code attempts, keyed by ride id (5 per code).
 		memstore.NewOTPGuard(),
+		liveLocations,
 		notify,
 	)
 

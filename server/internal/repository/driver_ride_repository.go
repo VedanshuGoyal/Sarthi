@@ -33,17 +33,28 @@ const (
 	foreignKeyViolation       = "23503"
 )
 
-// bookingColumns is the shared SELECT/RETURNING list, in scanBooking's order.
+// bookingColumns is the shared SELECT/RETURNING list, in bookingRow's order.
 const bookingColumns = `id, user_id, trip_type, details, created_at, status,
 	coalesce(driver_id::text, ''), scheduled_at, fare_paise, fare_estimated,
-	accepted_at, arrived_at, started_at, completed_at, coalesce(start_otp, '')`
+	accepted_at, arrived_at, started_at, completed_at, coalesce(start_otp, ''),
+	cancelled_at, coalesce(cancelled_by, ''), coalesce(cancel_reason, ''),
+	driver_rating, coalesce(driver_rating_note, ''),
+	customer_rating, coalesce(customer_rating_note, '')`
 
-// rideColumns is bookingColumns read through the `b` alias, plus the
-// customer's name and phone from `u` — the shape scanRide reads.
-const rideColumns = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
+// bookingColumnsB is bookingColumns read through the `b` alias.
+const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
 	coalesce(b.driver_id::text, ''), b.scheduled_at, b.fare_paise, b.fare_estimated,
 	b.accepted_at, b.arrived_at, b.started_at, b.completed_at, coalesce(b.start_otp, ''),
-	u.name, u.phone_e164`
+	b.cancelled_at, coalesce(b.cancelled_by, ''), coalesce(b.cancel_reason, ''),
+	b.driver_rating, coalesce(b.driver_rating_note, ''),
+	b.customer_rating, coalesce(b.customer_rating_note, '')`
+
+// rideColumns is bookingColumnsB plus the customer's name and phone from `u`
+// and their average rating from drivers — the shape scanRide reads.
+const rideColumns = bookingColumnsB + `,
+	u.name, u.phone_e164,
+	(SELECT avg(x.customer_rating)::float8 FROM bookings x WHERE x.user_id = b.user_id),
+	(SELECT count(x.customer_rating) FROM bookings x WHERE x.user_id = b.user_id)`
 
 // timestampColumn is the column each forward status stamps.
 var timestampColumn = map[domain.RideStatus]string{
@@ -78,6 +89,23 @@ func (r *DriverRideRepository) ListOpen(ctx context.Context, driverID string, fr
 		ORDER BY b.scheduled_at
 		LIMIT $3`
 	return r.queryRides(ctx, q, driverID, from, limit)
+}
+
+// RateCustomer records the stars driverID gave the customer of their
+// completed ride. Each ride is rated once: [ErrRideStateConflict] if it isn't
+// theirs, isn't completed or is already rated.
+func (r *DriverRideRepository) RateCustomer(ctx context.Context, id, driverID string, rating domain.RideRating) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE bookings SET customer_rating = $3, customer_rating_note = nullif($4, '')
+		WHERE id = $1 AND driver_id = $2 AND status = 'completed' AND customer_rating IS NULL`,
+		id, driverID, rating.Stars, rating.Note)
+	if err != nil {
+		return rideErr(err, ErrRideNotFound, "rating customer")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRideStateConflict
+	}
+	return nil
 }
 
 // ListForDriver returns the rides assigned to driverID, latest scheduled
@@ -200,10 +228,13 @@ func (r *DriverRideRepository) Decline(ctx context.Context, id, driverID string)
 }
 
 // Earnings sums driverID's completed rides over all time and since each of
-// the given window starts.
+// the given window starts, along with their average rating from customers
+// (ratings are only given on completed rides).
 func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	const q = `
 		SELECT
+		    avg(driver_rating)::float8,
+		    count(driver_rating),
 		    coalesce(sum(fare_paise) FILTER (WHERE completed_at >= $2), 0),
 		    count(*) FILTER (WHERE completed_at >= $2),
 		    coalesce(sum(fare_paise) FILTER (WHERE completed_at >= $3), 0),
@@ -215,8 +246,13 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		FROM bookings
 		WHERE driver_id = $1 AND status = 'completed'`
 
-	var e domain.DriverEarnings
+	var (
+		e       domain.DriverEarnings
+		average *float64
+		rated   int
+	)
 	err := r.pool.QueryRow(ctx, q, driverID, today, week, month).Scan(
+		&average, &rated,
 		&e.Today.FarePaise, &e.Today.Rides,
 		&e.Week.FarePaise, &e.Week.Rides,
 		&e.Month.FarePaise, &e.Month.Rides,
@@ -224,6 +260,9 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 	)
 	if err != nil {
 		return domain.DriverEarnings{}, fmt.Errorf("summing earnings: %w", err)
+	}
+	if average != nil && rated > 0 {
+		e.Rating = &domain.RatingSummary{Average: *average, Count: rated}
 	}
 	return e, nil
 }
@@ -279,24 +318,58 @@ func rideErr(err, noRow error, doing string) error {
 	return fmt.Errorf("%s: %w", doing, err)
 }
 
-func scanBooking(row pgx.Row) (domain.Booking, error) {
-	var b domain.Booking
-	err := row.Scan(
+// bookingRow scans bookingColumns into b. The two ratings arrive as nullable
+// stars plus a note, so they land here first and finish folds them in.
+type bookingRow struct {
+	b                          *domain.Booking
+	driverStars, customerStars *int16
+	driverNote, customerNote   string
+}
+
+// targets is the Scan destinations for bookingColumns, then extra.
+func (r *bookingRow) targets(extra ...any) []any {
+	b := r.b
+	return append([]any{
 		&b.ID, &b.UserID, &b.TripType, &b.Details, &b.CreatedAt, &b.Status,
 		&b.DriverID, &b.ScheduledAt, &b.FarePaise, &b.FareEstimated,
 		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt, &b.StartOTP,
-	)
+		&b.CancelledAt, &b.CancelledBy, &b.CancelReason,
+		&r.driverStars, &r.driverNote,
+		&r.customerStars, &r.customerNote,
+	}, extra...)
+}
+
+func (r *bookingRow) finish() {
+	r.b.DriverRating = ratingOf(r.driverStars, r.driverNote)
+	r.b.CustomerRating = ratingOf(r.customerStars, r.customerNote)
+}
+
+func ratingOf(stars *int16, note string) *domain.RideRating {
+	if stars == nil {
+		return nil
+	}
+	return &domain.RideRating{Stars: int(*stars), Note: note}
+}
+
+func scanBooking(row pgx.Row) (domain.Booking, error) {
+	var b domain.Booking
+	br := bookingRow{b: &b}
+	err := row.Scan(br.targets()...)
+	br.finish()
 	return b, err
 }
 
 func scanRide(row pgx.Row) (domain.RideBooking, error) {
-	var rb domain.RideBooking
-	b := &rb.Booking
-	err := row.Scan(
-		&b.ID, &b.UserID, &b.TripType, &b.Details, &b.CreatedAt, &b.Status,
-		&b.DriverID, &b.ScheduledAt, &b.FarePaise, &b.FareEstimated,
-		&b.AcceptedAt, &b.ArrivedAt, &b.StartedAt, &b.CompletedAt, &b.StartOTP,
-		&rb.Customer.Name, &rb.Customer.PhoneE164,
+	var (
+		rb      domain.RideBooking
+		average *float64
 	)
+	br := bookingRow{b: &rb.Booking}
+	c := &rb.Customer
+	err := row.Scan(br.targets(&c.Name, &c.PhoneE164, &average, &c.RatingCount)...)
+	br.finish()
+	if c.RatingCount > 0 {
+		c.Rating = average
+	}
 	return rb, err
 }
