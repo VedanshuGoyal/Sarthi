@@ -57,6 +57,21 @@ class MyRidesViewModel extends ChangeNotifier {
     ),
   );
 
+  /// Rides a customer cancelled after the driver took them, most recently
+  /// cancelled first.
+  List<Ride> get cancelled => _sorted(
+    _rides.where((r) => r.status == RideStatus.cancelled),
+    (a, b) => (b.cancelledAt ?? b.scheduledAt).compareTo(
+      a.cancelledAt ?? a.scheduledAt,
+    ),
+  );
+
+  /// Rides still in the live-tracking window at [now] — the driver holds
+  /// them and the pickup is at most 60 minutes out. Backs
+  /// [LocationShareViewModel].
+  List<Ride> trackableAt(DateTime now) =>
+      [...upcoming, ...ongoing].where((r) => r.isTrackableAt(now)).toList();
+
   /// The ride that needs the driver next: one underway, else the soonest
   /// upcoming one.
   Ride? get current => ongoing.firstOrNull ?? upcoming.firstOrNull;
@@ -95,12 +110,25 @@ class MyRidesViewModel extends ChangeNotifier {
   /// message to show. A ride that has moved on server-side (another device,
   /// a stale screen) is reloaded so the panel shows where it really is.
   ///
-  /// Starting needs [otp], the code from the customer's app.
-  Future<String?> act(Ride ride, RideAction action, {String? otp}) async {
+  /// Starting needs [otp], the code from the customer's app. Rating needs
+  /// [stars] (1–5) and takes an optional [note].
+  Future<String?> act(
+    Ride ride,
+    RideAction action, {
+    String? otp,
+    int? stars,
+    String? note,
+  }) async {
     _busyRideId = ride.id;
     notifyListeners();
     try {
-      final updated = await _repository.act(ride.id, action, otp: otp);
+      final updated = await _repository.act(
+        ride.id,
+        action,
+        otp: otp,
+        stars: stars,
+        note: note,
+      );
       if (action == RideAction.release) {
         _rides = [
           for (final r in _rides)
@@ -113,6 +141,13 @@ class MyRidesViewModel extends ChangeNotifier {
       return null;
     } on RidesException catch (e) {
       if (e.code == 'ride_state') await load();
+      if (action == RideAction.rate) {
+        return switch (e.code) {
+          'invalid_rating' => 'Pick 1 to 5 stars for the customer.',
+          'ride_state' => "This ride can't be rated right now.",
+          _ => e.message,
+        };
+      }
       return e.message;
     } finally {
       _busyRideId = null;

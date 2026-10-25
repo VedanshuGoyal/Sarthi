@@ -6,10 +6,12 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../account/view/account_panel.dart';
 import '../../auth/domain/driver.dart';
+import '../../../core/services/push_service.dart';
 import '../../documents/document_providers.dart';
 import '../../notifications/notification_providers.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/earnings_panel.dart';
+import '../../rides/view/ride_detail_screen.dart';
 import '../../rides/view/rides_panel.dart';
 import 'duty_panel.dart';
 
@@ -22,7 +24,13 @@ import 'duty_panel.dart';
 ///
 /// The shell also owns push registration: a "New ride request" arriving
 /// while the app is open refreshes the feed at once, and tapping one opens
-/// Home, where the request is.
+/// Home, where the request is. A "Ride cancelled" push instead refreshes
+/// the driver's own rides and, on tap, opens the Rides tab (and the ride
+/// itself, once it's loaded).
+///
+/// It also starts [locationShareViewModelProvider] (read once, never
+/// watched here) so live-location sharing runs for as long as the driver
+/// holds a trackable ride, independent of which tab is open.
 class DriverHomeShell extends ConsumerStatefulWidget {
   const DriverHomeShell({super.key, required this.driver});
 
@@ -47,6 +55,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   ];
 
   static const int _homeTab = 0;
+  static const int _ridesTab = 1;
 
   final List<StreamSubscription<void>> _push = [];
   int _index = 0;
@@ -56,16 +65,25 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     super.initState();
     final push = ref.read(pushServiceProvider);
     _push
-      ..add(push.arrivals.listen((_) => _refreshRequests()))
-      ..add(push.taps.listen((_) => _openRequests()));
+      ..add(push.arrivals.listen(_onPushArrival))
+      ..add(push.taps.listen(_onPushTap));
     // Rides and earnings load themselves when first read; the KYC record
     // (for the Account panel) is shared with onboarding, so refresh it here.
+    // Location sharing likewise starts itself, driven by the rides list —
+    // just reading it here is enough to create it.
     // Deferred: providers can't be written to during a build.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       ref.read(documentRegistrationViewModelProvider).load();
+      ref.read(locationShareViewModelProvider);
       unawaited(ref.read(pushRegistrationProvider).start());
       final launchedBy = await push.takeLaunchTap();
-      if (launchedBy != null && mounted) _openRequests();
+      if (launchedBy != null && mounted) {
+        if (launchedBy.type == 'ride_cancelled') {
+          _openCancelledRide(launchedBy.rideId);
+        } else {
+          _openRequests();
+        }
+      }
     });
   }
 
@@ -84,6 +102,39 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   void _openRequests() {
     _select(_homeTab);
     _refreshRequests();
+  }
+
+  /// A push arrived while the app was open: a cancelled ride needs the
+  /// rides list re-read so it shows up as cancelled; anything else is a new
+  /// request, so refresh the feed as before.
+  void _onPushArrival(PushEvent event) {
+    if (event.type == 'ride_cancelled') {
+      ref.read(myRidesViewModelProvider).load();
+    } else {
+      _refreshRequests();
+    }
+  }
+
+  void _onPushTap(PushEvent event) {
+    if (event.type == 'ride_cancelled') {
+      _openCancelledRide(event.rideId);
+    } else {
+      _openRequests();
+    }
+  }
+
+  /// Opens the Rides tab, and the cancelled ride itself once its fresh copy
+  /// has loaded — "ideally the ride", per the push's intent.
+  Future<void> _openCancelledRide(String? rideId) async {
+    _select(_ridesTab);
+    await ref.read(myRidesViewModelProvider).load();
+    if (rideId == null || !mounted) return;
+    final ride = ref.read(myRidesViewModelProvider).byId(rideId);
+    if (ride != null && mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => RideDetailScreen(ride: ride)),
+      );
+    }
   }
 
   void _select(int index) {

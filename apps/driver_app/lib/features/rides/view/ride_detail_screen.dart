@@ -56,10 +56,20 @@ class RideDetailScreen extends ConsumerWidget {
             ),
             children: [
               _Summary(ride: current),
-              if (current.status.isActive ||
+              if (current.status == RideStatus.cancelled) ...[
+                const SizedBox(height: Skyline.s16),
+                _CancelledNotice(ride: current),
+              ] else if (current.status.isActive ||
                   current.status == RideStatus.completed) ...[
                 const SizedBox(height: Skyline.s16),
                 _Progress(ride: current),
+              ],
+              if (current.isTrackableAt(DateTime.now()) &&
+                  ref.watch(
+                    locationShareViewModelProvider.select((vm) => vm.isSharing),
+                  )) ...[
+                const SizedBox(height: Skyline.s12),
+                const _LocationSharingNote(),
               ],
               const SizedBox(height: Skyline.s16),
               _RouteCard(ride: current, showNavigate: !isRequest),
@@ -70,6 +80,12 @@ class RideDetailScreen extends ConsumerWidget {
               if (current.car != null) ...[
                 const SizedBox(height: Skyline.s16),
                 _CarCard(car: current.car!),
+              ],
+              if (current.status == RideStatus.completed) ...[
+                const SizedBox(height: Skyline.s16),
+                current.myRating == null
+                    ? _RateCustomerCard(ride: current)
+                    : _MyRatingCard(rating: current.myRating!),
               ],
               if (isRequest) ...[
                 const SizedBox(height: Skyline.s16),
@@ -303,6 +319,78 @@ class _RouteCard extends StatelessWidget {
   }
 }
 
+/// The ride's cancellation, when the customer called it off: who, when and
+/// why. Shown in place of the step progress — there's nothing left to step
+/// through.
+class _CancelledNotice extends StatelessWidget {
+  const _CancelledNotice({required this.ride});
+
+  final Ride ride;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final reason = ride.cancelReason;
+    return SkylineCard(
+      padding: const EdgeInsets.all(Skyline.s16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.cancel_rounded, color: t.danger, size: 22),
+          const SizedBox(width: Skyline.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ride.cancelledBy == 'customer'
+                      ? 'Cancelled by customer'
+                      : 'Cancelled',
+                  style: t.title(15, color: t.danger),
+                ),
+                if (reason != null && reason.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text('Reason: $reason', style: t.body(size: 13)),
+                ],
+                if (ride.cancelledAt != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    RideFormat.when(ride.cancelledAt!),
+                    style: t.body(size: 12.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Sharing your live location with the customer" — shown on the active
+/// ride while [LocationShareViewModel] has a position stream open for it.
+class _LocationSharingNote extends StatelessWidget {
+  const _LocationSharingNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Row(
+      children: [
+        Icon(Icons.my_location_rounded, size: 15, color: t.inkFaint),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Sharing your live location with the customer',
+            style: t.body(size: 12.5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CustomerCard extends StatelessWidget {
   const _CustomerCard({required this.customer});
 
@@ -333,6 +421,13 @@ class _CustomerCard extends StatelessWidget {
                 Text(
                   RideFormat.phone(customer.phoneE164),
                   style: t.body(size: 13),
+                ),
+                Text(
+                  RideFormat.customerRating(
+                    customer.rating,
+                    customer.ratingCount,
+                  ),
+                  style: t.body(size: 12.5),
                 ),
               ],
             ),
@@ -407,6 +502,129 @@ class _CarCard extends StatelessWidget {
             child: Text(
               car.registration,
               style: t.figure(14, weight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A completed ride with no [Ride.myRating] yet: 5 tappable stars, an
+/// optional note, and a Submit button that posts
+/// `POST /driver/rides/{id}/rate`.
+class _RateCustomerCard extends ConsumerStatefulWidget {
+  const _RateCustomerCard({required this.ride});
+
+  final Ride ride;
+
+  @override
+  ConsumerState<_RateCustomerCard> createState() => _RateCustomerCardState();
+}
+
+class _RateCustomerCardState extends ConsumerState<_RateCustomerCard> {
+  final _noteController = TextEditingController();
+  int _stars = 0;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_stars == 0 || _busy) return;
+    setState(() => _busy = true);
+    final note = _noteController.text.trim();
+    final error = await ref
+        .read(myRidesViewModelProvider)
+        .act(
+          widget.ride,
+          RideAction.rate,
+          stars: _stars,
+          note: note.isEmpty ? null : note,
+        );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return SkylineCard(
+      padding: const EdgeInsets.all(Skyline.s16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Rate your customer', style: t.title(15)),
+          const SizedBox(height: Skyline.s12),
+          Center(
+            child: StarPicker(
+              value: _stars,
+              onChanged: (v) => setState(() => _stars = v),
+            ),
+          ),
+          const SizedBox(height: Skyline.s12),
+          TextField(
+            controller: _noteController,
+            maxLength: 500,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Add a note for your records (optional)',
+            ),
+          ),
+          const SizedBox(height: Skyline.s8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _stars == 0 || _busy ? null : _submit,
+              child: _busy
+                  ? SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: t.inkFaint,
+                      ),
+                    )
+                  : const Text('Submit rating'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What the driver already gave this customer — read-only once rated.
+class _MyRatingCard extends StatelessWidget {
+  const _MyRatingCard({required this.rating});
+
+  final RideRating rating;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final note = rating.note;
+    return SkylineCard(
+      padding: const EdgeInsets.all(Skyline.s16),
+      child: Row(
+        children: [
+          StarRow(stars: rating.stars),
+          const SizedBox(width: Skyline.s8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('You rated ${rating.stars}★', style: t.title(14)),
+                if (note != null && note.isNotEmpty)
+                  Text(note, style: t.body(size: 12.5)),
+              ],
             ),
           ),
         ],

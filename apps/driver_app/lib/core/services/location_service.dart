@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Outcome of an app-launch location permission request.
@@ -10,6 +11,10 @@ enum LocationPermissionResult {
 
 /// A point the device reported.
 typedef DevicePosition = ({double lat, double lng});
+
+/// One fix from a live position stream — heading is null when the device
+/// can't tell which way it's pointing (e.g. standing still).
+typedef DeviceFix = ({double lat, double lng, double? heading});
 
 /// Thin data-layer wrapper around the `geolocator` plugin.
 ///
@@ -66,5 +71,37 @@ class LocationService {
         return null; // getLastKnownPosition is unsupported on web
       }
     }
+  }
+
+  /// A continuous stream of fixes, for sharing live location with a
+  /// customer. On Android this runs as a foreground service — with its own
+  /// persistent notification — so updates keep arriving while the driver is
+  /// in another app (Google Maps for turn-by-turn). On platforms without
+  /// that (web, desktop, iOS when backgrounded) the stream just does
+  /// whatever the OS allows in the foreground; callers are expected to stop
+  /// quietly if it goes silent rather than treat that as an error.
+  Stream<DeviceFix> positionStream() {
+    final settings = defaultTargetPlatform == TargetPlatform.android
+        ? AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+            intervalDuration: const Duration(seconds: 10),
+            foregroundNotificationConfig: const ForegroundNotificationConfig(
+              notificationTitle: 'Sharing your location',
+              notificationText: 'Your customer can see you on the way.',
+            ),
+          )
+        : const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          );
+    return Geolocator.getPositionStream(locationSettings: settings).map(
+      (p) => (
+        lat: p.latitude,
+        lng: p.longitude,
+        // headingAccuracy is negative when the platform can't tell.
+        heading: p.headingAccuracy >= 0 ? p.heading : null,
+      ),
+    );
   }
 }

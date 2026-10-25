@@ -124,7 +124,9 @@ class DutyViewModel extends ChangeNotifier {
   }
 
   /// Takes [ride]. Returns null on success, or a message to show. A ride
-  /// someone else got first is dropped from the feed.
+  /// someone else got first, or that the customer cancelled in the
+  /// meantime, is dropped from the feed — the backend's own message
+  /// ("This ride is no longer available.") covers both.
   Future<String?> accept(Ride ride) async {
     _busy.add(ride.id);
     _notify();
@@ -136,7 +138,6 @@ class DutyViewModel extends ChangeNotifier {
     } on RidesException catch (e) {
       if (e.code == 'ride_unavailable' || e.code == 'ride_not_found') {
         _remove(ride.id);
-        return 'Another driver took this ride.';
       }
       return e.message;
     } finally {

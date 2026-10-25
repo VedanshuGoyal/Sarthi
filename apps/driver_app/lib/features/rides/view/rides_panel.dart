@@ -8,8 +8,9 @@ import '../view_model/my_rides_view_model.dart';
 import 'ride_detail_screen.dart';
 import 'widgets/ride_widgets.dart';
 
-/// The Rides tab: the driver's own rides in three lists — Upcoming (accepted,
-/// not yet reached), Ongoing (at the pickup or driving), and Completed.
+/// The Rides tab: the driver's own rides in four lists — Upcoming (accepted,
+/// not yet reached), Ongoing (at the pickup or driving), Completed, and
+/// Cancelled (the customer called it off after the driver took it).
 class RidesPanel extends ConsumerWidget {
   const RidesPanel({super.key});
 
@@ -44,6 +45,15 @@ class RidesPanel extends ConsumerWidget {
           icon: Icons.task_alt_rounded,
           title: 'No completed rides yet',
           body: 'Finished trips and their fares show up here.',
+        ),
+      ),
+      (
+        'Cancelled',
+        vm.cancelled,
+        const PanelMessage(
+          icon: Icons.event_busy_rounded,
+          title: 'No cancelled rides',
+          body: 'Rides a customer cancels after you accept them show up here.',
         ),
       ),
     ];

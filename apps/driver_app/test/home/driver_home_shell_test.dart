@@ -55,7 +55,7 @@ void main() {
           ridesRepositoryProvider.overrideWithValue(rides),
           pushServiceProvider.overrideWithValue(PushService.off()),
           locationServiceProvider.overrideWithValue(
-            const FakeLocationService(),
+            FakeLocationService(),
           ),
           driverSessionStorageProvider.overrideWithValue(_SessionStorage()),
           documentRegistrationViewModelProvider.overrideWith(

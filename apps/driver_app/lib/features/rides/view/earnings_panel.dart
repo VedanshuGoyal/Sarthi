@@ -43,6 +43,13 @@ class EarningsPanel extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _TodayHero(period: e.today, loading: !vm.hasLoaded),
+                    if (vm.hasLoaded) ...[
+                      const SizedBox(height: Skyline.s8),
+                      Text(
+                        RideFormat.driverRating(e.rating),
+                        style: t.body(size: 13),
+                      ),
+                    ],
                     if (vm.error != null) ...[
                       const SizedBox(height: Skyline.s12),
                       Text(vm.error!, style: t.body(size: 13, color: t.danger)),

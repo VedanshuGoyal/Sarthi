@@ -96,6 +96,21 @@ abstract final class RideFormat {
     return e164;
   }
 
+  /// "★ 4.9 · 3 ratings" for a customer with ratings, else "New customer".
+  static String customerRating(double? average, int count) {
+    if (average == null || count == 0) return 'New customer';
+    return '★ ${average.toStringAsFixed(1)} · $count '
+        '${count == 1 ? 'rating' : 'ratings'}';
+  }
+
+  /// "Your rating ★ 4.8 from 12 trips" for the Earnings panel, else
+  /// "No ratings yet".
+  static String driverRating(EarningsRating? rating) {
+    if (rating == null || rating.count == 0) return 'No ratings yet';
+    return 'Your rating ★ ${rating.average.toStringAsFixed(1)} from '
+        '${rating.count} ${rating.count == 1 ? 'trip' : 'trips'}';
+  }
+
   static DateTime _dateOnly(DateTime t) => DateTime(t.year, t.month, t.day);
 }
 

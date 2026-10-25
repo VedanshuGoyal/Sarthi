@@ -125,15 +125,45 @@ class RideCar {
 
 /// Who the driver is driving for. Only sent once the ride is theirs.
 class RideCustomer {
-  const RideCustomer({required this.name, required this.phoneE164});
+  const RideCustomer({
+    required this.name,
+    required this.phoneE164,
+    this.rating,
+    this.ratingCount = 0,
+  });
 
   final String name;
   final String phoneE164;
 
+  /// The customer's average rating from other drivers, or null when
+  /// [ratingCount] is 0 — the backend omits it rather than sending a 0.
+  final double? rating;
+  final int ratingCount;
+
   factory RideCustomer.fromJson(Map<String, dynamic> json) => RideCustomer(
     name: json['name'] as String? ?? '',
     phoneE164: json['phoneE164'] as String? ?? '',
+    rating: (json['rating'] as num?)?.toDouble(),
+    ratingCount: (json['ratingCount'] as num?)?.toInt() ?? 0,
   );
+}
+
+/// A 1–5 star rating with an optional note, given by one side of a ride to
+/// the other.
+class RideRating {
+  const RideRating({required this.stars, this.note});
+
+  final int stars;
+  final String? note;
+
+  /// Parses `myRating`, or null when absent or unreadable.
+  static RideRating? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final stars = json['stars'];
+    if (stars is! num) return null;
+    final note = json['note'];
+    return RideRating(stars: stars.toInt(), note: note is String ? note : null);
+  }
 }
 
 /// A ride as the driver app shows it — an open request, or one of the
@@ -159,6 +189,10 @@ class Ride {
     this.arrivedAt,
     this.startedAt,
     this.completedAt,
+    this.cancelledAt,
+    this.cancelledBy,
+    this.cancelReason,
+    this.myRating,
   });
 
   final String id;
@@ -201,11 +235,31 @@ class Ride {
   final DateTime? startedAt;
   final DateTime? completedAt;
 
+  /// When the customer cancelled this ride, if they did.
+  final DateTime? cancelledAt;
+
+  /// Who cancelled — currently only ever `"customer"`, since that's the
+  /// only side that can cancel.
+  final String? cancelledBy;
+
+  /// The reason the customer picked (or typed), if any.
+  final String? cancelReason;
+
+  /// What this driver gave the customer, once they've rated them.
+  final RideRating? myRating;
+
   /// The fare in whole rupees, for display.
   int get fareRupees => (farePaise / 100).round();
 
   /// How long the driver is booked for.
   Duration get duration => endsAt.difference(scheduledAt);
+
+  /// Whether, at [now], this ride is inside the live-tracking window: the
+  /// driver still holds it ([RideStatus.isActive]) and it's at most 60
+  /// minutes before the scheduled pickup.
+  bool isTrackableAt(DateTime now) =>
+      status.isActive &&
+      !now.isBefore(scheduledAt.subtract(const Duration(minutes: 60)));
 
   /// The last place on the route — the destination, the final stop, or (on a
   /// round trip) back at the pickup.
@@ -238,6 +292,10 @@ class Ride {
     arrivedAt: arrivedAt,
     startedAt: startedAt,
     completedAt: completedAt,
+    cancelledAt: cancelledAt,
+    cancelledBy: cancelledBy,
+    cancelReason: cancelReason,
+    myRating: myRating,
   );
 
   /// Parses the backend's ride, or returns null for one this app version
@@ -283,6 +341,10 @@ class Ride {
       arrivedAt: _time(json['arrivedAt']),
       startedAt: _time(json['startedAt']),
       completedAt: _time(json['completedAt']),
+      cancelledAt: _time(json['cancelledAt']),
+      cancelledBy: json['cancelledBy'] as String?,
+      cancelReason: json['cancelReason'] as String?,
+      myRating: RideRating.tryParse(json['myRating']),
     );
   }
 }
@@ -295,7 +357,8 @@ enum RideAction {
   arrive('arrive'),
   start('start'),
   complete('complete'),
-  release('release');
+  release('release'),
+  rate('rate');
 
   const RideAction(this.wireName);
 
@@ -320,6 +383,27 @@ class EarningsPeriod {
   }
 }
 
+/// The driver's own rating, as other drivers don't have one — customers
+/// rate drivers, not the other way round.
+class EarningsRating {
+  const EarningsRating({required this.average, required this.count});
+
+  final double average;
+  final int count;
+
+  /// Parses the earnings summary's `rating`, or null when the driver has
+  /// no ratings yet (the backend omits the field entirely then).
+  static EarningsRating? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final average = json['average'];
+    if (average is! num) return null;
+    return EarningsRating(
+      average: average.toDouble(),
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// The earnings panel's summary, in IST calendar windows.
 class Earnings {
   const Earnings({
@@ -327,18 +411,21 @@ class Earnings {
     this.week = const EarningsPeriod(),
     this.month = const EarningsPeriod(),
     this.total = const EarningsPeriod(),
+    this.rating,
   });
 
   final EarningsPeriod today;
   final EarningsPeriod week;
   final EarningsPeriod month;
   final EarningsPeriod total;
+  final EarningsRating? rating;
 
   factory Earnings.fromJson(Map<String, dynamic> json) => Earnings(
     today: EarningsPeriod.fromJson(json['today']),
     week: EarningsPeriod.fromJson(json['week']),
     month: EarningsPeriod.fromJson(json['month']),
     total: EarningsPeriod.fromJson(json['total']),
+    rating: EarningsRating.tryParse(json['rating']),
   );
 }
 

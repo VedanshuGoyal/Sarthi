@@ -12,9 +12,11 @@ class RidesException implements Exception {
   final String message;
 
   /// The backend's machine-readable tag — `ride_unavailable` (someone else
-  /// took it), `ride_clash`, `transmission_mismatch`, `ride_state`,
-  /// `ride_in_progress`, `start_otp_incorrect`, `start_otp_reset`,
-  /// `kyc_not_cleared` — or null for generic failures.
+  /// took it, or the customer cancelled it), `ride_clash`,
+  /// `transmission_mismatch`, `ride_state` (also: not completed, or
+  /// already rated), `ride_in_progress`, `start_otp_incorrect`,
+  /// `start_otp_reset`, `kyc_not_cleared`, `invalid_rating` — or null for
+  /// generic failures.
   final String? code;
 
   @override
@@ -52,12 +54,26 @@ class RidesRepository {
   /// Applies [action] to ride [id]. Returns the updated ride, or null for
   /// actions that give the ride up ([RideAction.decline],
   /// [RideAction.release]). [RideAction.start] needs [otp], the code the
-  /// customer reads out from their app.
-  Future<Ride?> act(String id, RideAction action, {String? otp}) async {
+  /// customer reads out from their app. [RideAction.rate] needs [stars]
+  /// (1–5) and takes an optional [note].
+  Future<Ride?> act(
+    String id,
+    RideAction action, {
+    String? otp,
+    int? stars,
+    String? note,
+  }) async {
     final body = await _send(
       'POST',
       '/driver/rides/$id/${action.wireName}',
-      payload: action == RideAction.start ? {'otp': otp ?? ''} : null,
+      payload: switch (action) {
+        RideAction.start => {'otp': otp ?? ''},
+        RideAction.rate => {
+          'stars': stars ?? 0,
+          if (note != null && note.isNotEmpty) 'note': note,
+        },
+        _ => null,
+      },
     );
     if (body.isEmpty) return null;
     final decoded = jsonDecode(body);
@@ -82,6 +98,23 @@ class RidesRepository {
           if (lat != null && lng != null) ...{'lat': lat, 'lng': lng},
         },
       );
+
+  /// Shares the driver's live position while a ride is in its tracking
+  /// window (see [Ride.isTrackableAt]). This alone never puts the driver
+  /// online — that's [setDuty].
+  Future<void> shareLocation({
+    required double lat,
+    required double lng,
+    double? heading,
+  }) => _send(
+    'PUT',
+    '/driver/location',
+    payload: {
+      'lat': lat,
+      'lng': lng,
+      if (heading != null) 'heading': heading,
+    },
+  );
 
   static List<Ride> _rides(String body) {
     final decoded = jsonDecode(body);

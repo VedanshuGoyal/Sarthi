@@ -5,6 +5,7 @@ import '../auth/driver_auth_controller.dart';
 import 'data/rides_repository.dart';
 import 'view_model/duty_view_model.dart';
 import 'view_model/earnings_view_model.dart';
+import 'view_model/location_share_view_model.dart';
 import 'view_model/my_rides_view_model.dart';
 
 /// Single shared [RidesRepository]. Like the other repositories, it reads the
@@ -56,3 +57,16 @@ final dutyViewModelProvider = ChangeNotifierProvider<DutyViewModel>((ref) {
     onAccepted: (ride) => ref.read(myRidesViewModelProvider).upsert(ride),
   );
 });
+
+/// Shares the driver's live location with the customer while a ride is in
+/// its tracking window. Created once per driver and read eagerly from the
+/// Home shell, so it keeps running whichever tab or screen is open.
+final locationShareViewModelProvider =
+    ChangeNotifierProvider<LocationShareViewModel>((ref) {
+      ref.watch(_driverIdProvider);
+      return LocationShareViewModel(
+        myRides: ref.watch(myRidesViewModelProvider),
+        location: ref.watch(locationServiceProvider),
+        repository: ref.watch(ridesRepositoryProvider),
+      );
+    });

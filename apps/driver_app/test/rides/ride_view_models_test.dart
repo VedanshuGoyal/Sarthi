@@ -19,7 +19,7 @@ void main() {
       handedOver = [];
       vm = DutyViewModel(
         repository: repo,
-        location: const FakeLocationService(),
+        location: FakeLocationService(),
         onAccepted: handedOver.add,
         pollEvery: const Duration(hours: 1),
       );
@@ -53,7 +53,7 @@ void main() {
       check(handedOver.single.status).equals(RideStatus.accepted);
     });
 
-    test('losing the race drops the ride with a friendly message', () async {
+    test('losing the race drops the ride with the backend message', () async {
       repo.failures[RideAction.accept] = const RidesException(
         'This ride is no longer available.',
         code: 'ride_unavailable',
@@ -61,7 +61,7 @@ void main() {
       await vm.setOnline(true);
       final error = await vm.accept(vm.requests.first);
 
-      check(error).equals('Another driver took this ride.');
+      check(error).equals('This ride is no longer available.');
       check(vm.requests.map((r) => r.id)).deepEquals(['b']);
       check(handedOver).isEmpty();
     });
@@ -154,6 +154,72 @@ void main() {
       check(await vm.act(vm.byId('r')!, RideAction.release)).isNull();
       check(vm.byId('r')).isNull();
     });
+
+    test('a cancelled ride is listed separately, not anywhere else', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [
+          ride(id: 'up', status: 'accepted'),
+          ride(
+            id: 'cancelled',
+            status: 'cancelled',
+            cancelledAt: '2026-10-25T08:00:00+05:30',
+            cancelledBy: 'customer',
+            cancelReason: 'Plans changed',
+          ),
+        ];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      check(vm.cancelled.map((r) => r.id)).deepEquals(['cancelled']);
+      check(vm.upcoming.map((r) => r.id)).deepEquals(['up']);
+      check(vm.ongoing).isEmpty();
+      check(vm.completed).isEmpty();
+      final cancelledRide = vm.byId('cancelled')!;
+      check(cancelledRide.cancelledBy).equals('customer');
+      check(cancelledRide.cancelReason).equals('Plans changed');
+    });
+
+    test('rating a completed ride sends stars and note, then upserts', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'completed')];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      final error = await vm.act(
+        vm.byId('r')!,
+        RideAction.rate,
+        stars: 4,
+        note: 'Great customer',
+      );
+
+      check(error).isNull();
+      check(repo.lastRating).equals((4, 'Great customer'));
+      check(vm.byId('r')!.myRating!.stars).equals(4);
+      check(vm.byId('r')!.myRating!.note).equals('Great customer');
+    });
+
+    test('rating errors get friendly messages', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'completed')];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      repo.failures[RideAction.rate] = const RidesException(
+        'stars must be between 1 and 5',
+        code: 'invalid_rating',
+      );
+      check(
+        await vm.act(vm.byId('r')!, RideAction.rate, stars: 0),
+      ).equals('Pick 1 to 5 stars for the customer.');
+
+      repo.failures[RideAction.rate] = const RidesException(
+        'ride already rated',
+        code: 'ride_state',
+      );
+      check(
+        await vm.act(vm.byId('r')!, RideAction.rate, stars: 4),
+      ).equals("This ride can't be rated right now.");
+    });
   });
 
   group('RideFormat', () {
@@ -187,6 +253,20 @@ void main() {
       check(RideFormat.distance(720)).equals('700 m');
       check(RideFormat.distance(7740)).equals('7.7 km');
       check(RideFormat.phone('+919800012345')).equals('+91 98000 12345');
+    });
+
+    test('reads ratings', () {
+      check(RideFormat.customerRating(null, 0)).equals('New customer');
+      check(RideFormat.customerRating(4.9, 3)).equals('★ 4.9 · 3 ratings');
+      check(RideFormat.customerRating(5.0, 1)).equals('★ 5.0 · 1 rating');
+
+      check(RideFormat.driverRating(null)).equals('No ratings yet');
+      check(
+        RideFormat.driverRating(const EarningsRating(average: 4.8, count: 12)),
+      ).equals('Your rating ★ 4.8 from 12 trips');
+      check(
+        RideFormat.driverRating(const EarningsRating(average: 5, count: 1)),
+      ).equals('Your rating ★ 5.0 from 1 trip');
     });
   });
 }

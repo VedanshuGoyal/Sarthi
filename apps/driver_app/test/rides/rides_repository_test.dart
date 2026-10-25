@@ -76,6 +76,33 @@ void main() {
     check(result).isNull();
   });
 
+  test('rate sends stars and note, and reads back myRating', () async {
+    late http.Request sent;
+    final updated = await repo({
+      'ride': rideJson(
+        status: 'completed',
+        myRating: {'stars': 4, 'note': 'Great customer'},
+      ),
+    }, onRequest: (r) => sent = r).act('r1', RideAction.rate, stars: 4, note: 'Great customer');
+
+    check(sent.url.path).equals('/driver/rides/r1/rate');
+    check(
+      jsonDecode(sent.body) as Map<String, dynamic>,
+    ).deepEquals({'stars': 4, 'note': 'Great customer'});
+    check(updated!.myRating!.stars).equals(4);
+  });
+
+  test('rate omits note when none was given', () async {
+    late http.Request sent;
+    await repo({
+      'ride': rideJson(status: 'completed'),
+    }, onRequest: (r) => sent = r).act('r1', RideAction.rate, stars: 5);
+
+    check(
+      jsonDecode(sent.body) as Map<String, dynamic>,
+    ).deepEquals({'stars': 5});
+  });
+
   test('errors carry the backend code and a sentence-cased message', () async {
     await check(
       repo({
@@ -111,5 +138,33 @@ void main() {
     check(
       jsonDecode(sent.body) as Map<String, dynamic>,
     ).deepEquals({'online': true, 'lat': 1.5, 'lng': 2.5});
+  });
+
+  test('shareLocation puts lat/lng and an optional heading', () async {
+    late http.Request sent;
+    await repo(
+      null,
+      status: 204,
+      onRequest: (r) => sent = r,
+    ).shareLocation(lat: 28.61, lng: 77.21, heading: 135.0);
+
+    check(sent.method).equals('PUT');
+    check(sent.url.path).equals('/driver/location');
+    check(
+      jsonDecode(sent.body) as Map<String, dynamic>,
+    ).deepEquals({'lat': 28.61, 'lng': 77.21, 'heading': 135.0});
+  });
+
+  test('shareLocation omits heading when none was given', () async {
+    late http.Request sent;
+    await repo(
+      null,
+      status: 204,
+      onRequest: (r) => sent = r,
+    ).shareLocation(lat: 28.61, lng: 77.21);
+
+    check(
+      jsonDecode(sent.body) as Map<String, dynamic>,
+    ).deepEquals({'lat': 28.61, 'lng': 77.21});
   });
 }

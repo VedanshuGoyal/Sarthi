@@ -15,6 +15,11 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- Push notifications: asked for at runtime on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Live location sharing: geolocator runs the position stream as a
+         foreground service (with its own notification) so fixes keep
+         coming while the driver is in another app, e.g. Google Maps. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <application
         android:label="Sarthi Driver"
         android:name="${applicationName}"

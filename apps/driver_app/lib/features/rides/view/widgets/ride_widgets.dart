@@ -339,7 +339,32 @@ class RideCard extends StatelessWidget {
                 ),
             ],
           ),
-          if (footer != null) ...[const SizedBox(height: Skyline.s16), footer!],
+          if (ride.status == RideStatus.cancelled) ...[
+            const SizedBox(height: Skyline.s12),
+            Row(
+              children: [
+                Icon(Icons.cancel_rounded, size: 16, color: t.danger),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    [
+                      ride.cancelledBy == 'customer'
+                          ? 'Cancelled by customer'
+                          : 'Cancelled',
+                      if (ride.cancelReason?.isNotEmpty ?? false)
+                        ride.cancelReason!,
+                    ].join(' · '),
+                    style: t.body(size: 12.5, color: t.danger),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ] else if (footer != null) ...[
+            const SizedBox(height: Skyline.s16),
+            footer!,
+          ],
         ],
       ),
     );
@@ -387,6 +412,60 @@ class PanelMessage extends StatelessWidget {
           if (action != null) ...[const SizedBox(height: Skyline.s16), action!],
         ],
       ),
+    );
+  }
+}
+
+/// Five stars, read-only — what a rating of [stars] (1–5) looks like.
+class StarRow extends StatelessWidget {
+  const StarRow({super.key, required this.stars, this.size = 16});
+
+  final int stars;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= stars ? Icons.star_rounded : Icons.star_outline_rounded,
+            size: size,
+            color: i <= stars ? t.signal : t.outline,
+          ),
+      ],
+    );
+  }
+}
+
+/// Five tappable stars for giving a rating — tapping the third star sets
+/// [value] to 3, and so on.
+class StarPicker extends StatelessWidget {
+  const StarPicker({super.key, required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          IconButton(
+            onPressed: () => onChanged(i),
+            icon: Icon(
+              i <= value ? Icons.star_rounded : Icons.star_outline_rounded,
+              color: i <= value ? t.signal : t.outline,
+            ),
+            iconSize: 32,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          ),
+      ],
     );
   }
 }
