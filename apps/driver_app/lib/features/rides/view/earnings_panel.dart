@@ -9,10 +9,12 @@ import 'ride_format.dart';
 import 'widgets/ride_widgets.dart';
 
 /// The Earnings tab: today's total up top, the week / month / all-time
-/// windows, and the completed trips that make them up.
+/// windows, where the money stands (customers yet to pay, due to the driver,
+/// paid to their bank), and the completed trips that make them up.
 ///
-/// Figures are trip fares as booked; there is no commission or payout
-/// ledger yet, so this is what the driver's trips were worth, not a balance.
+/// The windows are trip fares as booked — what the trips were worth. The
+/// money card is the balance: customers pay MOJUD by UPI, and MOJUD pays the
+/// driver's share (after its commission) to their bank.
 class EarningsPanel extends ConsumerWidget {
   const EarningsPanel({super.key});
 
@@ -88,6 +90,10 @@ class EarningsPanel extends ConsumerWidget {
                         );
                       },
                     ),
+                    if (vm.hasLoaded) ...[
+                      const SizedBox(height: Skyline.s16),
+                      _MoneyCard(payments: e.payments),
+                    ],
                     const SizedBox(height: Skyline.s24),
                     const SectionHeader(title: 'Completed trips'),
                     if (recent.isEmpty)
@@ -196,6 +202,64 @@ class _PeriodTile extends StatelessWidget {
   }
 }
 
+/// Where the driver's money is: yet to be paid by customers, due to them
+/// from MOJUD, and already in their bank.
+class _MoneyCard extends StatelessWidget {
+  const _MoneyCard({required this.payments});
+
+  final DriverPayments payments;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final p = payments;
+    String trips(int n) => '$n ${n == 1 ? 'trip' : 'trips'}';
+    final lastPayout = p.lastPayoutAt;
+    final rows = [
+      (
+        Icons.hourglass_top_rounded,
+        'Waiting for customers to pay',
+        trips(p.awaitingCustomerRides),
+        p.awaitingCustomerPaise,
+      ),
+      (
+        Icons.account_balance_wallet_rounded,
+        'Due to you',
+        '${trips(p.dueRides)} · paid to your bank weekly',
+        p.duePaise,
+      ),
+      (
+        Icons.check_circle_rounded,
+        'Paid to your bank',
+        lastPayout == null
+            ? 'No payouts yet'
+            : 'Last on ${RideFormat.when(lastPayout)}',
+        p.paidOutPaise,
+      ),
+    ];
+    return SkylineCard(
+      padding: const EdgeInsets.symmetric(vertical: Skyline.s8),
+      child: Column(
+        children: [
+          for (final (i, (icon, label, detail, paise)) in rows.indexed) ...[
+            if (i > 0)
+              const Divider(indent: Skyline.s16, endIndent: Skyline.s16),
+            ListTile(
+              leading: Icon(icon, color: t.primaryText),
+              title: Text(label),
+              subtitle: Text(detail),
+              trailing: Text(
+                RideFormat.rupees((paise / 100).round()),
+                style: t.figure(16),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _TripRow extends StatelessWidget {
   const _TripRow({required this.ride});
 
@@ -223,7 +287,14 @@ class _TripRow extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text('${ride.kind.label} · ${RideFormat.when(at)}'),
+      subtitle: Text(
+        [
+          ride.kind.label,
+          RideFormat.when(at),
+          if (ride.paymentStatus != RidePaymentStatus.none)
+            ride.paymentStatus.label,
+        ].join(' · '),
+      ),
       trailing: Text(RideFormat.rupees(ride.fareRupees), style: t.figure(16)),
     );
   }

@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Sarthi Driver</string>
+	<string>MOJUD Driver</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -27,11 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Sarthi Driver uses your location to match you with nearby ride requests and guide you to pickups.</string>
+	<string>MOJUD Driver uses your location to match you with nearby ride requests and guide you to pickups.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Sarthi Driver streams your location to riders and dispatch while you're online, even when the app is in the background.</string>
+	<string>MOJUD Driver streams your location to riders and dispatch while you're online, even when the app is in the background.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Sarthi Driver uses your camera to capture your selfie and ID documents during registration.</string>
+	<string>MOJUD Driver uses your camera to capture your selfie and ID documents during registration.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

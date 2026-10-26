@@ -56,6 +56,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
 
   static const int _homeTab = 0;
   static const int _ridesTab = 1;
+  static const int _earningsTab = 2;
 
   final List<StreamSubscription<void>> _push = [];
   int _index = 0;
@@ -80,6 +81,8 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
       if (launchedBy != null && mounted) {
         if (launchedBy.type == 'ride_cancelled') {
           _openCancelledRide(launchedBy.rideId);
+        } else if (launchedBy.type == _paymentReceived) {
+          _openEarnings();
         } else {
           _openRequests();
         }
@@ -104,12 +107,28 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _refreshRequests();
   }
 
+  /// The push sent when a customer pays for a ride.
+  static const String _paymentReceived = 'payment_received';
+
+  /// The customer paid: re-read the rides and the money on Earnings.
+  void _reloadMoney() {
+    ref.read(myRidesViewModelProvider).load();
+    ref.read(earningsViewModelProvider).load();
+  }
+
+  void _openEarnings() {
+    _select(_earningsTab);
+    _reloadMoney();
+  }
+
   /// A push arrived while the app was open: a cancelled ride needs the
-  /// rides list re-read so it shows up as cancelled; anything else is a new
-  /// request, so refresh the feed as before.
+  /// rides list re-read so it shows up as cancelled, a payment the earnings;
+  /// anything else is a new request, so refresh the feed as before.
   void _onPushArrival(PushEvent event) {
     if (event.type == 'ride_cancelled') {
       ref.read(myRidesViewModelProvider).load();
+    } else if (event.type == _paymentReceived) {
+      _reloadMoney();
     } else {
       _refreshRequests();
     }
@@ -118,6 +137,8 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   void _onPushTap(PushEvent event) {
     if (event.type == 'ride_cancelled') {
       _openCancelledRide(event.rideId);
+    } else if (event.type == _paymentReceived) {
+      _openEarnings();
     } else {
       _openRequests();
     }
@@ -131,9 +152,9 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     if (rideId == null || !mounted) return;
     final ride = ref.read(myRidesViewModelProvider).byId(rideId);
     if (ride != null && mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => RideDetailScreen(ride: ride)),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => RideDetailScreen(ride: ride)));
     }
   }
 

@@ -32,13 +32,13 @@ done
 USER_VERSION="$(version_of user_app)"
 DRIVER_VERSION="$(version_of driver_app)"
 USER_APK="mojud-${USER_VERSION}.apk"
-DRIVER_APK="sarthi-driver-${DRIVER_VERSION}.apk"
+DRIVER_APK="mojud-driver-${DRIVER_VERSION}.apk"
 
 rm -rf "$DIST" && mkdir -p "$DIST"
 cp "$USER_APK_SRC" "$DIST/$USER_APK"
 cp "$DRIVER_APK_SRC" "$DIST/$DRIVER_APK"
 cp "$REPO_ROOT/apps/user_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-icon.png"
-cp "$REPO_ROOT/apps/driver_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/sarthi-driver-icon.png"
+cp "$REPO_ROOT/apps/driver_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-driver-icon.png"
 
 QR_SVG="$(qrencode -t SVG -m 1 --foreground=0B2239 -o - "$PAGE_URL" | sed '1{/^<?xml/d}')"
 

@@ -30,7 +30,7 @@ class SarthiDriverApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Sarthi Driver',
+      title: 'MOJUD Driver',
       theme: SkylineTheme.light(),
       home: const _AppRoot(),
     );

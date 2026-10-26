@@ -166,6 +166,38 @@ class RideRating {
   }
 }
 
+/// Where the money for a completed ride stands.
+enum RidePaymentStatus {
+  /// Not completed yet — nothing to pay.
+  none(''),
+
+  /// Completed; the customer hasn't paid yet.
+  due('due'),
+
+  /// The customer paid MOJUD; the driver's share comes in the next payout.
+  paid('paid'),
+
+  /// The driver's share has gone to their bank.
+  paidOut('paid_out');
+
+  const RidePaymentStatus(this.wireName);
+
+  final String wireName;
+
+  static RidePaymentStatus fromWire(Object? value) => values.firstWhere(
+    (s) => s != none && s.wireName == value,
+    orElse: () => none,
+  );
+
+  /// "Awaiting payment", "Paid", "Paid out" — empty before completion.
+  String get label => switch (this) {
+    none => '',
+    due => 'Awaiting payment',
+    paid => 'Paid',
+    paidOut => 'Paid out',
+  };
+}
+
 /// A ride as the driver app shows it — an open request, or one of the
 /// driver's own rides.
 class Ride {
@@ -193,6 +225,9 @@ class Ride {
     this.cancelledBy,
     this.cancelReason,
     this.myRating,
+    this.paymentStatus = RidePaymentStatus.none,
+    this.paidAt,
+    this.sharePaise,
   });
 
   final String id;
@@ -248,6 +283,13 @@ class Ride {
   /// What this driver gave the customer, once they've rated them.
   final RideRating? myRating;
 
+  /// Whether the customer has paid for the completed ride, and when.
+  final RidePaymentStatus paymentStatus;
+  final DateTime? paidAt;
+
+  /// The driver's part of a paid ride: the payment less MOJUD's commission.
+  final int? sharePaise;
+
   /// The fare in whole rupees, for display.
   int get fareRupees => (farePaise / 100).round();
 
@@ -296,6 +338,9 @@ class Ride {
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
     myRating: myRating,
+    paymentStatus: paymentStatus,
+    paidAt: paidAt,
+    sharePaise: sharePaise,
   );
 
   /// Parses the backend's ride, or returns null for one this app version
@@ -345,6 +390,9 @@ class Ride {
       cancelledBy: json['cancelledBy'] as String?,
       cancelReason: json['cancelReason'] as String?,
       myRating: RideRating.tryParse(json['myRating']),
+      paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
+      paidAt: _time(json['paidAt']),
+      sharePaise: (json['sharePaise'] as num?)?.toInt(),
     );
   }
 }
@@ -404,6 +452,40 @@ class EarningsRating {
   }
 }
 
+/// Where the driver's money stands: what customers still owe on their
+/// completed rides, what MOJUD owes them (paid by customers, less
+/// commission, not yet transferred), and what has reached their bank.
+class DriverPayments {
+  const DriverPayments({
+    this.awaitingCustomerPaise = 0,
+    this.awaitingCustomerRides = 0,
+    this.duePaise = 0,
+    this.dueRides = 0,
+    this.paidOutPaise = 0,
+    this.lastPayoutAt,
+  });
+
+  final int awaitingCustomerPaise;
+  final int awaitingCustomerRides;
+  final int duePaise;
+  final int dueRides;
+  final int paidOutPaise;
+  final DateTime? lastPayoutAt;
+
+  factory DriverPayments.fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return const DriverPayments();
+    int n(String key) => (json[key] as num?)?.toInt() ?? 0;
+    return DriverPayments(
+      awaitingCustomerPaise: n('awaitingCustomerPaise'),
+      awaitingCustomerRides: n('awaitingCustomerRides'),
+      duePaise: n('duePaise'),
+      dueRides: n('dueRides'),
+      paidOutPaise: n('paidOutPaise'),
+      lastPayoutAt: _time(json['lastPayoutAt']),
+    );
+  }
+}
+
 /// The earnings panel's summary, in IST calendar windows.
 class Earnings {
   const Earnings({
@@ -412,6 +494,7 @@ class Earnings {
     this.month = const EarningsPeriod(),
     this.total = const EarningsPeriod(),
     this.rating,
+    this.payments = const DriverPayments(),
   });
 
   final EarningsPeriod today;
@@ -419,6 +502,7 @@ class Earnings {
   final EarningsPeriod month;
   final EarningsPeriod total;
   final EarningsRating? rating;
+  final DriverPayments payments;
 
   factory Earnings.fromJson(Map<String, dynamic> json) => Earnings(
     today: EarningsPeriod.fromJson(json['today']),
@@ -426,6 +510,7 @@ class Earnings {
     month: EarningsPeriod.fromJson(json['month']),
     total: EarningsPeriod.fromJson(json['total']),
     rating: EarningsRating.tryParse(json['rating']),
+    payments: DriverPayments.fromJson(json['payments']),
   );
 }
 

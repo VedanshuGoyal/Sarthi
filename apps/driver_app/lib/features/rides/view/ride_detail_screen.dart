@@ -175,7 +175,11 @@ class _Summary extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  ride.fareEstimated ? 'estimated fare' : 'trip fare',
+                  [
+                    ride.fareEstimated ? 'estimated fare' : 'trip fare',
+                    if (ride.paymentStatus != RidePaymentStatus.none)
+                      ride.paymentStatus.label.toLowerCase(),
+                  ].join(' · '),
                   style: t.body(
                     size: 13,
                     color: t.onPrimary.withValues(alpha: 0.75),
@@ -770,7 +774,8 @@ class _ActionBar extends ConsumerWidget {
       RideAction.release => 'Ride handed back.',
       RideAction.start => 'Trip started. Drive safe!',
       RideAction.complete =>
-        'Trip complete — ${RideFormat.rupees(ride.fareRupees)} added to earnings.',
+        'Trip complete. The customer can now pay '
+            '${RideFormat.rupees(ride.fareRupees)} by UPI in their app.',
       _ => null,
     };
     if (done != null) messenger.showSnackBar(SnackBar(content: Text(done)));

@@ -57,7 +57,11 @@ void main() {
   group('Ride.tryParse — customer rating', () {
     test('reads rating and ratingCount', () {
       final parsed = Ride.tryParse(
-        rideJson(withCustomer: true, customerRating: 4.9, customerRatingCount: 3),
+        rideJson(
+          withCustomer: true,
+          customerRating: 4.9,
+          customerRatingCount: 3,
+        ),
       )!;
       check(parsed.customer!.rating).equals(4.9);
       check(parsed.customer!.ratingCount).equals(3);
@@ -81,7 +85,9 @@ void main() {
     });
 
     test('is null when the backend omits it', () {
-      final e = Earnings.fromJson({'today': {'farePaise': 0, 'rides': 0}});
+      final e = Earnings.fromJson({
+        'today': {'farePaise': 0, 'rides': 0},
+      });
       check(e.rating).isNull();
     });
   });
@@ -90,36 +96,92 @@ void main() {
     final scheduled = DateTime.parse('2026-10-26T09:00:00+05:30');
 
     test('false for a ride the driver hasn\'t taken', () {
-      final requested = ride(status: 'requested', scheduledAt: scheduled.toIso8601String());
+      final requested = ride(
+        status: 'requested',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(requested.isTrackableAt(scheduled)).isFalse();
     });
 
     test('false more than 60 minutes before pickup', () {
-      final accepted = ride(status: 'accepted', scheduledAt: scheduled.toIso8601String());
+      final accepted = ride(
+        status: 'accepted',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(
         accepted.isTrackableAt(scheduled.subtract(const Duration(minutes: 61))),
       ).isFalse();
     });
 
     test('true from exactly 60 minutes out, through pickup and the trip', () {
-      final accepted = ride(status: 'accepted', scheduledAt: scheduled.toIso8601String());
+      final accepted = ride(
+        status: 'accepted',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(
         accepted.isTrackableAt(scheduled.subtract(const Duration(minutes: 60))),
       ).isTrue();
       check(accepted.isTrackableAt(scheduled)).isTrue();
 
-      final inProgress = ride(status: 'in_progress', scheduledAt: scheduled.toIso8601String());
+      final inProgress = ride(
+        status: 'in_progress',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(
         inProgress.isTrackableAt(scheduled.add(const Duration(hours: 2))),
       ).isTrue();
     });
 
     test('false once completed or cancelled, regardless of time', () {
-      final completed = ride(status: 'completed', scheduledAt: scheduled.toIso8601String());
+      final completed = ride(
+        status: 'completed',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(completed.isTrackableAt(scheduled)).isFalse();
 
-      final cancelled = ride(status: 'cancelled', scheduledAt: scheduled.toIso8601String());
+      final cancelled = ride(
+        status: 'cancelled',
+        scheduledAt: scheduled.toIso8601String(),
+      );
       check(cancelled.isTrackableAt(scheduled)).isFalse();
+    });
+  });
+
+  group('payments', () {
+    test('a paid ride carries its status, time and the driver\'s share', () {
+      final parsed = Ride.tryParse({
+        ...rideJson(status: 'completed'),
+        'paymentStatus': 'paid',
+        'paidAt': '2026-10-26T12:00:00+05:30',
+        'sharePaise': 25500,
+      })!;
+      check(parsed.paymentStatus).equals(RidePaymentStatus.paid);
+      check(parsed.paymentStatus.label).equals('Paid');
+      check(parsed.paidAt).isNotNull();
+      check(parsed.sharePaise).equals(25500);
+    });
+
+    test('older servers send no payment fields', () {
+      final parsed = Ride.tryParse(rideJson(status: 'completed'))!;
+      check(parsed.paymentStatus).equals(RidePaymentStatus.none);
+      check(parsed.sharePaise).isNull();
+    });
+
+    test('earnings read the money summary, or zeros without one', () {
+      final e = Earnings.fromJson({
+        'payments': {
+          'awaitingCustomerPaise': 30000,
+          'awaitingCustomerRides': 1,
+          'duePaise': 25500,
+          'dueRides': 1,
+          'paidOutPaise': 28900,
+          'lastPayoutAt': '2026-10-26T17:14:53+05:30',
+        },
+      });
+      check(e.payments.duePaise).equals(25500);
+      check(e.payments.paidOutPaise).equals(28900);
+      check(e.payments.lastPayoutAt).isNotNull();
+      check(Earnings.fromJson({}).payments.duePaise).equals(0);
     });
   });
 }

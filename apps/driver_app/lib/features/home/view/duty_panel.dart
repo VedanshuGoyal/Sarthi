@@ -28,7 +28,7 @@ class DutyPanel extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: Skyline.s20,
-        title: const Text('Sarthi Driver'),
+        title: const Text('MOJUD Driver'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: Skyline.s20),

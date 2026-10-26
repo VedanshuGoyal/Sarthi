@@ -98,7 +98,7 @@ class _PermissionsStepState extends ConsumerState<PermissionsStep> {
       leading: const BackButton(),
       title: 'Permissions',
       subtitle:
-          "Turn these on so ride offers reach you even when Sarthi Driver "
+          "Turn these on so ride offers reach you even when MOJUD Driver "
           "isn't the app on screen.",
       fields: [
         _PermissionRow(
