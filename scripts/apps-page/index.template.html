@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MOJUD | A driver for your own car, in Delhi NCR</title>
-<meta name="description" content="Book a driver to drive your own car in Delhi NCR: by the hour, one way, or through a day of errands. From ₹139 for the first hour. Pay by UPI after the trip.">
+<meta name="description" content="Book a trained driver for your own car in Delhi NCR: by the hour, one way, or for errands. From ₹139 an hour.">
 <meta name="theme-color" content="#0B2239">
 <meta property="og:type" content="website">
 <meta property="og:title" content="MOJUD | Your car. Our driver.">
-<meta property="og:description" content="Book a driver for your own car in Delhi NCR, by the hour, one way or for errands.">
+<meta property="og:description" content="Book a trained driver for your own car in Delhi NCR.">
 <meta property="og:url" content="https://apps.mojud.life/">
 <meta property="og:image" content="https://apps.mojud.life/mojud-icon.png">
 <link rel="icon" type="image/png" href="mojud-icon.png">
@@ -143,6 +143,9 @@
   .safe-list b { display: block; font-size: 16px; margin-bottom: 4px; }
   .safe-list span { color: var(--muted); font-size: 14.5px; }
 
+  @media (min-width: 900px) { .safe-list.four { grid-template-columns: repeat(4, 1fr); } }
+  .drv-simple { position: relative; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 28px; }
+
   /* Pricing */
   .price-grid { display: grid; gap: 16px; }
   @media (min-width: 820px) { .price-grid { grid-template-columns: 1fr 1fr; } }
@@ -249,7 +252,7 @@
     </a>
     <nav class="nav" aria-label="Main">
       <a href="#how">How it works</a>
-      <a href="#safety">Safety</a>
+      <a href="#safety">Why MOJUD</a>
       <a href="#fares">Fares</a>
       <a href="#drivers">For drivers</a>
       <a href="#faq">FAQ</a>
@@ -264,15 +267,15 @@
       <div>
         <p class="eyebrow">Driver on hire · Delhi NCR</p>
         <h1 id="hero-title">Your car. <span class="serif">Our driver.</span></h1>
-        <p class="lede">Book a driver to drive your own car: for a few hours, one way across the city, or through a day of errands. Pay by UPI after the trip.</p>
+        <p class="lede">Book a trained driver for your own car: for a few hours, one way, or for a day of errands.</p>
         <div class="cta-row">
           <a class="btn btn-dark" href="#download">Download for Android <span class="arr" aria-hidden="true">→</span></a>
           <a class="btn btn-light" href="#drivers">I'm a driver</a>
         </div>
         <ul class="facts" aria-label="At a glance">
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>From ₹139 for the first hour</li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Free cancellation before the trip</li>
-          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Manual or automatic</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Trained drivers</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>From ₹139</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Free cancellation</li>
         </ul>
       </div>
 
@@ -301,15 +304,13 @@
               </div>
               <div class="card-m m-driver">
                 <span class="avatar">AK</span>
-                <div><b style="font-size:13.5px">Arjun</b><p class="m-sub">2.3 km away · updated just now</p></div>
+                <div><b style="font-size:13.5px">Arjun</b><p class="m-sub">2.3 km away</p></div>
                 <span class="m-call"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></span>
               </div>
               <div class="code"><span>Start code</span><b>4821</b></div>
             </div>
           </div>
         </div>
-        <div class="float-chip chip-a"><span class="dot" style="background:var(--gold-soft);color:#8A6420"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Booked for 6:30 PM<small>Driver found ahead of time</small></span></div>
-        <div class="float-chip chip-b"><span class="dot" style="background:var(--signal-soft);color:var(--signal-ink)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>Paid by UPI<small>After the trip, in the app</small></span></div>
       </div>
     </div>
   </section>
@@ -318,26 +319,23 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <p class="eyebrow">Three ways to book</p>
-        <h2 id="trips-title">However your day goes, <span class="serif">someone else drives.</span></h2>
+        <h2 id="trips-title">However your day goes, <span class="serif">we drive.</span></h2>
       </div>
       <div class="types">
         <article class="type reveal">
           <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
           <h3>Round Trip</h3>
-          <p>A driver for the hours you need: shopping, meetings, a family visit. They start and finish at your pickup.</p>
-          <span class="tag">Book by the hour</span>
+          <p>A driver for as many hours as you need.</p>
         </article>
         <article class="type reveal">
           <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
           <h3>One-Way</h3>
-          <p>From here to there in your own car: the airport, a late dinner, a long drive home.</p>
-          <span class="tag">Pickup to destination</span>
+          <p>From your pickup to one destination.</p>
         </article>
         <article class="type reveal">
           <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H16a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h7.5"/></svg></div>
           <h3>Multi-Stop</h3>
-          <p>Errands in one go. Add each stop, what to do there and when to leave, and the driver follows your plan.</p>
-          <span class="tag">Stops with tasks</span>
+          <p>Several stops and errands in one trip.</p>
         </article>
       </div>
     </div>
@@ -347,31 +345,28 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <p class="eyebrow">How it works</p>
-        <h2 id="how-title">Four steps, <span class="serif">no surprises.</span></h2>
+        <h2 id="how-title">Simple, <span class="serif">start to finish.</span></h2>
       </div>
       <ol class="steps">
-        <li class="reveal"><h3>Book ahead</h3><p>Pick the trip, your car and a start time at least 45 minutes away. You see the fare before you confirm.</p></li>
-        <li class="reveal"><h3>A driver accepts</h3><p>Drivers nearby who can drive your car's gearbox get the request. You see who accepted, their rating and their number.</p></li>
-        <li class="reveal"><h3>Share the start code</h3><p>Your driver begins the trip only with the 4-digit code in your app. Follow them on the map as they come to you.</p></li>
-        <li class="reveal"><h3>Pay and rate</h3><p>When the trip ends, pay by UPI from any UPI app. Then rate each other.</p></li>
+        <li class="reveal"><h3>Book</h3><p>Choose the trip, your car and a time.</p></li>
+        <li class="reveal"><h3>Get your driver</h3><p>See their name, rating and number.</p></li>
+        <li class="reveal"><h3>Start the trip</h3><p>Share the start code from your app.</p></li>
+        <li class="reveal"><h3>Pay and rate</h3><p>Pay by UPI after the trip.</p></li>
       </ol>
     </div>
   </section>
 
   <section class="sec" id="safety" aria-labelledby="safety-title">
-    <div class="wrap safety">
-      <div class="sec-head reveal" style="margin-bottom:0">
-        <p class="eyebrow">Safety</p>
-        <h2 id="safety-title">You hand over the keys. <span class="serif">We take that seriously.</span></h2>
-        <p>Every part of a MOJUD ride is built so you know who is driving your car, when they start and where they are.</p>
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">Why MOJUD</p>
+        <h2 id="safety-title">Your car, <span class="serif">in safe hands.</span></h2>
       </div>
-      <ul class="safe-list">
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M15 10h3M15 14h3M6 16c.5-1.5 1.7-2 3-2s2.5.5 3 2"/></svg></div><b>Documented drivers</b><span>Drivers give us their Aadhaar, driving licence, a selfie and bank details before their first ride.</span></li>
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><b>Start code</b><span>The trip can't begin without the code in your app. After five wrong tries, the code changes.</span></li>
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div><b>Live location</b><span>See your driver on the map from an hour before the start until the trip ends.</span></li>
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></div><b>Two-way ratings</b><span>Customers rate drivers and drivers rate customers, after every trip.</span></li>
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div><b>Free to cancel</b><span>Change of plans? Cancel any time before the trip starts, at no charge.</span></li>
-        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div><b>Told at every step</b><span>Notifications when a driver accepts, arrives, or hands the ride back.</span></li>
+      <ul class="safe-list four">
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div><b>Trained drivers</b><span>Every MOJUD driver is trained.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><b>Start code</b><span>The trip starts only with your code.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div><b>Live tracking</b><span>See your driver on the map.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div><b>Free cancellation</b><span>Cancel any time before the trip starts.</span></li>
       </ul>
     </div>
   </section>
@@ -380,7 +375,7 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <p class="eyebrow">Fares</p>
-        <h2 id="fares-title">Simple hourly fares, <span class="serif">shown before you book.</span></h2>
+        <h2 id="fares-title">Clear hourly <span class="serif">fares.</span></h2>
       </div>
       <div class="price-grid">
         <article class="price reveal">
@@ -390,41 +385,30 @@
           <div class="rows">
             <div class="row"><span>2 hours</span>₹240</div>
             <div class="row"><span>Each extra hour</span>+₹100</div>
-            <div class="row"><span>4 hours, for example</span>₹440</div>
           </div>
         </article>
         <article class="price lux reveal">
           <h3>Luxury</h3>
-          <p class="p-sub">Premium and luxury cars</p>
+          <p class="p-sub">Premium cars</p>
           <p class="big" style="margin:0">₹196<small>first hour</small></p>
           <div class="rows">
             <div class="row"><span>2 hours</span>₹330</div>
             <div class="row"><span>Each extra hour</span>+₹110</div>
-            <div class="row"><span>4 hours, for example</span>₹550</div>
           </div>
         </article>
       </div>
-      <p class="price-note reveal">Round Trip is priced on the hours you book. One-Way and Multi-Stop are estimated on the same rates for the expected drive time, rounded up to whole hours, and the app marks them as estimates. Nothing is charged at booking: you pay after the trip.</p>
+      <p class="price-note reveal">You see the fare before you book.</p>
     </div>
   </section>
 
   <section class="sec drivers" id="drivers" aria-labelledby="drivers-title">
-    <div class="wrap drv-grid">
-      <div>
-        <div class="sec-head reveal" style="margin-bottom:28px">
-          <p class="eyebrow">For drivers</p>
-          <h2 id="drivers-title">Drive with MOJUD, <span class="serif">on your own hours.</span></h2>
-          <p>Good drivers are what we sell. Sign up in the MOJUD Driver app, go on duty when it suits you, and take the rides you want.</p>
-        </div>
-        <div class="share reveal"><b>87%</b><span>of every fare is yours. MOJUD keeps 13%.</span></div>
-        <div class="cta-row reveal"><a class="btn btn-gold" href="#download">Get MOJUD Driver <span class="arr" aria-hidden="true">→</span></a></div>
+    <div class="wrap drv-simple">
+      <div class="sec-head reveal" style="margin-bottom:0">
+        <p class="eyebrow">For drivers</p>
+        <h2 id="drivers-title">Drive with <span class="serif">MOJUD.</span></h2>
+        <p>Sign up in the MOJUD Driver app and drive on your own hours.</p>
       </div>
-      <ul class="drv-list">
-        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6M5.6 5.6a8 8 0 1 0 12.8 0"/></svg><div><b>On duty when you choose</b><span>One switch takes you online. Ride requests near you arrive as notifications.</span></div></li>
-        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><div><b>Booked ahead, never rushed</b><span>Every ride is scheduled, so you see the time, place, car and fare before you accept.</span></div></li>
-        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg><div><b>Paid to your bank, weekly</b><span>Customers pay MOJUD by UPI. Your share goes to your bank account every week.</span></div></li>
-        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg><div><b>Earnings at a glance</b><span>Today, this week and this month, with what customers owe and what has been paid out.</span></div></li>
-      </ul>
+      <div class="reveal"><a class="btn btn-gold" href="#download">Get MOJUD Driver <span class="arr" aria-hidden="true">→</span></a></div>
     </div>
   </section>
 
@@ -432,27 +416,24 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <p class="eyebrow">Get the apps</p>
-        <h2 id="download-title">Download for Android. <span class="serif">It takes a minute.</span></h2>
-        <p>These are early builds, installed straight from this page while we get ready for Google Play.</p>
+        <h2 id="download-title">Download for <span class="serif">Android.</span></h2>
       </div>
       <div class="apps">
         <article class="app reveal">
           <div class="app-head">
             <img src="mojud-icon.png" alt="" width="60" height="60">
-            <div><h3>MOJUD</h3><p>Book a driver for your own car.</p></div>
+            <div><h3>MOJUD</h3><p>Book a driver for your car.</p></div>
           </div>
-          <div class="meta"><span class="chip">Version {{USER_VERSION}}</span><span class="chip">{{USER_SIZE}}</span><span class="chip">Android</span></div>
+          <div class="meta"><span class="chip">Version {{USER_VERSION}}</span><span class="chip">{{USER_SIZE}}</span></div>
           <a class="btn btn-dark" href="{{USER_APK}}" download>Download MOJUD</a>
-          <p class="hash">SHA-256 <code>{{USER_SHA}}</code></p>
         </article>
         <article class="app reveal">
           <div class="app-head">
             <img src="mojud-driver-icon.png" alt="" width="60" height="60">
-            <div><h3>MOJUD Driver</h3><p>For drivers: sign up, documents, trips.</p></div>
+            <div><h3>MOJUD Driver</h3><p>For drivers.</p></div>
           </div>
-          <div class="meta"><span class="chip">Version {{DRIVER_VERSION}}</span><span class="chip">{{DRIVER_SIZE}}</span><span class="chip">Android</span></div>
+          <div class="meta"><span class="chip">Version {{DRIVER_VERSION}}</span><span class="chip">{{DRIVER_SIZE}}</span></div>
           <a class="btn btn-dark" href="{{DRIVER_APK}}" download>Download MOJUD Driver</a>
-          <p class="hash">SHA-256 <code>{{DRIVER_SHA}}</code></p>
         </article>
       </div>
       <div class="install">
@@ -460,14 +441,13 @@
           <h3 id="install-title">How to install</h3>
           <ol>
             <li>Tap <strong>Download</strong> on your phone.</li>
-            <li>Open the downloaded file. If asked, allow your browser to <strong>install unknown apps</strong>.</li>
-            <li>Tap <strong>Install</strong>, then open the app.</li>
+            <li>Open the file. If asked, allow <strong>install unknown apps</strong>.</li>
+            <li>Tap <strong>Install</strong>.</li>
           </ol>
-          <p class="note">Installed a test build from before 24 October 2026? Uninstall it first. Newer builds are signed with a different key, so Android won't update over the old one.</p>
         </section>
         <section class="panel qr reveal" aria-label="Open this page on your phone">
           {{QR_SVG}}
-          <p><strong style="color:var(--ink)">On a computer?</strong><br>Scan with your phone's camera to open this page there.</p>
+          <p><strong style="color:var(--ink)">On a computer?</strong><br>Scan to open this page on your phone.</p>
         </section>
       </div>
     </div>
@@ -478,16 +458,13 @@
       <div class="sec-head reveal" style="margin-bottom:0">
         <p class="eyebrow">Questions</p>
         <h2 id="faq-title">Good to <span class="serif">know.</span></h2>
-        <p>Something else? Write to <a href="mailto:team@mojud.life">team@mojud.life</a>.</p>
       </div>
       <div>
-        <details><summary>Does MOJUD give me a car?</summary><p>No. MOJUD sends a driver for your own car. Add your car once (registration, type and gearbox) and pick it when you book.</p></details>
-        <details><summary>Where do you operate?</summary><p>Delhi NCR: Delhi, Gurugram, Faridabad, Noida, Greater Noida, Ghaziabad and nearby areas. Every pickup, stop and destination must be inside this area.</p></details>
-        <details><summary>How early do I need to book?</summary><p>At least 45 minutes before the start time. Drivers can accept until 30 minutes before; if nobody has by then, the booking closes as "No driver found" and nothing is charged.</p></details>
-        <details><summary>How do I pay?</summary><p>After the trip ends, pay the fare in the app by UPI, from GPay, PhonePe, Paytm or your bank's UPI app. Payments go through PhonePe's payment gateway; MOJUD never sees your UPI PIN.</p></details>
-        <details><summary>Can I cancel?</summary><p>Yes, free of charge, any time before the trip starts. See the <a href="https://mojud.life/refunds.html">refund and cancellation policy</a>.</p></details>
-        <details><summary>My car is automatic. Will the driver know how to drive it?</summary><p>Yes. Drivers tell us whether they drive manual, automatic or both, and only drivers who can drive your car's gearbox are offered your ride.</p></details>
-        <details><summary>Is there an iPhone app?</summary><p>Not yet. The apps are on Android first; iPhone comes after Google Play.</p></details>
+        <details><summary>Do you provide the car?</summary><p>No. Our driver drives your own car.</p></details>
+        <details><summary>Where do you operate?</summary><p>Delhi NCR.</p></details>
+        <details><summary>How early should I book?</summary><p>At least 45 minutes before the start time.</p></details>
+        <details><summary>How do I pay?</summary><p>By UPI in the app, after the trip.</p></details>
+        <details><summary>Can the driver drive an automatic?</summary><p>Yes. You only get drivers who can drive your car's gearbox.</p></details>
       </div>
     </div>
   </section>
@@ -501,7 +478,7 @@
           <svg width="24" height="24" viewBox="0 0 144 144" aria-hidden="true"><g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none"><line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/><line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/><line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/></g><circle cx="72" cy="72" r="9" fill="#CE9A3C"/></svg>
           MOJUD
         </a>
-        <p style="margin:0;max-width:30em">A driver for your own car, in Delhi NCR. MOJUD is an Udyam-registered micro enterprise from Khargone, Madhya Pradesh.</p>
+        <p style="margin:0;max-width:30em">Trained drivers for your own car, in Delhi NCR.</p>
       </div>
       <div>
         <h4>Contact</h4>
@@ -521,7 +498,7 @@
         </ul>
       </div>
     </div>
-    <div class="foot-base"><span>© 2026 MOJUD</span><span>Android test builds, not yet on Google Play · Updated {{UPDATED}}</span></div>
+    <div class="foot-base"><span>© 2026 MOJUD</span><span>Updated {{UPDATED}}</span></div>
   </div>
 </footer>
 
