@@ -78,6 +78,12 @@ preflight() {
 	if [[ -z "${FCM_CREDENTIALS_FILE:-}" ]]; then
 		warn "FCM_CREDENTIALS_FILE not set — ride push notifications will be off"
 	fi
+	if [[ -z "${PHONEPE_CLIENT_ID:-}" || -z "${PHONEPE_MERCHANT_ID:-}" ]]; then
+		warn "PHONEPE_* not set — customers can't pay for rides in the app"
+	fi
+	if [[ -z "${ADMIN_TOKEN:-}" ]]; then
+		warn "ADMIN_TOKEN not set — the payouts back office (/admin/*) will be off"
+	fi
 	if [[ -z "${OLA_MAPS_CLIENT_ID:-}" || -z "${OLA_MAPS_CLIENT_SECRET:-}" ]]; then
 		warn "OLA_MAPS_CLIENT_ID/OLA_MAPS_CLIENT_SECRET not set — map search will be off"
 	fi
@@ -219,6 +225,15 @@ phase_service() {
 		S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY
 		DOCUMENT_ENCRYPTION_KEY=$DOCUMENT_ENCRYPTION_KEY
 		DOCUMENT_HASH_PEPPER=$DOCUMENT_HASH_PEPPER
+		PHONEPE_ENV=${PHONEPE_ENV:-SANDBOX}
+		PHONEPE_CLIENT_ID=${PHONEPE_CLIENT_ID:-}
+		PHONEPE_CLIENT_SECRET=${PHONEPE_CLIENT_SECRET:-}
+		PHONEPE_CLIENT_VERSION=${PHONEPE_CLIENT_VERSION:-1}
+		PHONEPE_MERCHANT_ID=${PHONEPE_MERCHANT_ID:-}
+		PHONEPE_WEBHOOK_USERNAME=${PHONEPE_WEBHOOK_USERNAME:-}
+		PHONEPE_WEBHOOK_PASSWORD=${PHONEPE_WEBHOOK_PASSWORD:-}
+		COMMISSION_PERCENT=${COMMISSION_PERCENT:-13}
+		ADMIN_TOKEN=${ADMIN_TOKEN:-}
 	EOF
 	umask 022
 	chown root:root "$SERVER_ENV"; chmod 600 "$SERVER_ENV"

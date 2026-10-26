@@ -39,6 +39,7 @@ services:
       - ./migrations/0010_booking_start_otp.up.sql:/docker-entrypoint-initdb.d/0010_booking_start_otp.sql:ro
       - ./migrations/0011_push_tokens.up.sql:/docker-entrypoint-initdb.d/0011_push_tokens.sql:ro
       - ./migrations/0012_ride_cancel_rating.up.sql:/docker-entrypoint-initdb.d/0012_ride_cancel_rating.sql:ro
+      - ./migrations/0013_payments.up.sql:/docker-entrypoint-initdb.d/0013_payments.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sarthi -d sarthi"]
       interval: 5s

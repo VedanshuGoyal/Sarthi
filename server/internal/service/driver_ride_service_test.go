@@ -521,6 +521,10 @@ func (r *recordingAlerts) DriverReleased(_ context.Context, b domain.Booking, _ 
 	r.add("released " + b.UserID + " " + driverID + " " + b.ID)
 }
 
+func (r *recordingAlerts) RideCompleted(_ context.Context, userID string, ride domain.DriverRide) {
+	r.add("completed " + userID + " " + ride.ID)
+}
+
 func TestRideAlerts_acceptArriveRelease(t *testing.T) {
 	ride := openRide("r1", testNow.Add(3*time.Hour), 2, "automatic")
 	ride.Booking.UserID = "u1"

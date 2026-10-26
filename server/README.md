@@ -66,6 +66,39 @@ Leave them unset and `/maps/token` answers 503 `maps_not_configured`; the app
 then shows "Map search isn't set up yet." `./scripts/run-backend.sh` picks both
 up from `server/.env`.
 
+### Ride payments (PhonePe, UPI only)
+
+The customer pays MOJUD for a completed ride by UPI through PhonePe's payment
+gateway (Standard Checkout v2, mobile SDK). MOJUD keeps `COMMISSION_PERCENT` of
+each payment and pays drivers the rest by bank transfer, recorded from the back
+office. PhonePe's order-status API is the only proof of payment — the webhook,
+the app's return from checkout and a 2-minute sweep all just re-ask it.
+
+```bash
+export PHONEPE_ENV=SANDBOX                 # or PRODUCTION
+export PHONEPE_CLIENT_ID='…'               # dashboard → Developer Settings
+export PHONEPE_CLIENT_SECRET='…'
+export PHONEPE_CLIENT_VERSION=1
+export PHONEPE_MERCHANT_ID='…'
+export PHONEPE_WEBHOOK_USERNAME='…'        # what the dashboard webhook was created with
+export PHONEPE_WEBHOOK_PASSWORD='…'
+export COMMISSION_PERCENT=13               # MOJUD's cut; 13 when unset
+export ADMIN_TOKEN="$(openssl rand -hex 32)"  # back office
+```
+
+Webhook URL to register in the dashboard: `https://<api-domain>/payments/phonepe/webhook`
+(events `checkout.order.completed`, `checkout.order.failed`, SHA256 auth).
+Without the PhonePe variables the payment routes answer 503
+`payments_not_configured`.
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| POST | `/me/bookings/{id}/payment` | Opens a UPI checkout for a completed ride → `{checkout:{environment, merchantId, orderId, token, …}}` for the app's PhonePe SDK. 409 `already_paid` / `booking_state` |
+| POST | `/me/bookings/{id}/payment/sync` | Re-checks the ride's open checkouts with PhonePe → `{booking}` (`paymentStatus` `due`/`paid`) |
+| POST | `/payments/phonepe/webhook` | PhonePe → us; `Authorization: SHA256(username:password)` |
+| GET | `/admin/payouts/due[?format=csv]` | Bearer `ADMIN_TOKEN`. Per driver: rides paid and not paid out, share after commission, bank details. CSV for a bank bulk upload; keep its `as_of` |
+| POST | `/admin/payouts` | Bearer `ADMIN_TOKEN`. `{driverId, reference: "<bank UTR>", asOf}` → marks those rides paid out |
+
 If you already have Postgres, apply the migration manually instead of step 1:
 
 ```bash
@@ -86,7 +119,7 @@ migrate -path migrations -database "$DATABASE_URL" up
 | GET    | `/auth/me`          | — (Bearer token)                                  | The authenticated user's account. 401 without a valid token |
 | POST   | `/auth/logout`      | — (Bearer token)                                  | Revokes the caller's session token |
 | GET    | `/maps/token`       | — (Bearer token)                                  | `{accessToken, expiresIn}` — an Ola Maps token minted server-side (cached, shared across users until ~5 min before expiry). 503 `maps_not_configured` without credentials, 502 `maps_unavailable` if Ola refuses |
-| GET    | `/users`            | —                                                 | All accounts, newest first (diagnostic — unauthenticated) |
+| GET    | `/users`            | — (Bearer `ADMIN_TOKEN`)                          | All accounts, newest first (back office; 404 when `ADMIN_TOKEN` is unset) |
 | GET    | `/healthz`          | —                                                 | Liveness |
 
 Authenticated endpoints expect the session token as `Authorization: Bearer <token>`.

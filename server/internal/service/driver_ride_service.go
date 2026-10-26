@@ -106,13 +106,15 @@ type LiveLocationSink interface {
 }
 
 // RideAlerter tells the customer how their ride is going — a driver took
-// it, is at the pickup, or handed it back — and, for a handed-back ride, the
+// it, is at the pickup, handed it back or finished it — and, for a
+// handed-back ride, the
 // other drivers near it (NotifyService). Each call returns at once; the
 // alerts go out in the background.
 type RideAlerter interface {
 	DriverAssigned(ctx context.Context, userID string, ride domain.DriverRide, driverName string)
 	DriverArrived(ctx context.Context, userID, driverID string, ride domain.DriverRide)
 	DriverReleased(ctx context.Context, b domain.Booking, plan tripPlan, driverID string)
+	RideCompleted(ctx context.Context, userID string, ride domain.DriverRide)
 }
 
 // LatLng is a point the driver app reports.
@@ -417,6 +419,9 @@ func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string
 	if to == domain.RideStatusArrived && s.alerts != nil {
 		s.alerts.DriverArrived(ctx, rb.Booking.UserID, driverID, ride)
 	}
+	if to == domain.RideStatusCompleted && s.alerts != nil {
+		s.alerts.RideCompleted(ctx, rb.Booking.UserID, ride)
+	}
 	return ride, nil
 }
 
@@ -481,6 +486,11 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 		CancelledBy:      b.CancelledBy,
 		CancelReason:     b.CancelReason,
 		MyRating:         b.CustomerRating,
+		PaymentStatus:    b.PaymentStatus(),
+		PaidAt:           b.PaidAt,
+	}
+	if b.PaidAt != nil {
+		ride.SharePaise = b.PaidPaise - b.CommissionPaise
 	}
 	if withCustomer {
 		c := rb.Customer

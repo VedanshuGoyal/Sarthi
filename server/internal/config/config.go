@@ -4,7 +4,10 @@ package config
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/sarthi/server/internal/secret"
 )
@@ -41,6 +44,43 @@ type Config struct {
 
 	// Secrets holds the keys protecting personal numbers at rest.
 	Secrets SecretsConfig
+
+	// PhonePe holds the payment gateway's credentials. Optional: without
+	// them customers can't pay in the app (the payment routes answer 503).
+	PhonePe PhonePeConfig
+
+	// CommissionBasisPoints is MOJUD's cut of each ride payment, in basis
+	// points (1300 = 13%), from COMMISSION_PERCENT; defaultCommissionPercent
+	// when unset.
+	CommissionBasisPoints int64
+
+	// AdminToken guards the back-office routes (GET /users, /admin/…).
+	// Empty turns them off.
+	AdminToken string
+}
+
+// PhonePeConfig holds PhonePe payment gateway credentials, from the business
+// dashboard's Developer Settings.
+type PhonePeConfig struct {
+	ClientID      string
+	ClientSecret  string
+	ClientVersion string
+	MerchantID    string
+	// Environment is "SANDBOX" (the default) or "PRODUCTION".
+	Environment string
+	// WebhookUsername / WebhookPassword are what the dashboard's webhook was
+	// created with.
+	WebhookUsername string
+	WebhookPassword string
+	// TokenURL / BaseURL override PhonePe's endpoints — for local testing
+	// against a fake; empty means PhonePe's own for Environment.
+	TokenURL string
+	BaseURL  string
+}
+
+// Enabled reports whether the credentials needed to take payments are set.
+func (c PhonePeConfig) Enabled() bool {
+	return c.ClientID != "" && c.ClientSecret != "" && c.MerchantID != ""
 }
 
 // StorageBackend names an object-storage implementation.
@@ -141,9 +181,21 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	phonePe, err := loadPhonePe()
+	if err != nil {
+		return Config{}, err
+	}
+	commission, err := loadCommission()
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		DatabaseURL: dsn,
-		Addr:        addr,
+		PhonePe:               phonePe,
+		CommissionBasisPoints: commission,
+		AdminToken:            os.Getenv("ADMIN_TOKEN"),
+		DatabaseURL:           dsn,
+		Addr:                  addr,
 		Fast2SMS: Fast2SMSConfig{
 			APIKey: os.Getenv("FAST2SMS_API_KEY"),
 			OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
@@ -158,6 +210,49 @@ func Load() (Config, error) {
 		FCMCredentialsFile: os.Getenv("FCM_CREDENTIALS_FILE"),
 		FCMBaseURL:         os.Getenv("FCM_BASE_URL"),
 	}, nil
+}
+
+// loadPhonePe reads the payment gateway's credentials.
+func loadPhonePe() (PhonePeConfig, error) {
+	c := PhonePeConfig{
+		ClientID:        os.Getenv("PHONEPE_CLIENT_ID"),
+		ClientSecret:    os.Getenv("PHONEPE_CLIENT_SECRET"),
+		ClientVersion:   os.Getenv("PHONEPE_CLIENT_VERSION"),
+		MerchantID:      os.Getenv("PHONEPE_MERCHANT_ID"),
+		Environment:     strings.ToUpper(strings.TrimSpace(os.Getenv("PHONEPE_ENV"))),
+		WebhookUsername: os.Getenv("PHONEPE_WEBHOOK_USERNAME"),
+		WebhookPassword: os.Getenv("PHONEPE_WEBHOOK_PASSWORD"),
+		TokenURL:        os.Getenv("PHONEPE_TOKEN_URL"),
+		BaseURL:         os.Getenv("PHONEPE_BASE_URL"),
+	}
+	if (c.TokenURL == "") != (c.BaseURL == "") {
+		return PhonePeConfig{}, fmt.Errorf("set both PHONEPE_TOKEN_URL and PHONEPE_BASE_URL, or neither")
+	}
+	switch c.Environment {
+	case "":
+		c.Environment = "SANDBOX"
+	case "SANDBOX", "PRODUCTION":
+	default:
+		return PhonePeConfig{}, fmt.Errorf("PHONEPE_ENV must be SANDBOX or PRODUCTION, not %q", c.Environment)
+	}
+	return c, nil
+}
+
+// defaultCommissionPercent is MOJUD's commission on each ride payment
+// (decided 26 Oct 2026), used when COMMISSION_PERCENT is unset.
+const defaultCommissionPercent = "13"
+
+// loadCommission reads COMMISSION_PERCENT ("13", "12.5") as basis points.
+func loadCommission() (int64, error) {
+	v := strings.TrimSpace(os.Getenv("COMMISSION_PERCENT"))
+	if v == "" {
+		v = defaultCommissionPercent
+	}
+	pct, err := strconv.ParseFloat(v, 64)
+	if err != nil || pct < 0 || pct > 100 {
+		return 0, fmt.Errorf("COMMISSION_PERCENT must be a percentage from 0 to 100, not %q", v)
+	}
+	return int64(math.Round(pct * 100)), nil
 }
 
 // loadStorage reads the object-storage settings, defaulting to a local

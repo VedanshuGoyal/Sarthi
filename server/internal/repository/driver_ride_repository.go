@@ -39,7 +39,9 @@ const bookingColumns = `id, user_id, trip_type, details, created_at, status,
 	accepted_at, arrived_at, started_at, completed_at, coalesce(start_otp, ''),
 	cancelled_at, coalesce(cancelled_by, ''), coalesce(cancel_reason, ''),
 	driver_rating, coalesce(driver_rating_note, ''),
-	customer_rating, coalesce(customer_rating_note, '')`
+	customer_rating, coalesce(customer_rating_note, ''),
+	paid_at, coalesce(paid_paise, 0), coalesce(commission_paise, 0),
+	coalesce(payout_id::text, '')`
 
 // bookingColumnsB is bookingColumns read through the `b` alias.
 const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
@@ -47,7 +49,9 @@ const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, 
 	b.accepted_at, b.arrived_at, b.started_at, b.completed_at, coalesce(b.start_otp, ''),
 	b.cancelled_at, coalesce(b.cancelled_by, ''), coalesce(b.cancel_reason, ''),
 	b.driver_rating, coalesce(b.driver_rating_note, ''),
-	b.customer_rating, coalesce(b.customer_rating_note, '')`
+	b.customer_rating, coalesce(b.customer_rating_note, ''),
+	b.paid_at, coalesce(b.paid_paise, 0), coalesce(b.commission_paise, 0),
+	coalesce(b.payout_id::text, '')`
 
 // rideColumns is bookingColumnsB plus the customer's name and phone from `u`
 // and their average rating from drivers — the shape scanRide reads.
@@ -229,7 +233,8 @@ func (r *DriverRideRepository) Decline(ctx context.Context, id, driverID string)
 
 // Earnings sums driverID's completed rides over all time and since each of
 // the given window starts, along with their average rating from customers
-// (ratings are only given on completed rides).
+// (ratings are only given on completed rides) and where their money stands:
+// unpaid by the customer, owed to the driver, or paid out.
 func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	const q = `
 		SELECT
@@ -242,7 +247,15 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		    coalesce(sum(fare_paise) FILTER (WHERE completed_at >= $4), 0),
 		    count(*) FILTER (WHERE completed_at >= $4),
 		    coalesce(sum(fare_paise), 0),
-		    count(*)
+		    count(*),
+		    coalesce(sum(fare_paise) FILTER (WHERE paid_at IS NULL), 0),
+		    count(*) FILTER (WHERE paid_at IS NULL),
+		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
+		        FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL), 0),
+		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL),
+		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
+		        FILTER (WHERE payout_id IS NOT NULL), 0),
+		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1)
 		FROM bookings
 		WHERE driver_id = $1 AND status = 'completed'`
 
@@ -257,6 +270,9 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		&e.Week.FarePaise, &e.Week.Rides,
 		&e.Month.FarePaise, &e.Month.Rides,
 		&e.Total.FarePaise, &e.Total.Rides,
+		&e.Payments.AwaitingCustomerPaise, &e.Payments.AwaitingCustomerRides,
+		&e.Payments.DuePaise, &e.Payments.DueRides,
+		&e.Payments.PaidOutPaise, &e.Payments.LastPayoutAt,
 	)
 	if err != nil {
 		return domain.DriverEarnings{}, fmt.Errorf("summing earnings: %w", err)
@@ -336,6 +352,7 @@ func (r *bookingRow) targets(extra ...any) []any {
 		&b.CancelledAt, &b.CancelledBy, &b.CancelReason,
 		&r.driverStars, &r.driverNote,
 		&r.customerStars, &r.customerNote,
+		&b.PaidAt, &b.PaidPaise, &b.CommissionPaise, &b.PayoutID,
 	}, extra...)
 }
 

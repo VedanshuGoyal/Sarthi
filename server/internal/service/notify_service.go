@@ -33,6 +33,8 @@ const (
 	pushTypeDriverArrived  = "driver_arrived"
 	pushTypeDriverReleased = "driver_released"
 	pushTypeRideCancelled  = "ride_cancelled"
+	pushTypeRideCompleted  = "ride_completed"
+	pushTypePaymentPaid    = "payment_received"
 )
 
 const (
@@ -78,7 +80,10 @@ type NearbyDriverFinder interface {
 //   - the driver hands the ride back → "Your driver cancelled", and the
 //     other nearby drivers get the request again while it's still open;
 //   - the customer cancels a ride a driver had taken → "Ride cancelled" to
-//     that driver.
+//     that driver;
+//   - the driver completes the trip → "Trip complete", asking the customer
+//     to pay by UPI in the app;
+//   - the customer pays → "Payment received" to the driver.
 //
 // Sends run in the background so a slow push never delays the booking or
 // accept response. Without a sender (no FCM credentials) nothing is sent,
@@ -266,6 +271,61 @@ func (s *NotifyService) DriverArrived(ctx context.Context, userID, driverID stri
 		}
 		s.tellCustomer(ctx, userID, ride.ID, pushTypeDriverArrived, "Your driver has arrived", body, 30*time.Minute)
 	})
+}
+
+// RideCompleted tells customer userID their trip is over and what to pay.
+func (s *NotifyService) RideCompleted(ctx context.Context, userID string, ride domain.DriverRide) {
+	s.background(ctx, func(ctx context.Context) {
+		body := "Thanks for riding with MOJUD."
+		if ride.FarePaise > 0 {
+			body = fmt.Sprintf("Pay %s by UPI in the app.", formatFare(ride.FarePaise, false))
+		}
+		s.tellCustomer(ctx, userID, ride.ID, pushTypeRideCompleted, "Trip complete", body, 24*time.Hour)
+	})
+}
+
+// PaymentReceived tells the driver of booking b that the customer paid.
+func (s *NotifyService) PaymentReceived(ctx context.Context, b domain.Booking) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("The customer paid %s for the ride on %s.",
+			formatFare(b.PaidPaise, false), formatWhen(scheduledOrCreated(b)))
+		if share := b.PaidPaise - b.CommissionPaise; share != b.PaidPaise {
+			body += fmt.Sprintf("\nYour share: %s, in your next payout.", formatFare(share, false))
+		} else {
+			body += "\nIt comes to you in your next payout."
+		}
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{b.DriverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", b.ID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[b.DriverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "Payment received",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "ride-" + b.ID,
+				Data:    map[string]string{"type": pushTypePaymentPaid, "rideId": b.ID},
+				TTL:     24 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypePaymentPaid, "rideId", b.ID, "devices", sent)
+	})
+}
+
+// scheduledOrCreated is when b was for: its start, else when it was booked.
+func scheduledOrCreated(b domain.Booking) time.Time {
+	if b.ScheduledAt != nil {
+		return *b.ScheduledAt
+	}
+	return b.CreatedAt
 }
 
 // RideCancelled tells the driver who had booking b that the customer

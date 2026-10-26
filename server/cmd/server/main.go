@@ -20,6 +20,7 @@ import (
 	"github.com/sarthi/server/internal/config"
 	"github.com/sarthi/server/internal/maps/olamaps"
 	"github.com/sarthi/server/internal/memstore"
+	"github.com/sarthi/server/internal/payment/phonepe"
 	"github.com/sarthi/server/internal/push"
 	"github.com/sarthi/server/internal/push/fcm"
 	"github.com/sarthi/server/internal/repository"
@@ -134,7 +135,8 @@ func run() error {
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and
 	// the customer can cancel it, rate the driver and watch them on the way.
-	bookings := service.NewBookingService(repository.NewBookingRepository(pool), notify, liveLocations)
+	bookingStore := repository.NewBookingRepository(pool)
+	bookings := service.NewBookingService(bookingStore, notify, liveLocations)
 
 	// Driver KYC: the Document View's images live in object storage, their
 	// metadata and the typed fields in PostgreSQL.
@@ -183,10 +185,51 @@ func run() error {
 	}
 	mapsService := service.NewMapsService(mapsTokens)
 
+	// Payments: the customer pays MOJUD for a completed ride by UPI through
+	// PhonePe; MOJUD keeps its commission and pays drivers the rest in
+	// payouts recorded from the back office.
+	paymentStore := repository.NewPaymentRepository(pool)
+	var (
+		gateway service.PaymentGateway
+		webhook api.WebhookVerifier
+	)
+	if cfg.PhonePe.Enabled() {
+		var opts []phonepe.Option
+		if cfg.PhonePe.BaseURL != "" {
+			opts = append(opts, phonepe.WithURLs(cfg.PhonePe.TokenURL, cfg.PhonePe.BaseURL))
+		}
+		pp := phonepe.New(phonepe.Config{
+			ClientID:        cfg.PhonePe.ClientID,
+			ClientSecret:    cfg.PhonePe.ClientSecret,
+			ClientVersion:   cfg.PhonePe.ClientVersion,
+			MerchantID:      cfg.PhonePe.MerchantID,
+			Environment:     phonepe.Environment(cfg.PhonePe.Environment),
+			WebhookUsername: cfg.PhonePe.WebhookUsername,
+			WebhookPassword: cfg.PhonePe.WebhookPassword,
+		}, opts...)
+		gateway, webhook = pp, pp
+		slog.Info("payments: PhonePe enabled", "environment", cfg.PhonePe.Environment,
+			"commissionPercent", float64(cfg.CommissionBasisPoints)/100)
+		if cfg.PhonePe.WebhookUsername == "" || cfg.PhonePe.WebhookPassword == "" {
+			slog.Warn("payments: no PHONEPE_WEBHOOK_USERNAME/PASSWORD; webhooks are refused " +
+				"and payments are confirmed by the app and the 2-minute sweep only")
+		}
+	} else {
+		slog.Warn("payments: no PHONEPE_CLIENT_ID/PHONEPE_CLIENT_SECRET/PHONEPE_MERCHANT_ID set; " +
+			"customers can't pay in the app")
+	}
+	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
+	go payments.RunSweeper(ctx)
+	payouts := service.NewPayoutService(paymentStore, documentCipher)
+	if cfg.AdminToken == "" {
+		slog.Warn("admin: no ADMIN_TOKEN set; GET /users and /admin/* are off")
+	}
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
-			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify),
+			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
+			payments, payouts, webhook, cfg.AdminToken),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

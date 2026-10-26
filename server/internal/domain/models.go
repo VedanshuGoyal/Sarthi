@@ -273,6 +273,28 @@ type Booking struct {
 	// accept. Never serialised from here: only the customer's own bookings
 	// view (CustomerBooking) carries it, and never the driver's.
 	StartOTP string `json:"-"`
+
+	// PaidAt is when the customer's payment for the completed ride landed,
+	// PaidPaise how much it was and CommissionPaise MOJUD's cut of it;
+	// PayoutID names the transfer that paid the driver the rest.
+	PaidAt          *time.Time `json:"paidAt,omitempty"`
+	PaidPaise       int64      `json:"paidPaise,omitempty"`
+	CommissionPaise int64      `json:"commissionPaise,omitempty"`
+	PayoutID        string     `json:"payoutId,omitempty"`
+}
+
+// PaymentStatus is where the money for b stands; empty until it's completed.
+func (b Booking) PaymentStatus() RidePaymentStatus {
+	switch {
+	case b.Status != RideStatusCompleted:
+		return ""
+	case b.PayoutID != "":
+		return RidePaymentPaidOut
+	case b.PaidAt != nil:
+		return RidePaymentPaid
+	default:
+		return RidePaymentDue
+	}
 }
 
 // CancelledByCustomer is the cancelled_by of a ride the customer cancelled.
@@ -354,6 +376,11 @@ type CustomerBooking struct {
 	CancelledBy      string      `json:"cancelledBy,omitempty"`
 	CancelReason     string      `json:"cancelReason,omitempty"`
 	MyRating         *RideRating `json:"myRating,omitempty"`
+
+	// PaymentStatus is "due" once the ride is completed and "paid" once the
+	// customer has paid for it; PaidAt is when.
+	PaymentStatus RidePaymentStatus `json:"paymentStatus,omitempty"`
+	PaidAt        *time.Time        `json:"paidAt,omitempty"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.
@@ -409,6 +436,14 @@ type DriverRide struct {
 
 	// MyRating is what this driver rated the customer, once they have.
 	MyRating *RideRating `json:"myRating,omitempty"`
+
+	// PaymentStatus is "due" until the customer pays for the completed ride,
+	// "paid" once they have, and "paid_out" once the driver's share went out.
+	// SharePaise is the driver's part of a paid ride: the payment less
+	// MOJUD's commission.
+	PaymentStatus RidePaymentStatus `json:"paymentStatus,omitempty"`
+	PaidAt        *time.Time        `json:"paidAt,omitempty"`
+	SharePaise    int64             `json:"sharePaise,omitempty"`
 }
 
 // EarningsPeriod is what a driver earned over one window: the summed fares of
@@ -427,6 +462,10 @@ type DriverEarnings struct {
 	Month  EarningsPeriod `json:"month"`
 	Total  EarningsPeriod `json:"total"`
 	Rating *RatingSummary `json:"rating,omitempty"`
+
+	// Payments is what customers still owe on this driver's rides, what
+	// MOJUD owes the driver, and what it has paid out.
+	Payments DriverPaymentSummary `json:"payments"`
 }
 
 // Ride is a single trip request and its full lifecycle. Completed rides are the

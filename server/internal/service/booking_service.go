@@ -232,6 +232,11 @@ func (s *BookingService) DriverLocation(ctx context.Context, userID, bookingID s
 	return &loc, nil
 }
 
+// Get returns one of userID's bookings as the customer app shows it.
+func (s *BookingService) Get(ctx context.Context, userID, bookingID string) (domain.CustomerBooking, error) {
+	return s.mine(ctx, userID, bookingID)
+}
+
 // mine re-reads one of userID's bookings as the customer app shows it.
 func (s *BookingService) mine(ctx context.Context, userID, bookingID string) (domain.CustomerBooking, error) {
 	ub, err := s.store.FindForUser(ctx, bookingID, userID)
@@ -296,6 +301,14 @@ func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time
 		CancelledBy:      b.CancelledBy,
 		CancelReason:     b.CancelReason,
 		MyRating:         b.DriverRating,
+		PaidAt:           b.PaidAt,
+	}
+	// Paid out is the driver's business; to the customer it's just paid.
+	switch b.PaymentStatus() {
+	case domain.RidePaymentDue:
+		cb.PaymentStatus = domain.RidePaymentDue
+	case domain.RidePaymentPaid, domain.RidePaymentPaidOut:
+		cb.PaymentStatus = domain.RidePaymentPaid
 	}
 	if b.Status == domain.RideStatusAccepted || b.Status == domain.RideStatusArrived {
 		cb.StartOTP = b.StartOTP

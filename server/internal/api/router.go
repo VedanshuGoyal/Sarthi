@@ -23,6 +23,10 @@ func NewRouter(
 	driverRides *service.DriverRideService,
 	maps *service.MapsService,
 	notify *service.NotifyService,
+	payments *service.PaymentService,
+	payouts *service.PayoutService,
+	webhook WebhookVerifier,
+	adminToken string,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -33,6 +37,8 @@ func NewRouter(
 	dr := NewDriverRideHandler(driverRides)
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
+	pay := NewPaymentHandler(payments, bookings, webhook)
+	adm := NewAdminHandler(payouts)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -71,6 +77,12 @@ func NewRouter(
 	mux.HandleFunc("POST /me/bookings/{id}/rating", requireAuth(sessions, bk.Rate))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-location", requireAuth(sessions, bk.DriverLocation))
 
+	// Paying for a completed ride by UPI: open a PhonePe checkout, then
+	// re-check it on coming back. PhonePe's webhook nudges the same check.
+	mux.HandleFunc("POST /me/bookings/{id}/payment", requireAuth(sessions, pay.Checkout))
+	mux.HandleFunc("POST /me/bookings/{id}/payment/sync", requireAuth(sessions, pay.Sync))
+	mux.HandleFunc("POST /payments/phonepe/webhook", pay.PhonePeWebhook)
+
 	// This install's push token, for "driver assigned" notifications.
 	mux.HandleFunc("PUT /me/push-token", requireAuth(sessions, pt.SaveUser))
 	mux.HandleFunc("DELETE /me/push-token", requireAuth(sessions, pt.ForgetUser))
@@ -79,7 +91,10 @@ func NewRouter(
 	// secret stays on the server.
 	mux.HandleFunc("GET /maps/token", requireAuth(sessions, mp.Token))
 
-	mux.HandleFunc("GET /users", h.ListUsers)
+	// Back office, behind ADMIN_TOKEN: every account, and driver payouts.
+	mux.HandleFunc("GET /users", requireAdmin(adminToken, h.ListUsers))
+	mux.HandleFunc("GET /admin/payouts/due", requireAdmin(adminToken, adm.DuePayouts))
+	mux.HandleFunc("POST /admin/payouts", requireAdmin(adminToken, adm.RecordPayout))
 
 	// Driver app: the same phone/OTP registration flow as the customer app,
 	// but a separate account type/session (see DriverAuthHandler).
