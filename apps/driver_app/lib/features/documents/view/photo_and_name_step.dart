@@ -158,6 +158,14 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
             ),
           ),
         ),
+        const SizedBox(height: 4),
+        Center(
+          child: Text(
+            'Customers see this photo when you take their ride.',
+            textAlign: TextAlign.center,
+            style: t.body(size: 12, color: t.muted),
+          ),
+        ),
         const SizedBox(height: DeepSignalTokens.s22),
         SarthiTextField(
           label: 'Full name',
