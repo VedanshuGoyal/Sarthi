@@ -31,6 +31,27 @@ enum BookingStatus {
       this != completed && this != cancelled && this != expired;
 }
 
+/// Where the money for a completed ride stands.
+enum RidePaymentStatus {
+  /// Not completed yet — nothing to pay.
+  none(''),
+
+  /// Completed; the customer hasn't paid.
+  due('due'),
+
+  /// The customer has paid.
+  paid('paid');
+
+  const RidePaymentStatus(this.wireName);
+
+  final String wireName;
+
+  static RidePaymentStatus fromWire(Object? value) => values.firstWhere(
+    (s) => s != none && s.wireName == value,
+    orElse: () => none,
+  );
+}
+
 /// Why a customer can say they're cancelling, in the order the cancel sheet
 /// lists them. Mirrors the server's list; "Other" takes free text.
 const List<String> cancelReasons = [
@@ -118,6 +139,8 @@ class MyBooking {
     this.cancelledBy,
     this.cancelReason,
     this.myRating,
+    this.paymentStatus = RidePaymentStatus.none,
+    this.paidAt,
   });
 
   final String id;
@@ -173,6 +196,10 @@ class MyBooking {
   /// What this customer gave the driver, once they've rated the trip.
   final RideRating? myRating;
 
+  /// Whether the completed ride is paid for, and when it was.
+  final RidePaymentStatus paymentStatus;
+  final DateTime? paidAt;
+
   int get fareRupees => (farePaise / 100).round();
 
   /// The driver's first name, for friendlier lines ("Ravi is 2 km away").
@@ -188,6 +215,12 @@ class MyBooking {
       status == BookingStatus.requested ||
       status == BookingStatus.accepted ||
       status == BookingStatus.arrived;
+
+  /// Whether the trip is finished and waiting for the customer to pay.
+  bool get canPay =>
+      status == BookingStatus.completed &&
+      paymentStatus == RidePaymentStatus.due &&
+      farePaise >= 100;
 
   /// Whether the trip is finished and waiting for the customer's stars.
   bool get canRate => status == BookingStatus.completed && myRating == null;
@@ -344,6 +377,8 @@ class MyBooking {
       cancelledBy: json['cancelledBy'] as String?,
       cancelReason: _nonEmpty(json['cancelReason'] as String?),
       myRating: _rating(json['myRating']),
+      paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
+      paidAt: _time(json['paidAt']),
     );
   }
 }

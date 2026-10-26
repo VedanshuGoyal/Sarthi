@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../data/booking_repository.dart';
+import '../data/upi_checkout.dart';
 import '../domain/driver_location.dart';
 import '../domain/my_booking.dart';
+import '../domain/payment_checkout.dart';
 import 'my_bookings_view_model.dart';
 
 /// How far one step of a ride's timeline has got.
@@ -99,8 +101,8 @@ List<RideMilestone> rideTimeline(MyBooking b) {
 }
 
 /// The ride details screen: one booking from the customer's list, with
-/// cancelling, rating the driver, and — in the tracking window — the driver's
-/// live location.
+/// cancelling, paying for it by UPI once it's done, rating the driver, and —
+/// in the tracking window — the driver's live location.
 ///
 /// The booking itself comes from [MyBookingsViewModel], so the screen moves
 /// along with every list refresh; a cancel or rating puts the server's reply
@@ -117,6 +119,9 @@ class RideDetailsViewModel extends ChangeNotifier {
     required this._bookings,
     required this.bookingId,
     this.pollEvery = const Duration(seconds: 5),
+    this.paySyncEvery = const Duration(seconds: 2),
+    this._checkout,
+    this.flowId = 'mojud',
     DateTime Function()? now,
     DriverLocation? initialLocation,
   }) : _now = now ?? DateTime.now,
@@ -131,6 +136,16 @@ class RideDetailsViewModel extends ChangeNotifier {
   final DateTime Function() _now;
   final String bookingId;
   final Duration pollEvery;
+
+  /// How long to wait between asking the server whether a payment that
+  /// just went through has landed.
+  final Duration paySyncEvery;
+
+  /// The payment page; null where paying isn't possible (previews).
+  final UpiCheckout? _checkout;
+
+  /// Ties the payment SDK's logs to this customer.
+  final String flowId;
 
   MyBooking? _booking;
   bool _disposed = false;
@@ -388,6 +403,90 @@ class RideDetailsViewModel extends ChangeNotifier {
       _isRating = false;
       _notify();
     }
+  }
+
+  // --- Paying ----------------------------------------------------------------
+
+  bool _isPaying = false;
+  String? _payError;
+
+  bool get isPaying => _isPaying;
+
+  /// Why the last payment didn't complete, safe to show.
+  String? get payError => _payError;
+
+  /// Whether the pay button should work: the ride is due and the app can
+  /// open the payment page.
+  bool get canPay => (_booking?.canPay ?? false) && _checkout != null;
+
+  /// Opens the UPI payment page for the completed ride, then has the server
+  /// check with the gateway; true once the ride is paid. Whatever the page
+  /// says when it closes, only the server's check counts.
+  Future<bool> pay() async {
+    final b = _booking;
+    final checkout = _checkout;
+    if (b == null || checkout == null || !b.canPay || _isPaying) return false;
+    _isPaying = true;
+    _payError = null;
+    _notify();
+    try {
+      final PaymentCheckout order;
+      try {
+        order = await _repository.startPayment(b.id);
+      } on BookingActionException catch (e) {
+        if (e.code != BookingErrorCode.alreadyPaid) rethrow;
+        // Paid from an earlier attempt: show it.
+        await _syncPayment(b.id, attempts: 1);
+        return true;
+      }
+      final outcome = await checkout.open(order, flowId: flowId);
+      final latest = await _syncPayment(
+        b.id,
+        attempts: outcome == CheckoutOutcome.success ? 5 : 1,
+      );
+      if (latest?.paymentStatus == RidePaymentStatus.paid) return true;
+      _payError = switch (outcome) {
+        CheckoutOutcome.success =>
+          "We're still confirming your payment with the bank. This ride "
+              'will show as paid in a minute or two.',
+        CheckoutOutcome.failure =>
+          "The payment didn't go through. Please try again.",
+        CheckoutOutcome.interrupted => 'Payment cancelled.',
+      };
+      return false;
+    } on BookingActionException catch (e) {
+      _payError = switch (e.code) {
+        BookingErrorCode.paymentsOff =>
+          "Paying in the app isn't available yet.",
+        BookingErrorCode.wrongState => "This ride can't be paid for yet.",
+        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        _ => e.message,
+      };
+      return false;
+    } on UpiCheckoutException catch (e) {
+      _payError = e.message;
+      return false;
+    } finally {
+      _isPaying = false;
+      _notify();
+    }
+  }
+
+  /// Asks the server to re-check the payment up to [attempts] times,
+  /// [paySyncEvery] apart, until it's paid; puts each reply in the list.
+  Future<MyBooking?> _syncPayment(String id, {required int attempts}) async {
+    MyBooking? latest;
+    for (var i = 0; i < attempts && !_disposed; i++) {
+      if (i > 0) await Future<void>.delayed(paySyncEvery);
+      try {
+        latest = await _repository.syncPayment(id);
+        _bookings.applyUpdate(latest);
+      } on BookingActionException {
+        // A blip; the next attempt (or the list's own refresh) catches up.
+      }
+      if (latest?.paymentStatus == RidePaymentStatus.paid) break;
+    }
+    return latest;
   }
 
   void _notify() {

@@ -7,6 +7,7 @@ import '../domain/driver_location.dart';
 import '../domain/multi_stop_trip.dart';
 import '../domain/my_booking.dart';
 import '../domain/one_way_trip.dart';
+import '../domain/payment_checkout.dart';
 import '../domain/round_trip_booking.dart';
 
 /// Raised when the booking backend is unreachable or rejects the submission.
@@ -33,6 +34,15 @@ enum BookingErrorCode {
 
   /// The driver's location isn't shared for this ride (yet, or any more).
   notTracking('not_tracking'),
+
+  /// The ride is already paid for.
+  alreadyPaid('already_paid'),
+
+  /// The server has no payment gateway set up.
+  paymentsOff('payments_not_configured'),
+
+  /// The server couldn't reach the payment gateway.
+  paymentGateway('payment_gateway'),
 
   /// The server was unreachable, or sent a tag this app version doesn't know.
   other('');
@@ -69,8 +79,8 @@ class BookingActionException implements Exception {
 
 /// Sends confirmed bookings to the Sarthi backend (`POST /me/bookings`),
 /// reads them back with their status, driver and start code
-/// (`GET /me/bookings`), and acts on one: cancel it, rate the driver, or
-/// follow the driver on the map (`/me/bookings/{id}/…`).
+/// (`GET /me/bookings`), and acts on one: cancel it, rate the driver, follow
+/// the driver on the map, or pay for it (`/me/bookings/{id}/…`).
 ///
 /// The sole data-access seam for bookings, per the repository guideline.
 class BookingRepository {
@@ -168,6 +178,26 @@ class BookingRepository {
   Future<DriverLocation?> driverLocation(String id) async {
     final reply = await _act('GET', id, 'driver-location');
     return DriverLocation.tryParse(reply['location']);
+  }
+
+  /// Opens a UPI checkout for a completed ride (`POST /me/bookings/{id}/payment`)
+  /// for the payment SDK to show. Throws [BookingActionException] —
+  /// `alreadyPaid` when it's paid for, `wrongState` before it's completed,
+  /// `paymentsOff` / `paymentGateway` when payments can't be taken.
+  Future<PaymentCheckout> startPayment(String id) async {
+    final reply = await _act('POST', id, 'payment');
+    return PaymentCheckout.tryParse(reply['checkout']) ??
+        (throw const BookingActionException(
+          'The server sent an unexpected reply.',
+        ));
+  }
+
+  /// Asks the server to re-check the ride's payment with the gateway, after
+  /// the payment page closes (`POST /me/bookings/{id}/payment/sync`), and
+  /// returns the ride as it now stands.
+  Future<MyBooking> syncPayment(String id) async {
+    final reply = await _act('POST', id, 'payment/sync');
+    return _bookingIn(reply);
   }
 
   /// Sends one action on booking [id] and returns the decoded reply, turning

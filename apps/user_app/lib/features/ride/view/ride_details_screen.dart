@@ -17,7 +17,8 @@ import 'widgets/start_code_panel.dart';
 /// One ride, opened from its Activity card: where it stands, the driver's
 /// live location while they're on their way, the start code, the driver,
 /// the full route and plan, a timeline of what happened when — and the
-/// actions that fit: cancel before the trip starts, rate it once it's done.
+/// actions that fit: cancel before the trip starts, pay for it by UPI and
+/// rate it once it's done.
 ///
 /// State lives in [rideDetailsViewModelProvider] for [bookingId]; this view
 /// renders it and tells the view model when it's visible, so the driver's
@@ -78,6 +79,12 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
     );
   }
 
+  Future<void> _pay(RideDetailsViewModel vm) async {
+    if (await vm.pay() && mounted) {
+      _say('Payment received. Thank you!');
+    }
+  }
+
   Future<void> _rate(RideDetailsViewModel vm) async {
     if (await vm.submitRating() && mounted) {
       _say('Thanks for rating your trip.');
@@ -124,6 +131,9 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
             phone: booking.status.isActive ? booking.driverPhone : null,
           ),
         ),
+      if (booking.status == BookingStatus.completed &&
+          booking.paymentStatus != RidePaymentStatus.none)
+        _PaymentCard(vm: vm, booking: booking, onPay: () => _pay(vm)),
       if (booking.status == BookingStatus.completed)
         _RatingCard(vm: vm, booking: booking, onSubmit: () => _rate(vm)),
     ];
@@ -316,6 +326,68 @@ class _TrackingCard extends StatelessWidget {
 }
 
 /// "Rate your driver" until the customer has, then the stars they gave.
+/// Paying for a completed trip: a UPI button while it's due, a receipt line
+/// once it's paid.
+class _PaymentCard extends StatelessWidget {
+  const _PaymentCard({
+    required this.vm,
+    required this.booking,
+    required this.onPay,
+  });
+
+  final RideDetailsViewModel vm;
+  final MyBooking booking;
+  final VoidCallback onPay;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final amount = '₹${booking.fareRupees}';
+    if (booking.paymentStatus == RidePaymentStatus.paid) {
+      return SkylineCard(
+        padding: const EdgeInsets.all(Skyline.s16),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_rounded, color: t.success),
+            const SizedBox(width: Skyline.s12),
+            Expanded(child: Text('Paid $amount', style: t.title(15))),
+            if (booking.paidAt case final at?)
+              Text(RideFormat.when(context, at), style: t.body(size: 13)),
+          ],
+        ),
+      );
+    }
+    final error = vm.payError;
+    return SkylineSection(
+      title: 'Pay for your trip',
+      subtitle:
+          'Pay $amount with any UPI app: GPay, PhonePe, Paytm or your '
+          "bank's.",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            onPressed: vm.canPay && !vm.isPaying ? onPay : null,
+            icon: vm.isPaying
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.qr_code_2_rounded),
+            label: Text(
+              vm.isPaying ? 'Waiting for UPI…' : 'Pay $amount by UPI',
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: Skyline.s8),
+            Text(error, style: t.body(size: 13, color: t.danger)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _RatingCard extends StatelessWidget {
   const _RatingCard({
     required this.vm,

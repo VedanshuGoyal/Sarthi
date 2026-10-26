@@ -18,6 +18,7 @@ Map<String, dynamic> bookingJson({
   Map<String, dynamic>? myRating,
   String? completedAt,
   String? cancelReason,
+  String? paymentStatus,
 }) => {
   'id': id,
   'tripType': tripType,
@@ -68,6 +69,7 @@ Map<String, dynamic> bookingJson({
     'cancelReason': ?cancelReason,
   },
   'myRating': ?myRating,
+  'paymentStatus': ?paymentStatus,
 };
 
 /// An in-memory stand-in for the booking endpoints, so repository, view
@@ -86,6 +88,14 @@ class FakeBookingServer {
 
   /// A `(status, code)` the next cancel or rating fails with.
   (int, String)? actionError;
+
+  /// A `(status, code)` opening a checkout fails with.
+  (int, String)? paymentError;
+
+  /// How many payment re-checks it takes for the gateway to report the ride
+  /// paid; null never does.
+  int? paidAfterSyncs;
+  int _syncs = 0;
 
   /// Every request, in order.
   final List<http.Request> requests = [];
@@ -132,6 +142,29 @@ class FakeBookingServer {
           ...bookings[index],
           'myRating': {'stars': body['stars'], 'note': ?body['note']},
         };
+        return _json({'booking': bookings[index]});
+      case 'payment' when path.length == 4:
+        if (paymentError case final error?) return _error(error);
+        return _json({
+          'checkout': {
+            'provider': 'phonepe',
+            'environment': 'SANDBOX',
+            'merchantId': 'M1',
+            'orderId': 'OMO1',
+            'token': 'order-token',
+            'merchantOrderId': 'MOJUD_b1_1',
+            'amountPaise': bookings[index]['farePaise'],
+          },
+        });
+      case 'payment':
+        _syncs++;
+        if (paidAfterSyncs case final n? when _syncs >= n) {
+          bookings[index] = {
+            ...bookings[index],
+            'paymentStatus': 'paid',
+            'paidAt': '2030-10-26T08:00:00Z',
+          };
+        }
         return _json({'booking': bookings[index]});
       case 'driver-location':
         if (locationError case final error?) return _error(error);

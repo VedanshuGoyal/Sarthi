@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:checks/checks.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:user_app/features/ride/data/upi_checkout.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
+import 'package:user_app/features/ride/domain/payment_checkout.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 import 'package:user_app/features/ride/view_model/ride_details_view_model.dart';
 
@@ -18,6 +20,7 @@ RideDetailsViewModel _vm(
   FakeBookingServer server, {
   DateTime Function()? now,
   MyBookingsViewModel? bookings,
+  UpiCheckout? checkout,
 }) {
   final repo = server.repository();
   return RideDetailsViewModel(
@@ -32,7 +35,26 @@ RideDetailsViewModel _vm(
         ),
     bookingId: 'b1',
     now: now,
+    checkout: checkout,
+    paySyncEvery: Duration.zero,
   );
+}
+
+/// A payment page that closes with [outcome] and remembers what it opened.
+class _FakeCheckout implements UpiCheckout {
+  _FakeCheckout(this.outcome);
+
+  final CheckoutOutcome outcome;
+  final List<PaymentCheckout> opened = [];
+
+  @override
+  Future<CheckoutOutcome> open(
+    PaymentCheckout checkout, {
+    required String flowId,
+  }) async {
+    opened.add(checkout);
+    return outcome;
+  }
 }
 
 void main() {
@@ -82,6 +104,79 @@ void main() {
       check(vm.booking!.canCancel).isFalse();
       check(await vm.cancel()).isFalse();
       check(server.requests.where((r) => r.method == 'POST')).isEmpty();
+    });
+  });
+
+  group('paying', () {
+    Map<String, dynamic> due() =>
+        bookingJson(status: 'completed', paymentStatus: 'due');
+
+    test('opens the UPI page, then shows the ride paid once the server '
+        'confirms', () async {
+      final server = FakeBookingServer([due()])..paidAfterSyncs = 2;
+      final checkout = _FakeCheckout(CheckoutOutcome.success);
+      final vm = _vm(server, checkout: checkout);
+      check(vm.canPay).isTrue();
+
+      check(await vm.pay()).isTrue();
+
+      check(checkout.opened.single.token).equals('order-token');
+      check(checkout.opened.single.amountPaise).equals(64000);
+      check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+      check(vm.payError).isNull();
+      check(vm.canPay).isFalse();
+      check(
+        server.requests.map((r) => '${r.method} ${r.url.path}'),
+      ).deepEquals([
+        'POST /me/bookings/b1/payment',
+        'POST /me/bookings/b1/payment/sync',
+        'POST /me/bookings/b1/payment/sync',
+      ]);
+    });
+
+    test('a page closed early says so and leaves the ride due', () async {
+      final server = FakeBookingServer([due()]);
+      final vm = _vm(
+        server,
+        checkout: _FakeCheckout(CheckoutOutcome.interrupted),
+      );
+
+      check(await vm.pay()).isFalse();
+      check(vm.payError).equals('Payment cancelled.');
+      check(vm.booking!.paymentStatus).equals(RidePaymentStatus.due);
+      // Checked once, in case it went through anyway.
+      check(
+        server.requests.where((r) => r.url.path.endsWith('/sync')),
+      ).length.equals(1);
+    });
+
+    test('a ride paid from an earlier attempt just shows as paid', () async {
+      final server = FakeBookingServer([due()])
+        ..paymentError = (409, 'already_paid')
+        ..paidAfterSyncs = 1;
+      final checkout = _FakeCheckout(CheckoutOutcome.success);
+      final vm = _vm(server, checkout: checkout);
+
+      check(await vm.pay()).isTrue();
+      check(checkout.opened).isEmpty();
+      check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+    });
+
+    test('payments not set up on the server', () async {
+      final server = FakeBookingServer([due()])
+        ..paymentError = (503, 'payments_not_configured');
+      final vm = _vm(server, checkout: _FakeCheckout(CheckoutOutcome.success));
+
+      check(await vm.pay()).isFalse();
+      check(vm.payError).equals("Paying in the app isn't available yet.");
+    });
+
+    test('nothing to pay before the trip is done', () async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      final vm = _vm(server, checkout: _FakeCheckout(CheckoutOutcome.success));
+      check(vm.canPay).isFalse();
+      check(await vm.pay()).isFalse();
+      check(server.requests).isEmpty();
     });
   });
 

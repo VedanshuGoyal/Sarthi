@@ -7,6 +7,7 @@ import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'data/ola_maps_authenticator.dart';
 import 'data/recent_pickups_api.dart';
+import 'data/upi_checkout.dart';
 import 'domain/one_way_trip.dart';
 import 'domain/pickup_location.dart';
 import 'view_model/booking_details_view_model.dart';
@@ -66,8 +67,8 @@ final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
   },
 );
 
-/// One ride's details screen (and the rating sheet): cancel, rate, and the
-/// driver's live location. A `family` keyed on the booking id — the ride
+/// One ride's details screen (and the rating sheet): cancel, pay, rate, and
+/// the driver's live location. A `family` keyed on the booking id — the ride
 /// itself is read from [myBookingsViewModelProvider], so the screen follows
 /// every list refresh. `autoDispose` so leaving the screen stops its polling
 /// and drops a half-written rating.
@@ -77,8 +78,17 @@ final rideDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
         repository: ref.watch(bookingRepositoryProvider),
         bookings: ref.watch(myBookingsViewModelProvider),
         bookingId: bookingId,
+        checkout: ref.watch(upiCheckoutProvider),
+        flowId:
+            ref.read(authControllerProvider).valueOrNull?.user.id ?? 'mojud',
       );
     });
+
+/// The UPI payment page (PhonePe's SDK). Overridden in tests with a fake so
+/// no plugin is called.
+final upiCheckoutProvider = Provider<UpiCheckout>((ref) {
+  return PhonePeUpiCheckout();
+});
 
 /// The data seam for the customer's saved cars: on-device storage first, the
 /// backend (authenticated with the current session token, read on demand like
