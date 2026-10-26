@@ -111,3 +111,29 @@ func downscale(src image.Image, maxEdge int) image.Image {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Src, nil)
 	return dst
 }
+
+// Limits on the driver photo customers see: a small copy of the selfie, so
+// the full-size KYC image never leaves the server and the app downloads a
+// few tens of kilobytes rather than half a megabyte.
+const (
+	// DriverPhotoEdge is the photo's longest side. The app shows it in a
+	// circle at most ~64 dp across; 320 px stays sharp on a 3x screen.
+	DriverPhotoEdge = 320
+
+	driverPhotoJPEGQuality = 80
+)
+
+// makeDriverPhoto returns the customer-facing copy of a stored selfie. clean
+// is what processDocumentImage produced, so it is already a metadata-free
+// JPEG within the pixel limits.
+func makeDriverPhoto(clean []byte) ([]byte, error) {
+	src, _, err := image.Decode(bytes.NewReader(clean))
+	if err != nil {
+		return nil, fmt.Errorf("decoding selfie: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, downscale(src, DriverPhotoEdge), &jpeg.Options{Quality: driverPhotoJPEGQuality}); err != nil {
+		return nil, fmt.Errorf("encoding driver photo: %w", err)
+	}
+	return buf.Bytes(), nil
+}

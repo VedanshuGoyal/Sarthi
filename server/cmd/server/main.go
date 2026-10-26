@@ -132,12 +132,6 @@ func run() error {
 	notify := service.NewNotifyService(repository.NewPushTokenRepository(pool), pushSender, presence, driverProfiles)
 	defer notify.Wait()
 
-	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
-	// what the customer asked for; each one alerts the drivers near it, and
-	// the customer can cancel it, rate the driver and watch them on the way.
-	bookingStore := repository.NewBookingRepository(pool)
-	bookings := service.NewBookingService(bookingStore, notify, liveLocations)
-
 	// Driver KYC: the Document View's images live in object storage, their
 	// metadata and the typed fields in PostgreSQL.
 	blob, err := newBlobStore(cfg.Storage)
@@ -159,6 +153,13 @@ func run() error {
 		documentCipher,
 		cfg.Secrets.Pepper,
 	)
+
+	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
+	// what the customer asked for; each one alerts the drivers near it, and
+	// the customer can cancel it, rate the driver, see their photo and watch
+	// them on the way.
+	bookingStore := repository.NewBookingRepository(pool)
+	bookings := service.NewBookingService(bookingStore, notify, liveLocations, driverKYC)
 
 	// Driver rides: bookings move through accept → arrive → start → complete
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.

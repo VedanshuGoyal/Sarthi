@@ -79,6 +79,12 @@ type DriverLocator interface {
 	Latest(driverID string) (domain.LiveLocation, bool)
 }
 
+// DriverPhotos serves the small copy of a driver's selfie that customers see
+// (DriverKYCService).
+type DriverPhotos interface {
+	OpenDriverPhoto(ctx context.Context, driverID string) ([]byte, string, error)
+}
+
 // maxCustomerBookings caps the customer's bookings list.
 const maxCustomerBookings = 50
 
@@ -94,14 +100,15 @@ type BookingService struct {
 	store  BookingStore
 	alerts BookingAlerter
 	live   DriverLocator
+	photos DriverPhotos
 	now    func() time.Time
 }
 
 // NewBookingService wires the service to its store, the driver alerts sent
-// for new and cancelled bookings (nil sends none) and the drivers' shared
-// positions (nil shows none).
-func NewBookingService(store BookingStore, alerts BookingAlerter, live DriverLocator) *BookingService {
-	return &BookingService{store: store, alerts: alerts, live: live, now: time.Now}
+// for new and cancelled bookings (nil sends none), the drivers' shared
+// positions (nil shows none) and their photos (nil shows none).
+func NewBookingService(store BookingStore, alerts BookingAlerter, live DriverLocator, photos DriverPhotos) *BookingService {
+	return &BookingService{store: store, alerts: alerts, live: live, photos: photos, now: time.Now}
 }
 
 // Record validates and persists userID's confirmed booking of the given
@@ -205,6 +212,20 @@ func (s *BookingService) RateDriver(ctx context.Context, userID, bookingID strin
 	}
 	slog.InfoContext(ctx, "driver rated", "bookingId", bookingID, "userId", userID, "stars", stars)
 	return s.mine(ctx, userID, bookingID)
+}
+
+// DriverPhoto returns the photo of the driver assigned to userID's booking,
+// and its version (see [domain.RideDriver.PhotoVersion]). [ErrNoDriverPhoto]
+// when no driver has accepted it or they have no photo.
+func (s *BookingService) DriverPhoto(ctx context.Context, userID, bookingID string) ([]byte, string, error) {
+	ub, err := s.store.FindForUser(ctx, bookingID, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if ub.Booking.DriverID == "" || s.photos == nil {
+		return nil, "", ErrNoDriverPhoto
+	}
+	return s.photos.OpenDriverPhoto(ctx, ub.Booking.DriverID)
 }
 
 // DriverLocation returns where the driver of userID's booking last said they

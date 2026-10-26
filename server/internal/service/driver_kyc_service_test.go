@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image/jpeg"
 	"io"
 	"maps"
 	"slices"
@@ -82,6 +83,95 @@ func TestUploadDocumentDeletesTheImageItReplaces(t *testing.T) {
 	}
 	if _, ok := blob.objects[second.ObjectKey]; !ok {
 		t.Error("the new image is missing from storage")
+	}
+}
+
+// A selfie also gets the small copy customers see; the full image stays private.
+func TestUploadSelfieStoresASmallDriverPhoto(t *testing.T) {
+	svc, _, blob := newTestService(t)
+
+	doc, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 1200, 900))
+	if err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	stored, ok := blob.objects[driverPhotoKey(doc.ObjectKey)]
+	if !ok {
+		t.Fatalf("no driver photo stored; have %v", slices.Sorted(maps.Keys(blob.objects)))
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(stored))
+	if err != nil {
+		t.Fatalf("driver photo isn't a JPEG: %v", err)
+	}
+	if cfg.Width != DriverPhotoEdge || cfg.Height != 240 {
+		t.Errorf("driver photo is %dx%d, want %dx240", cfg.Width, cfg.Height, DriverPhotoEdge)
+	}
+
+	photo, version, err := svc.OpenDriverPhoto(t.Context(), testDriverID)
+	if err != nil {
+		t.Fatalf("OpenDriverPhoto: %v", err)
+	}
+	if !bytes.Equal(photo, stored) {
+		t.Error("OpenDriverPhoto returned something other than the stored copy")
+	}
+	if version != doc.SHA256[:12] {
+		t.Errorf("version = %q, want %q", version, doc.SHA256[:12])
+	}
+
+	// Other documents never get a customer-facing copy.
+	aadhaar, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 100, 100))
+	if err != nil {
+		t.Fatalf("aadhaar upload: %v", err)
+	}
+	if _, ok := blob.objects[driverPhotoKey(aadhaar.ObjectKey)]; ok {
+		t.Error("an Aadhaar upload produced a driver photo")
+	}
+}
+
+func TestRetakingTheSelfieDeletesTheOldDriverPhoto(t *testing.T) {
+	svc, _, blob := newTestService(t)
+
+	first, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 100, 100))
+	if err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	second, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 120, 120))
+	if err != nil {
+		t.Fatalf("retake: %v", err)
+	}
+	if _, ok := blob.objects[driverPhotoKey(first.ObjectKey)]; ok {
+		t.Error("the replaced driver photo is still in storage")
+	}
+	if _, ok := blob.objects[driverPhotoKey(second.ObjectKey)]; !ok {
+		t.Error("the new driver photo is missing")
+	}
+}
+
+// Selfies uploaded before driver photos existed get one on first read.
+func TestOpenDriverPhotoMakesOneForAnOlderSelfie(t *testing.T) {
+	svc, _, blob := newTestService(t)
+
+	doc, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 640, 640))
+	if err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	delete(blob.objects, driverPhotoKey(doc.ObjectKey))
+
+	photo, _, err := svc.OpenDriverPhoto(t.Context(), testDriverID)
+	if err != nil {
+		t.Fatalf("OpenDriverPhoto: %v", err)
+	}
+	if len(photo) == 0 {
+		t.Fatal("OpenDriverPhoto returned no bytes")
+	}
+	if !bytes.Equal(blob.objects[driverPhotoKey(doc.ObjectKey)], photo) {
+		t.Error("the photo made on read wasn't stored for next time")
+	}
+}
+
+func TestOpenDriverPhotoWithoutASelfie(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	if _, _, err := svc.OpenDriverPhoto(t.Context(), testDriverID); !errors.Is(err, ErrNoDriverPhoto) {
+		t.Errorf("error = %v, want ErrNoDriverPhoto", err)
 	}
 }
 

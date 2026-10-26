@@ -35,6 +35,10 @@ var ErrInvalidProfile = errors.New("invalid document details")
 // ErrUnknownDocumentKind is returned for a document kind Sarthi doesn't collect.
 var ErrUnknownDocumentKind = errors.New("unknown document kind")
 
+// ErrNoDriverPhoto is returned when a driver hasn't uploaded a selfie, or a
+// booking has no driver whose photo could be shown.
+var ErrNoDriverPhoto = errors.New("no driver photo")
+
 // ErrKYCIncomplete is returned when a driver submits before every step is
 // filled in. Its message names what is still missing.
 var ErrKYCIncomplete = errors.New("document verification is incomplete")
@@ -145,13 +149,25 @@ func (s *DriverKYCService) UploadDocument(
 		return domain.DriverDocument{}, err
 	}
 
+	// The customer-facing copy of a selfie. Best-effort: OpenDriverPhoto
+	// makes it on first read if this fails.
+	if kind == domain.DocumentSelfie {
+		s.putDriverPhoto(ctx, key, clean)
+	}
+
 	// A retake's old image is no longer reachable; drop it rather than pay to
 	// store a document nobody can reach. Best-effort: the row is already
 	// correct, so a failure here is a storage leak, not a broken upload.
 	if displaced != "" {
-		if err := s.blob.Delete(ctx, displaced); err != nil {
-			slog.Error("kyc: could not delete replaced document",
-				"driverID", driverID, "key", displaced, "error", err)
+		stale := []string{displaced}
+		if kind == domain.DocumentSelfie {
+			stale = append(stale, driverPhotoKey(displaced))
+		}
+		for _, k := range stale {
+			if err := s.blob.Delete(ctx, k); err != nil {
+				slog.Error("kyc: could not delete replaced document",
+					"driverID", driverID, "key", k, "error", err)
+			}
 		}
 	}
 
@@ -191,6 +207,67 @@ func (s *DriverKYCService) OpenDocument(
 		return "", nil, err
 	}
 	return "", body, nil
+}
+
+// OpenDriverPhoto returns the small copy of driverID's selfie that customers
+// see, and its version (a prefix of the selfie's hash, matching
+// [domain.RideDriver.PhotoVersion]). [ErrNoDriverPhoto] when they have none.
+//
+// Selfies uploaded before the copy existed get one made on first read.
+func (s *DriverKYCService) OpenDriverPhoto(ctx context.Context, driverID string) ([]byte, string, error) {
+	doc, err := s.store.FindDocument(ctx, driverID, domain.DocumentSelfie)
+	if errors.Is(err, repository.ErrDocumentNotFound) {
+		return nil, "", ErrNoDriverPhoto
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	version := doc.SHA256[:min(len(doc.SHA256), 12)]
+
+	photo, err := s.readBlob(ctx, driverPhotoKey(doc.ObjectKey))
+	if err == nil {
+		return photo, version, nil
+	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return nil, "", err
+	}
+
+	selfie, err := s.readBlob(ctx, doc.ObjectKey)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, "", ErrNoDriverPhoto
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	photo = s.putDriverPhoto(ctx, doc.ObjectKey, selfie)
+	if photo == nil {
+		return nil, "", fmt.Errorf("making driver photo for %s", driverID)
+	}
+	return photo, version, nil
+}
+
+// putDriverPhoto makes and stores the customer-facing copy of the selfie at
+// selfieKey, returning it — nil if it couldn't be made. A failed store is
+// only logged: the copy is still good to serve, and the next read retries.
+func (s *DriverKYCService) putDriverPhoto(ctx context.Context, selfieKey string, selfie []byte) []byte {
+	photo, err := makeDriverPhoto(selfie)
+	if err != nil {
+		slog.Error("kyc: making driver photo", "key", selfieKey, "error", err)
+		return nil
+	}
+	if err := s.blob.Put(ctx, driverPhotoKey(selfieKey), photo, DocumentContentType); err != nil {
+		slog.Error("kyc: storing driver photo", "key", selfieKey, "error", err)
+	}
+	return photo
+}
+
+func (s *DriverKYCService) readBlob(ctx context.Context, key string) ([]byte, error) {
+	r, err := s.blob.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }
 
 // ProfileUpdate carries whichever typed fields a Document View step collected.
@@ -385,6 +462,12 @@ func documentObjectKey(driverID string, kind domain.DocumentKind) (string, error
 		return "", fmt.Errorf("generating object key: %w", err)
 	}
 	return fmt.Sprintf("drivers/%s/%s/%s.jpg", driverID, kind, hex.EncodeToString(suffix)), nil
+}
+
+// driverPhotoKey is where the customer-facing copy of the selfie at
+// selfieKey lives: beside it, so a retake's cleanup finds both.
+func driverPhotoKey(selfieKey string) string {
+	return strings.TrimSuffix(selfieKey, ".jpg") + "_photo.jpg"
 }
 
 func validDocumentKind(k domain.DocumentKind) bool {

@@ -61,12 +61,14 @@ var ErrBookingNotFound = errors.New("booking not found")
 var ErrBookingStateConflict = errors.New("this booking can't make that change right now")
 
 // userBookingColumns is bookingColumnsB plus the assigned driver's name and
-// phone from `d` and their average rating from customers — the shape
-// scanUserBooking reads.
+// phone from `d`, their average rating from customers and their photo's
+// version (a prefix of the selfie's hash) — the shape scanUserBooking reads.
 const userBookingColumns = bookingColumnsB + `,
 	d.name, d.phone_e164,
 	(SELECT avg(x.driver_rating)::float8 FROM bookings x WHERE x.driver_id = b.driver_id),
-	(SELECT count(x.driver_rating) FROM bookings x WHERE x.driver_id = b.driver_id)`
+	(SELECT count(x.driver_rating) FROM bookings x WHERE x.driver_id = b.driver_id),
+	(SELECT left(dd.sha256, 12) FROM driver_documents dd
+	 WHERE dd.driver_id = b.driver_id AND dd.kind = 'selfie')`
 
 // ListForUser returns userID's bookings with their assigned drivers, latest
 // scheduled first.
@@ -181,14 +183,18 @@ func scanUserBooking(row pgx.Row) (domain.UserBooking, error) {
 		name, phone *string
 		average     *float64
 		rated       int
+		photo       *string
 	)
 	br := bookingRow{b: &ub.Booking}
-	err := row.Scan(br.targets(&name, &phone, &average, &rated)...)
+	err := row.Scan(br.targets(&name, &phone, &average, &rated, &photo)...)
 	br.finish()
 	if name != nil && phone != nil {
 		ub.Driver = &domain.RideDriver{Name: *name, PhoneE164: *phone, RatingCount: rated}
 		if rated > 0 {
 			ub.Driver.Rating = average
+		}
+		if photo != nil {
+			ub.Driver.PhotoVersion = *photo
 		}
 	}
 	return ub, err

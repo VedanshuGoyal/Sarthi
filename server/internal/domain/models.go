@@ -331,12 +331,15 @@ type RideBooking struct {
 }
 
 // RideDriver is the driver assigned to a customer's booking. Rating is the
-// driver's average from customers, nil until they have one.
+// driver's average from customers, nil until they have one. PhotoVersion is
+// empty when the driver has no photo; otherwise it changes whenever they
+// retake it, so the app can cache GET /me/bookings/{id}/driver-photo by it.
 type RideDriver struct {
-	Name        string   `json:"name"`
-	PhoneE164   string   `json:"phoneE164"`
-	Rating      *float64 `json:"rating,omitempty"`
-	RatingCount int      `json:"ratingCount"`
+	Name         string   `json:"name"`
+	PhoneE164    string   `json:"phoneE164"`
+	Rating       *float64 `json:"rating,omitempty"`
+	RatingCount  int      `json:"ratingCount"`
+	PhotoVersion string   `json:"photoVersion,omitempty"`
 }
 
 // UserBooking is a booking together with its assigned driver (nil until one

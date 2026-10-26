@@ -108,7 +108,7 @@ func roundTripDetails() map[string]any {
 var bookingTestNow = time.Date(2026, 10, 24, 6, 0, 0, 0, time.UTC)
 
 func newTestBookingService(store BookingStore) *BookingService {
-	svc := NewBookingService(store, nil, nil)
+	svc := NewBookingService(store, nil, nil, nil)
 	svc.now = func() time.Time { return bookingTestNow }
 	return svc
 }
@@ -463,5 +463,42 @@ func TestBookingService_DriverLocation(t *testing.T) {
 	}
 	if _, err := svc.DriverLocation(ctx, "u2", "waiting"); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("other user: err = %v, want ErrBookingNotFound", err)
+	}
+}
+
+// fakeDriverPhotos serves one photo per driver id.
+type fakeDriverPhotos map[string][]byte
+
+func (f fakeDriverPhotos) OpenDriverPhoto(_ context.Context, driverID string) ([]byte, string, error) {
+	photo, ok := f[driverID]
+	if !ok {
+		return nil, "", ErrNoDriverPhoto
+	}
+	return photo, "v-" + driverID, nil
+}
+
+func TestBookingService_DriverPhoto(t *testing.T) {
+	store := &fakeBookingStore{listed: []domain.UserBooking{
+		customerRide("open", domain.RideStatusRequested, ""),
+		customerRide("coming", domain.RideStatusAccepted, "d1"),
+		customerRide("camera-shy", domain.RideStatusAccepted, "d2"),
+	}}
+	svc := newTestBookingService(store)
+	svc.photos = fakeDriverPhotos{"d1": []byte("jpeg")}
+	ctx := context.Background()
+
+	photo, version, err := svc.DriverPhoto(ctx, "u1", "coming")
+	if err != nil || string(photo) != "jpeg" || version != "v-d1" {
+		t.Errorf("assigned driver: %q, %q, %v; want jpeg, v-d1", photo, version, err)
+	}
+	if _, _, err := svc.DriverPhoto(ctx, "u1", "open"); !errors.Is(err, ErrNoDriverPhoto) {
+		t.Errorf("no driver yet: err = %v, want ErrNoDriverPhoto", err)
+	}
+	if _, _, err := svc.DriverPhoto(ctx, "u1", "camera-shy"); !errors.Is(err, ErrNoDriverPhoto) {
+		t.Errorf("driver without photo: err = %v, want ErrNoDriverPhoto", err)
+	}
+	// Another customer can't fetch this ride's driver.
+	if _, _, err := svc.DriverPhoto(ctx, "u2", "coming"); !errors.Is(err, repository.ErrBookingNotFound) {
+		t.Errorf("someone else's ride: err = %v, want ErrBookingNotFound", err)
 	}
 }

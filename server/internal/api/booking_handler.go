@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/sarthi/server/internal/domain"
 	"github.com/sarthi/server/internal/repository"
@@ -137,6 +138,29 @@ func (h *BookingHandler) DriverLocation(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, driverLocationResponse{Location: loc})
 }
 
+// DriverPhoto handles GET /me/bookings/{id}/driver-photo: the assigned
+// driver's photo as a JPEG. The app asks with ?v=<photoVersion>, so a
+// response may be cached for as long as that URL is in use.
+func (h *BookingHandler) DriverPhoto(w http.ResponseWriter, r *http.Request) {
+	photo, version, err := h.svc.DriverPhoto(r.Context(), userIDFrom(r.Context()), r.PathValue("id"))
+	if err != nil {
+		writeBookingError(w, err, "could not load your driver's photo")
+		return
+	}
+	etag := `"` + version + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", service.DocumentContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(photo)))
+	if _, err := w.Write(photo); err != nil {
+		slog.Error("bookings: writing driver photo", "error", err)
+	}
+}
+
 // writeBookingError maps the customer's booking errors to statuses and the
 // codes the app branches on.
 func writeBookingError(w http.ResponseWriter, err error, fallback string) {
@@ -149,6 +173,8 @@ func writeBookingError(w http.ResponseWriter, err error, fallback string) {
 		writeErrorCode(w, http.StatusBadRequest, "invalid_rating", err.Error(), 0)
 	case errors.Is(err, service.ErrNotTracking):
 		writeErrorCode(w, http.StatusConflict, "not_tracking", err.Error(), 0)
+	case errors.Is(err, service.ErrNoDriverPhoto):
+		writeErrorCode(w, http.StatusNotFound, "no_driver_photo", err.Error(), 0)
 	default:
 		slog.Error("bookings: request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, fallback)

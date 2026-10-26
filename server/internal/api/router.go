@@ -76,6 +76,7 @@ func NewRouter(
 	mux.HandleFunc("POST /me/bookings/{id}/cancel", requireAuth(sessions, bk.Cancel))
 	mux.HandleFunc("POST /me/bookings/{id}/rating", requireAuth(sessions, bk.Rate))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-location", requireAuth(sessions, bk.DriverLocation))
+	mux.HandleFunc("GET /me/bookings/{id}/driver-photo", requireAuth(sessions, bk.DriverPhoto))
 
 	// Paying for a completed ride by UPI: open a PhonePe checkout, then
 	// re-check it on coming back. PhonePe's webhook nudges the same check.
