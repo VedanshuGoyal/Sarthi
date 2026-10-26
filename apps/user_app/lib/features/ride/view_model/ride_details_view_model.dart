@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show ImageProvider;
 
 import '../data/booking_repository.dart';
 import '../data/upi_checkout.dart';
@@ -152,6 +153,15 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   /// The ride as last seen in the list; null only for an id never in it.
   MyBooking? get booking => _booking;
+
+  /// The driver's photo, or null when there's no driver or no photo.
+  ImageProvider? get driverPhoto {
+    final b = _booking;
+    final version = b?.driverPhotoVersion;
+    return b == null || version == null
+        ? null
+        : _repository.driverPhoto(b.id, version);
+  }
 
   /// The ride's steps, for the status timeline.
   List<RideMilestone> get timeline =>

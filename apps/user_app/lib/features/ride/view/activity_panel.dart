@@ -116,6 +116,7 @@ class _BookingList extends StatelessWidget {
           for (final booking in bookings) ...[
             MyRideCard(
               booking: booking,
+              driverPhoto: vm.driverPhoto(booking),
               onTap: () => openRideDetails(context, booking.id),
               onRate: () => showRateRideSheet(context, booking),
             ),

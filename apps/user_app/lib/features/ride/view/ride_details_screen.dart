@@ -129,6 +129,8 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
             title: name,
             subtitle: RideFormat.driverRating(booking),
             phone: booking.status.isActive ? booking.driverPhone : null,
+            photo: vm.driverPhoto,
+            avatarRadius: 28,
           ),
         ),
       if (booking.status == BookingStatus.completed &&

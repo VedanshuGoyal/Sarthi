@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show ImageProvider;
 
 import '../data/booking_repository.dart';
 import '../domain/my_booking.dart';
@@ -52,6 +53,14 @@ class MyBookingsViewModel extends ChangeNotifier {
 
   /// Rides already asked about this session — rated or waved away.
   final Set<String> _ratingAsked = {};
+
+  /// The photo of [booking]'s driver, or null when it has none to show.
+  ImageProvider? driverPhoto(MyBooking booking) {
+    final version = booking.driverPhotoVersion;
+    return version == null
+        ? null
+        : _repository.driverPhoto(booking.id, version);
+  }
 
   /// Unfinished bookings, soonest first.
   List<MyBooking> get active =>

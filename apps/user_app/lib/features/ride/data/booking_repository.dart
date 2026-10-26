@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
@@ -178,6 +179,21 @@ class BookingRepository {
   Future<DriverLocation?> driverLocation(String id) async {
     final reply = await _act('GET', id, 'driver-location');
     return DriverLocation.tryParse(reply['location']);
+  }
+
+  /// The photo of the driver on booking [id]
+  /// (`GET /me/bookings/{id}/driver-photo`), for an [Image] to load.
+  /// [version] is the booking's `driverPhotoVersion`; it's in the URL, so
+  /// the image cache keeps one download per photo across list refreshes.
+  ImageProvider driverPhoto(String id, String version) {
+    final uri = Uri.parse(
+      '$_baseUrl$_path/${Uri.encodeComponent(id)}/driver-photo',
+    ).replace(queryParameters: {'v': version});
+    final token = _tokenGetter();
+    return NetworkImage(
+      uri.toString(),
+      headers: {if (token != null) 'Authorization': 'Bearer $token'},
+    );
   }
 
   /// Opens a UPI checkout for a completed ride (`POST /me/bookings/{id}/payment`)

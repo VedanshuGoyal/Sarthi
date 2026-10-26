@@ -129,6 +129,7 @@ class MyBooking {
     this.driverPhone,
     this.driverRating,
     this.driverRatingCount = 0,
+    this.driverPhotoVersion,
     this.startOtp,
     this.createdAt,
     this.acceptedAt,
@@ -176,6 +177,10 @@ class MyBooking {
   /// The driver's average stars; null until someone has rated them.
   final double? driverRating;
   final int driverRatingCount;
+
+  /// Changes whenever the driver retakes their photo; null when they have
+  /// none. Part of the photo's URL, so a cached copy is never a stale one.
+  final String? driverPhotoVersion;
 
   /// The code the driver needs to start the trip. Only sent while the driver
   /// is on the way or waiting at the pickup.
@@ -367,6 +372,9 @@ class MyBooking {
           ? (driver['rating'] as num?)?.toDouble()
           : null,
       driverRatingCount: ratingCount,
+      driverPhotoVersion: driver is Map
+          ? _nonEmpty(driver['photoVersion'] as String?)
+          : null,
       startOtp: otp is String && otp.isNotEmpty ? otp : null,
       createdAt: _time(json['createdAt']),
       acceptedAt: _time(json['acceptedAt']),

@@ -21,9 +21,13 @@ class MyRideCard extends StatelessWidget {
     this.onTap,
     this.onRate,
     this.onPay,
+    this.driverPhoto,
   });
 
   final MyBooking booking;
+
+  /// The driver's photo, when the booking has a driver with one.
+  final ImageProvider? driverPhoto;
   final VoidCallback? onTap;
 
   /// Pays for a completed ride that's due; defaults to [onTap], which opens
@@ -161,7 +165,11 @@ class MyRideCard extends StatelessWidget {
               ],
             )
           else if (b.driverName != null)
-            DriverRow(name: b.driverName!, phone: b.driverPhone),
+            DriverRow(
+              name: b.driverName!,
+              phone: b.driverPhone,
+              photo: driverPhoto,
+            ),
           if (b.startOtp != null) ...[
             const SizedBox(height: Skyline.s12),
             StartCodePanel(code: b.startOtp!),

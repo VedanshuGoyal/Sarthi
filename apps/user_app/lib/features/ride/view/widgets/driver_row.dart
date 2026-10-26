@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// The assigned driver: their initial, a [title] ("Ravi is your driver"), an
-/// optional [subtitle] (their rating) and, when there's a [phone], a call
-/// button that hands off to the phone's dialer.
+/// The assigned driver: their [photo] (their initial until it loads, or when
+/// they have none), a [title] ("Ravi is your driver"), an optional
+/// [subtitle] (their rating) and, when there's a [phone], a call button that
+/// hands off to the phone's dialer.
 class DriverRow extends StatelessWidget {
   const DriverRow({
     super.key,
@@ -12,12 +13,16 @@ class DriverRow extends StatelessWidget {
     required this.phone,
     String? title,
     this.subtitle,
+    this.photo,
+    this.avatarRadius = 18,
   }) : title = title ?? '$name is your driver';
 
   final String name;
   final String? phone;
   final String title;
   final String? subtitle;
+  final ImageProvider? photo;
+  final double avatarRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -26,14 +31,7 @@ class DriverRow extends StatelessWidget {
     final subtitle = this.subtitle;
     return Row(
       children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: t.sunken,
-          child: Text(
-            name.isEmpty ? '?' : name[0].toUpperCase(),
-            style: t.title(14, color: t.primaryText),
-          ),
-        ),
+        DriverAvatar(name: name, photo: photo, radius: avatarRadius),
         const SizedBox(width: Skyline.s12),
         Expanded(
           child: Column(
@@ -61,6 +59,52 @@ class DriverRow extends StatelessWidget {
             icon: const Icon(Icons.call_rounded, size: 20),
           ),
       ],
+    );
+  }
+}
+
+/// A driver's [photo] in a circle, or their initial while it loads and when
+/// there's none or it fails.
+class DriverAvatar extends StatelessWidget {
+  const DriverAvatar({
+    super.key,
+    required this.name,
+    this.photo,
+    this.radius = 18,
+  });
+
+  final String name;
+  final ImageProvider? photo;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final initial = CircleAvatar(
+      radius: radius,
+      backgroundColor: t.sunken,
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: t.title(radius * 0.78, color: t.primaryText),
+      ),
+    );
+    final photo = this.photo;
+    if (photo == null) return initial;
+    return Semantics(
+      label: 'Photo of $name',
+      image: true,
+      child: ClipOval(
+        child: Image(
+          image: photo,
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          frameBuilder: (_, child, frame, wasSynchronouslyLoaded) =>
+              frame == null && !wasSynchronouslyLoaded ? initial : child,
+          errorBuilder: (_, _, _) => initial,
+        ),
+      ),
     );
   }
 }
