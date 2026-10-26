@@ -2,135 +2,549 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<title>MOJUD apps</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MOJUD | A driver for your own car, in Delhi NCR</title>
+<meta name="description" content="Book a driver to drive your own car in Delhi NCR: by the hour, one way, or through a day of errands. From ₹139 for the first hour. Pay by UPI after the trip.">
+<meta name="theme-color" content="#0B2239">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MOJUD | Your car. Our driver.">
+<meta property="og:description" content="Book a driver for your own car in Delhi NCR, by the hour, one way or for errands.">
+<meta property="og:url" content="https://apps.mojud.life/">
+<meta property="og:image" content="https://apps.mojud.life/mojud-icon.png">
 <link rel="icon" type="image/png" href="mojud-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <style>
   :root {
-    --canvas: #E7F0F8; --surface: #FFFFFF; --sunken: #EEF4FA;
-    --ink: #0B2239; --muted: #4A5D72; --faint: #56697E;
-    --signal: #2A93BE; --blue-text: #1A6E93; --soft: #D6EAF4; --hairline: #DCE7F1;
+    --navy: #0B2239; --navy-2: #12345A; --navy-3: #1B4570;
+    --signal: #2A93BE; --signal-ink: #1A6E93; --signal-soft: #D6EAF4;
+    --gold: #CE9A3C; --gold-soft: #F4E7CF;
+    --paper: #F5F8FB; --surface: #FFFFFF; --sunken: #EDF3F8;
+    --ink: #0B2239; --muted: #4A5D72; --faint: #5E7086; --line: #DCE7F1;
+    --radius: 22px; --shadow: 0 1px 2px rgba(11,34,57,.05), 0 12px 32px rgba(11,34,57,.07);
+    --serif: "Instrument Serif", Georgia, serif;
+    --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--canvas); color: var(--ink);
-    font-family: "Plus Jakarta Sans", system-ui, sans-serif; line-height: 1.5;
-  }
-  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
-  header span { font-weight: 800; letter-spacing: .08em; font-size: 18px; }
-  h1 { margin: 0; font-size: clamp(28px, 6vw, 36px); line-height: 1.15; font-weight: 800; }
-  .lede { margin: 8px 0 28px; color: var(--muted); font-size: 16px; }
-  .apps { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-  .card {
-    background: var(--surface); border-radius: 24px; padding: 20px;
-    box-shadow: 0 4px 16px rgba(11, 34, 57, .06); display: flex; flex-direction: column; gap: 14px;
-  }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.6 var(--sans); overflow-x: hidden; }
+  img, svg { display: block; max-width: 100%; }
+  a { color: inherit; }
+  .wrap { width: 100%; max-width: 1140px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .skip { position: absolute; left: 12px; top: -60px; background: var(--navy); color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 50; }
+  .skip:focus { top: 12px; }
+  :focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; border-radius: 8px; }
+
+  /* Header */
+  .head { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--paper) 82%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+  .head.stuck { border-bottom-color: var(--line); }
+  .head-row { display: flex; align-items: center; gap: 16px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 800; letter-spacing: .14em; font-size: 15px; }
+  .nav { display: none; margin-left: auto; gap: 4px; }
+  .nav a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 14.5px; padding: 8px 12px; border-radius: 999px; }
+  .nav a:hover { color: var(--ink); background: var(--sunken); }
+  .head-cta { margin-left: auto; }
+  @media (min-width: 880px) { .nav { display: flex; } .head-cta { margin-left: 8px; } }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; padding: 0 22px; border-radius: 999px; font: 700 15px/1 var(--sans); text-decoration: none; border: 1px solid transparent; transition: transform .15s, background .15s, box-shadow .15s; white-space: nowrap; }
+  .btn:active { transform: translateY(1px); }
+  .btn-dark { background: var(--navy); color: #fff; box-shadow: 0 8px 20px rgba(11,34,57,.18); }
+  .btn-dark:hover { background: var(--navy-2); }
+  .btn-light { background: var(--surface); color: var(--ink); border-color: var(--line); }
+  .btn-light:hover { border-color: var(--signal); }
+  .btn-sm { min-height: 40px; padding: 0 16px; font-size: 14px; }
+  .btn-gold { background: var(--gold); color: var(--navy); }
+  .btn-gold:hover { background: #DBAA52; }
+  .btn .arr { transition: transform .15s; }
+  .btn:hover .arr { transform: translateX(3px); }
+
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 700 12.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--signal-ink); }
+  .eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--gold); border-radius: 2px; }
+  h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
+  .serif { font-family: var(--serif); font-weight: 400; font-style: italic; letter-spacing: -.01em; }
+  .sec { padding: 72px 0; }
+  @media (min-width: 900px) { .sec { padding: 104px 0; } }
+  .sec-head { max-width: 640px; margin-bottom: 40px; }
+  .sec-head h2 { font-size: clamp(30px, 5vw, 46px); line-height: 1.08; font-weight: 800; margin-top: 14px; }
+  .sec-head p { color: var(--muted); font-size: 17.5px; margin: 14px 0 0; }
+  .sec-head p.eyebrow { font-size: 12.5px; color: var(--signal-ink); margin: 0; }
+  .drivers .sec-head p.eyebrow { color: var(--gold); }
+
+  /* Hero */
+  .hero { position: relative; padding: 40px 0 64px; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: -20% -10% auto auto; width: 720px; height: 720px; background: radial-gradient(closest-side, rgba(42,147,190,.18), transparent 70%); pointer-events: none; }
+  .hero-grid { display: grid; gap: 48px; align-items: center; }
+  @media (min-width: 960px) { .hero { padding: 72px 0 112px; } .hero-grid { grid-template-columns: 1.08fr .92fr; gap: 56px; } }
+  .hero h1 { font-size: clamp(44px, 9vw, 84px); line-height: .98; font-weight: 800; margin: 18px 0 0; }
+  .hero h1 .serif { display: block; color: var(--signal-ink); font-size: 1.08em; line-height: 1; }
+  .lede { font-size: clamp(17px, 2.2vw, 20px); color: var(--muted); max-width: 34em; margin: 22px 0 0; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 30px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 14.5px; font-weight: 600; }
+  .facts li { display: flex; align-items: center; gap: 8px; }
+  .facts svg { color: var(--signal); flex: none; }
+
+  /* Phone */
+  .stage { position: relative; display: grid; place-items: center; min-height: 520px; }
+  .route { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .phone { position: relative; width: min(300px, 82vw); aspect-ratio: 9 / 18.5; background: var(--navy); border-radius: 46px; padding: 11px; box-shadow: 0 40px 80px -20px rgba(11,34,57,.45), 0 0 0 1px rgba(255,255,255,.06) inset; animation: float 7s ease-in-out infinite; }
+  @keyframes float { 50% { transform: translateY(-10px); } }
+  .screen { position: relative; height: 100%; border-radius: 36px; overflow: hidden; background: linear-gradient(180deg, #DCEBF5 0%, #EAF2F8 46%, #F5F8FB 46%); }
+  .screen-map { position: absolute; inset: 0 0 54% 0; }
+  .notch { position: absolute; top: 8px; left: 50%; width: 92px; height: 24px; border-radius: 99px; background: var(--navy); transform: translateX(-50%); z-index: 2; }
+  .sheet { position: absolute; left: 10px; right: 10px; bottom: 10px; display: grid; gap: 10px; }
+  .card-m { background: #fff; border-radius: 20px; padding: 14px; box-shadow: 0 6px 18px rgba(11,34,57,.08); }
+  .pill { display: inline-block; font: 700 10.5px/1 var(--sans); padding: 6px 9px; border-radius: 99px; background: var(--signal-soft); color: var(--signal-ink); }
+  .m-title { font: 800 15px/1.2 var(--sans); margin: 8px 0 2px; }
+  .m-sub { font-size: 12px; color: var(--muted); margin: 0; }
+  .m-driver { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: #fff; font: 700 13px/1 var(--sans); flex: none; }
+  .m-call { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--sunken); color: var(--navy); }
+  .code { display: flex; justify-content: space-between; align-items: center; background: var(--navy); color: #fff; border-radius: 16px; padding: 12px 14px; }
+  .code span { font-size: 11px; opacity: .75; }
+  .code b { font: 800 20px/1 var(--sans); letter-spacing: .32em; }
+  .float-chip { position: absolute; display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow); font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .float-chip small { display: block; color: var(--faint); font-weight: 500; font-size: 11.5px; }
+  .chip-a { left: 0; top: 18%; }
+  .chip-b { right: 0; top: 34%; }
+  .dot { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+  @media (max-width: 520px) { .chip-a { left: -4px; top: 4%; } .chip-b { right: -4px; top: 30%; } }
+
+  /* Trip types */
+  .types { display: grid; gap: 16px; }
+  @media (min-width: 820px) { .types { grid-template-columns: repeat(3, 1fr); } }
+  .type { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; overflow: hidden; transition: transform .2s, box-shadow .2s; }
+  .type:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+  .type .ic { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--signal-soft); color: var(--signal-ink); }
+  .type h3 { font-size: 22px; font-weight: 800; margin: 22px 0 8px; }
+  .type p { margin: 0; color: var(--muted); }
+  .type .tag { display: inline-block; margin-top: 18px; font-size: 13px; font-weight: 700; color: var(--signal-ink); }
+
+  /* Steps */
+  .steps-band { background: var(--surface); border-block: 1px solid var(--line); }
+  .steps { display: grid; gap: 28px; counter-reset: step; margin: 0; padding: 0; list-style: none; }
+  @media (min-width: 860px) { .steps { grid-template-columns: repeat(4, 1fr); gap: 24px; } }
+  .steps li { position: relative; padding-top: 64px; }
+  .steps li::before { counter-increment: step; content: "0" counter(step); position: absolute; top: 0; left: 0; font: italic 400 48px/1 var(--serif); color: var(--signal); }
+  @media (min-width: 860px) { .steps li:not(:last-child)::after { content: ""; position: absolute; top: 24px; left: 72px; right: -12px; height: 1px; background: linear-gradient(90deg, var(--line), transparent); } }
+  .steps h3 { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+  .steps p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+  /* Safety */
+  .safety { display: grid; gap: 40px; align-items: start; }
+  @media (min-width: 960px) { .safety { grid-template-columns: .9fr 1.1fr; gap: 64px; } }
+  .safe-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+  @media (min-width: 600px) { .safe-list { grid-template-columns: 1fr 1fr; } }
+  .safe-list li { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+  .safe-list .ic { color: var(--signal-ink); margin-bottom: 12px; }
+  .safe-list b { display: block; font-size: 16px; margin-bottom: 4px; }
+  .safe-list span { color: var(--muted); font-size: 14.5px; }
+
+  /* Pricing */
+  .price-grid { display: grid; gap: 16px; }
+  @media (min-width: 820px) { .price-grid { grid-template-columns: 1fr 1fr; } }
+  .price { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
+  .price.lux { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .price.lux .p-sub, .price.lux .row span { color: rgba(255,255,255,.72); }
+  .price.lux .row { border-color: rgba(255,255,255,.14); }
+  .price h3 { font-size: 20px; font-weight: 800; }
+  .p-sub { color: var(--muted); font-size: 14.5px; margin: 4px 0 18px; }
+  .big { font: 400 64px/1 var(--serif); letter-spacing: -.02em; }
+  .big small { font: 600 15px/1 var(--sans); letter-spacing: 0; margin-left: 6px; }
+  .rows { margin-top: 18px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-weight: 600; }
+  .row span { color: var(--muted); font-weight: 500; }
+  .price-note { color: var(--muted); font-size: 14.5px; margin: 20px 0 0; max-width: 60em; }
+
+  /* Drivers */
+  .drivers { position: relative; background: var(--navy); color: #fff; overflow: hidden; }
+  .drivers::before { content: ""; position: absolute; right: -200px; top: -200px; width: 640px; height: 640px; background: radial-gradient(closest-side, rgba(206,154,60,.22), transparent 70%); }
+  .drivers .eyebrow { color: var(--gold); }
+  .drivers .sec-head p { color: rgba(255,255,255,.75); }
+  .drv-grid { position: relative; display: grid; gap: 40px; align-items: center; }
+  @media (min-width: 960px) { .drv-grid { grid-template-columns: 1fr 1fr; gap: 64px; } }
+  .share { display: flex; align-items: baseline; gap: 14px; }
+  .share b { font: 400 clamp(84px, 14vw, 132px)/.9 var(--serif); color: var(--gold); }
+  .share span { font-size: 17px; color: rgba(255,255,255,.8); max-width: 12em; }
+  .drv-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .drv-list li { display: flex; gap: 14px; padding: 16px 0; border-top: 1px solid rgba(255,255,255,.12); }
+  .drv-list li:first-child { border-top: 0; }
+  .drv-list svg { flex: none; color: var(--gold); margin-top: 2px; }
+  .drv-list b { display: block; }
+  .drv-list span { color: rgba(255,255,255,.72); font-size: 15px; }
+
+  /* Download */
+  .apps { display: grid; gap: 16px; }
+  @media (min-width: 820px) { .apps { grid-template-columns: 1fr 1fr; } }
+  .app { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; gap: 16px; }
   .app-head { display: flex; align-items: center; gap: 14px; }
-  .app-head img { width: 56px; height: 56px; border-radius: 16px; background: var(--sunken); }
-  .app-head h2 { margin: 0; font-size: 19px; font-weight: 800; }
-  .app-head p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  .app-head img { width: 60px; height: 60px; border-radius: 16px; background: var(--sunken); }
+  .app-head h3 { font-size: 20px; font-weight: 800; }
+  .app-head p { margin: 2px 0 0; color: var(--muted); font-size: 14.5px; }
   .meta { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { background: var(--soft); color: var(--blue-text); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
-  .download {
-    display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px;
-    background: var(--ink); color: #fff; border-radius: 18px; text-decoration: none;
-    font-weight: 700; font-size: 16px;
-  }
-  .download:hover { background: #12345A; }
-  .download:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
+  .chip { background: var(--signal-soft); color: var(--signal-ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; }
+  .app .btn { width: 100%; min-height: 54px; }
   .hash { margin: 0; font-size: 12px; color: var(--faint); word-break: break-all; }
-  .hash code { font-family: ui-monospace, monospace; }
-  section.panel { margin-top: 24px; background: var(--surface); border-radius: 24px; padding: 20px; box-shadow: 0 4px 16px rgba(11, 34, 57, .06); }
-  section.panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 800; }
-  ol { margin: 0; padding-left: 22px; color: var(--muted); }
-  ol li { margin: 6px 0; }
-  ol strong { color: var(--ink); }
-  .note { margin: 14px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--sunken); color: var(--muted); font-size: 14px; }
+  .hash code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .install { display: grid; gap: 16px; margin-top: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .panel h3 { font-size: 17px; font-weight: 800; margin-bottom: 10px; }
+  .panel ol { margin: 0; padding-left: 22px; color: var(--muted); }
+  .panel ol li { margin: 6px 0; }
+  .panel ol strong { color: var(--ink); }
+  .note { margin: 14px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--sunken); color: var(--muted); font-size: 14px; }
   .qr { display: none; }
   @media (min-width: 900px) and (hover: hover) {
+    .install { grid-template-columns: 1.4fr .6fr; }
     .qr { display: flex; align-items: center; gap: 18px; }
-    .qr svg { width: 132px; height: 132px; flex-shrink: 0; background: #fff; border-radius: 12px; padding: 6px; }
+    .qr svg { width: 120px; height: 120px; flex: none; background: #fff; border-radius: 12px; padding: 6px; border: 1px solid var(--line); }
+    .qr p { margin: 0; color: var(--muted); font-size: 14.5px; }
   }
-  footer { margin-top: 28px; color: var(--faint); font-size: 13px; text-align: center; }
+
+  /* FAQ */
+  .faq { display: grid; gap: 40px; }
+  @media (min-width: 960px) { .faq { grid-template-columns: .8fr 1.2fr; gap: 64px; } }
+  details { border-bottom: 1px solid var(--line); }
+  details:first-of-type { border-top: 1px solid var(--line); }
+  summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 20px 0; font-weight: 700; font-size: 17px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font: 400 28px/1 var(--serif); color: var(--signal-ink); transition: transform .2s; flex: none; }
+  details[open] summary::after { transform: rotate(45deg); }
+  details p { margin: 0 0 20px; color: var(--muted); max-width: 46em; }
+
+  /* Footer */
+  .foot { background: var(--surface); border-top: 1px solid var(--line); padding: 48px 0 36px; font-size: 14.5px; color: var(--muted); }
+  .foot-grid { display: grid; gap: 28px; }
+  @media (min-width: 820px) { .foot-grid { grid-template-columns: 1.3fr 1fr 1fr; } }
+  .foot h4 { margin: 0 0 10px; color: var(--ink); font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+  .foot ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .foot a { text-decoration: none; }
+  .foot a:hover { color: var(--ink); text-decoration: underline; }
+  .foot-base { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--faint); }
+
+  /* Reveal */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  .no-js .reveal { opacity: 1; transform: none; }
 </style>
 </head>
-<body>
-<main>
-  <header>
-    <svg width="30" height="30" viewBox="0 0 144 144" role="img" aria-label="MOJUD">
-      <g stroke="#0B2239" stroke-width="9" stroke-linecap="round" fill="none">
-        <line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/>
-        <line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/>
-        <line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/>
-      </g>
-      <circle cx="72" cy="72" r="8" fill="#CE9A3C"/>
-    </svg>
-    <span>MOJUD</span>
-  </header>
+<body class="no-js">
+<a class="skip" href="#main">Skip to content</a>
 
-  <h1>Get the apps</h1>
-  <p class="lede">Test builds for Android phones. Your car, our driver.</p>
-
-  <div class="apps">
-    <article class="card">
-      <div class="app-head">
-        <img src="mojud-icon.png" alt="" width="56" height="56">
-        <div>
-          <h2>MOJUD</h2>
-          <p>Book a driver for your own car.</p>
-        </div>
-      </div>
-      <div class="meta">
-        <span class="chip">Version {{USER_VERSION}}</span>
-        <span class="chip">{{USER_SIZE}}</span>
-        <span class="chip">Android</span>
-      </div>
-      <a class="download" href="{{USER_APK}}" download>Download for Android</a>
-      <p class="hash">SHA-256 <code>{{USER_SHA}}</code></p>
-    </article>
-
-    <article class="card">
-      <div class="app-head">
-        <img src="mojud-driver-icon.png" alt="" width="56" height="56">
-        <div>
-          <h2>MOJUD Driver</h2>
-          <p>For drivers: sign up, documents, trips.</p>
-        </div>
-      </div>
-      <div class="meta">
-        <span class="chip">Version {{DRIVER_VERSION}}</span>
-        <span class="chip">{{DRIVER_SIZE}}</span>
-        <span class="chip">Android</span>
-      </div>
-      <a class="download" href="{{DRIVER_APK}}" download>Download for Android</a>
-      <p class="hash">SHA-256 <code>{{DRIVER_SHA}}</code></p>
-    </article>
+<header class="head" id="head">
+  <div class="wrap head-row">
+    <a class="brand" href="#top" aria-label="MOJUD, back to top">
+      <svg width="28" height="28" viewBox="0 0 144 144" aria-hidden="true">
+        <g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none">
+          <line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/>
+          <line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/>
+          <line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/>
+        </g>
+        <circle cx="72" cy="72" r="9" fill="#CE9A3C"/>
+      </svg>
+      MOJUD
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#safety">Safety</a>
+      <a href="#fares">Fares</a>
+      <a href="#drivers">For drivers</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-dark btn-sm head-cta" href="#download">Get the app</a>
   </div>
+</header>
 
-  <section class="panel">
-    <h2>How to install</h2>
-    <ol>
-      <li>Tap <strong>Download for Android</strong> on your phone.</li>
-      <li>Open the downloaded file. If asked, allow your browser to <strong>install unknown apps</strong>.</li>
-      <li>Tap <strong>Install</strong>, then open the app.</li>
-    </ol>
-    <p class="note">Installed an earlier test build? Uninstall it first. These builds are signed with a new key, so Android won't update over the old one.</p>
-  </section>
+<main id="main">
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">Driver on hire · Delhi NCR</p>
+        <h1 id="hero-title">Your car. <span class="serif">Our driver.</span></h1>
+        <p class="lede">Book a driver to drive your own car: for a few hours, one way across the city, or through a day of errands. Pay by UPI after the trip.</p>
+        <div class="cta-row">
+          <a class="btn btn-dark" href="#download">Download for Android <span class="arr" aria-hidden="true">→</span></a>
+          <a class="btn btn-light" href="#drivers">I'm a driver</a>
+        </div>
+        <ul class="facts" aria-label="At a glance">
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>From ₹139 for the first hour</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Free cancellation before the trip</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Manual or automatic</li>
+        </ul>
+      </div>
 
-  <section class="panel qr">
-    {{QR_SVG}}
-    <div>
-      <h2>On a computer?</h2>
-      <p style="margin:0;color:var(--muted)">Scan this with your phone's camera to open this page there.</p>
+      <div class="stage" aria-hidden="true">
+        <svg class="route" viewBox="0 0 520 560" preserveAspectRatio="xMidYMid meet">
+          <path d="M40 470 C 140 420, 120 300, 230 280 S 380 200, 470 90" fill="none" stroke="#2A93BE" stroke-opacity=".35" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
+          <circle cx="40" cy="470" r="7" fill="#0B2239"/><circle cx="470" cy="90" r="7" fill="#CE9A3C"/>
+        </svg>
+        <div class="phone">
+          <div class="screen">
+            <span class="notch"></span>
+            <svg class="screen-map" viewBox="0 0 280 260" preserveAspectRatio="xMidYMid slice">
+              <g stroke="#C9DCEA" stroke-width="10" fill="none" stroke-linecap="round">
+                <path d="M-10 80 H300"/><path d="M-10 190 H300"/><path d="M70 -10 V280"/><path d="M200 -10 V280"/>
+              </g>
+              <g stroke="#B6D0E2" stroke-width="5" fill="none"><path d="M-10 135 L300 120"/><path d="M135 -10 L150 280"/></g>
+              <path d="M70 190 V135 H200 V80" fill="none" stroke="#2A93BE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="70" cy="190" r="9" fill="#0B2239"/><circle cx="70" cy="190" r="3.5" fill="#fff"/>
+              <g transform="translate(200 80)"><circle r="14" fill="#2A93BE" fill-opacity=".2"/><circle r="7" fill="#2A93BE"/></g>
+            </svg>
+            <div class="sheet">
+              <div class="card-m">
+                <span class="pill">Driver assigned</span>
+                <p class="m-title">Round Trip · 4 h</p>
+                <p class="m-sub">Today, 6:30 PM · Your sedan</p>
+              </div>
+              <div class="card-m m-driver">
+                <span class="avatar">AK</span>
+                <div><b style="font-size:13.5px">Arjun</b><p class="m-sub">2.3 km away · updated just now</p></div>
+                <span class="m-call"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></span>
+              </div>
+              <div class="code"><span>Start code</span><b>4821</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="float-chip chip-a"><span class="dot" style="background:var(--gold-soft);color:#8A6420"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Booked for 6:30 PM<small>Driver found ahead of time</small></span></div>
+        <div class="float-chip chip-b"><span class="dot" style="background:var(--signal-soft);color:var(--signal-ink)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>Paid by UPI<small>After the trip, in the app</small></span></div>
+      </div>
     </div>
   </section>
 
-  <footer>Test builds, not yet on Google Play · Updated {{UPDATED}}</footer>
+  <section class="sec" id="trips" aria-labelledby="trips-title" style="padding-top:24px">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">Three ways to book</p>
+        <h2 id="trips-title">However your day goes, <span class="serif">someone else drives.</span></h2>
+      </div>
+      <div class="types">
+        <article class="type reveal">
+          <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>Round Trip</h3>
+          <p>A driver for the hours you need: shopping, meetings, a family visit. They start and finish at your pickup.</p>
+          <span class="tag">Book by the hour</span>
+        </article>
+        <article class="type reveal">
+          <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          <h3>One-Way</h3>
+          <p>From here to there in your own car: the airport, a late dinner, a long drive home.</p>
+          <span class="tag">Pickup to destination</span>
+        </article>
+        <article class="type reveal">
+          <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H16a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h7.5"/></svg></div>
+          <h3>Multi-Stop</h3>
+          <p>Errands in one go. Add each stop, what to do there and when to leave, and the driver follows your plan.</p>
+          <span class="tag">Stops with tasks</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec steps-band" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title">Four steps, <span class="serif">no surprises.</span></h2>
+      </div>
+      <ol class="steps">
+        <li class="reveal"><h3>Book ahead</h3><p>Pick the trip, your car and a start time at least 45 minutes away. You see the fare before you confirm.</p></li>
+        <li class="reveal"><h3>A driver accepts</h3><p>Drivers nearby who can drive your car's gearbox get the request. You see who accepted, their rating and their number.</p></li>
+        <li class="reveal"><h3>Share the start code</h3><p>Your driver begins the trip only with the 4-digit code in your app. Follow them on the map as they come to you.</p></li>
+        <li class="reveal"><h3>Pay and rate</h3><p>When the trip ends, pay by UPI from any UPI app. Then rate each other.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="sec" id="safety" aria-labelledby="safety-title">
+    <div class="wrap safety">
+      <div class="sec-head reveal" style="margin-bottom:0">
+        <p class="eyebrow">Safety</p>
+        <h2 id="safety-title">You hand over the keys. <span class="serif">We take that seriously.</span></h2>
+        <p>Every part of a MOJUD ride is built so you know who is driving your car, when they start and where they are.</p>
+      </div>
+      <ul class="safe-list">
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M15 10h3M15 14h3M6 16c.5-1.5 1.7-2 3-2s2.5.5 3 2"/></svg></div><b>Documented drivers</b><span>Drivers give us their Aadhaar, driving licence, a selfie and bank details before their first ride.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><b>Start code</b><span>The trip can't begin without the code in your app. After five wrong tries, the code changes.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div><b>Live location</b><span>See your driver on the map from an hour before the start until the trip ends.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></div><b>Two-way ratings</b><span>Customers rate drivers and drivers rate customers, after every trip.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div><b>Free to cancel</b><span>Change of plans? Cancel any time before the trip starts, at no charge.</span></li>
+        <li class="reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div><b>Told at every step</b><span>Notifications when a driver accepts, arrives, or hands the ride back.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec steps-band" id="fares" aria-labelledby="fares-title">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">Fares</p>
+        <h2 id="fares-title">Simple hourly fares, <span class="serif">shown before you book.</span></h2>
+      </div>
+      <div class="price-grid">
+        <article class="price reveal">
+          <h3>Standard</h3>
+          <p class="p-sub">Hatchback, sedan or SUV</p>
+          <p class="big" style="margin:0">₹139<small>first hour</small></p>
+          <div class="rows">
+            <div class="row"><span>2 hours</span>₹240</div>
+            <div class="row"><span>Each extra hour</span>+₹100</div>
+            <div class="row"><span>4 hours, for example</span>₹440</div>
+          </div>
+        </article>
+        <article class="price lux reveal">
+          <h3>Luxury</h3>
+          <p class="p-sub">Premium and luxury cars</p>
+          <p class="big" style="margin:0">₹196<small>first hour</small></p>
+          <div class="rows">
+            <div class="row"><span>2 hours</span>₹330</div>
+            <div class="row"><span>Each extra hour</span>+₹110</div>
+            <div class="row"><span>4 hours, for example</span>₹550</div>
+          </div>
+        </article>
+      </div>
+      <p class="price-note reveal">Round Trip is priced on the hours you book. One-Way and Multi-Stop are estimated on the same rates for the expected drive time, rounded up to whole hours, and the app marks them as estimates. Nothing is charged at booking: you pay after the trip.</p>
+    </div>
+  </section>
+
+  <section class="sec drivers" id="drivers" aria-labelledby="drivers-title">
+    <div class="wrap drv-grid">
+      <div>
+        <div class="sec-head reveal" style="margin-bottom:28px">
+          <p class="eyebrow">For drivers</p>
+          <h2 id="drivers-title">Drive with MOJUD, <span class="serif">on your own hours.</span></h2>
+          <p>Good drivers are what we sell. Sign up in the MOJUD Driver app, go on duty when it suits you, and take the rides you want.</p>
+        </div>
+        <div class="share reveal"><b>87%</b><span>of every fare is yours. MOJUD keeps 13%.</span></div>
+        <div class="cta-row reveal"><a class="btn btn-gold" href="#download">Get MOJUD Driver <span class="arr" aria-hidden="true">→</span></a></div>
+      </div>
+      <ul class="drv-list">
+        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6M5.6 5.6a8 8 0 1 0 12.8 0"/></svg><div><b>On duty when you choose</b><span>One switch takes you online. Ride requests near you arrive as notifications.</span></div></li>
+        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><div><b>Booked ahead, never rushed</b><span>Every ride is scheduled, so you see the time, place, car and fare before you accept.</span></div></li>
+        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg><div><b>Paid to your bank, weekly</b><span>Customers pay MOJUD by UPI. Your share goes to your bank account every week.</span></div></li>
+        <li class="reveal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg><div><b>Earnings at a glance</b><span>Today, this week and this month, with what customers owe and what has been paid out.</span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">Get the apps</p>
+        <h2 id="download-title">Download for Android. <span class="serif">It takes a minute.</span></h2>
+        <p>These are early builds, installed straight from this page while we get ready for Google Play.</p>
+      </div>
+      <div class="apps">
+        <article class="app reveal">
+          <div class="app-head">
+            <img src="mojud-icon.png" alt="" width="60" height="60">
+            <div><h3>MOJUD</h3><p>Book a driver for your own car.</p></div>
+          </div>
+          <div class="meta"><span class="chip">Version {{USER_VERSION}}</span><span class="chip">{{USER_SIZE}}</span><span class="chip">Android</span></div>
+          <a class="btn btn-dark" href="{{USER_APK}}" download>Download MOJUD</a>
+          <p class="hash">SHA-256 <code>{{USER_SHA}}</code></p>
+        </article>
+        <article class="app reveal">
+          <div class="app-head">
+            <img src="mojud-driver-icon.png" alt="" width="60" height="60">
+            <div><h3>MOJUD Driver</h3><p>For drivers: sign up, documents, trips.</p></div>
+          </div>
+          <div class="meta"><span class="chip">Version {{DRIVER_VERSION}}</span><span class="chip">{{DRIVER_SIZE}}</span><span class="chip">Android</span></div>
+          <a class="btn btn-dark" href="{{DRIVER_APK}}" download>Download MOJUD Driver</a>
+          <p class="hash">SHA-256 <code>{{DRIVER_SHA}}</code></p>
+        </article>
+      </div>
+      <div class="install">
+        <section class="panel reveal" aria-labelledby="install-title">
+          <h3 id="install-title">How to install</h3>
+          <ol>
+            <li>Tap <strong>Download</strong> on your phone.</li>
+            <li>Open the downloaded file. If asked, allow your browser to <strong>install unknown apps</strong>.</li>
+            <li>Tap <strong>Install</strong>, then open the app.</li>
+          </ol>
+          <p class="note">Installed a test build from before 24 October 2026? Uninstall it first. Newer builds are signed with a different key, so Android won't update over the old one.</p>
+        </section>
+        <section class="panel qr reveal" aria-label="Open this page on your phone">
+          {{QR_SVG}}
+          <p><strong style="color:var(--ink)">On a computer?</strong><br>Scan with your phone's camera to open this page there.</p>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec steps-band" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq">
+      <div class="sec-head reveal" style="margin-bottom:0">
+        <p class="eyebrow">Questions</p>
+        <h2 id="faq-title">Good to <span class="serif">know.</span></h2>
+        <p>Something else? Write to <a href="mailto:team@mojud.life">team@mojud.life</a>.</p>
+      </div>
+      <div>
+        <details><summary>Does MOJUD give me a car?</summary><p>No. MOJUD sends a driver for your own car. Add your car once (registration, type and gearbox) and pick it when you book.</p></details>
+        <details><summary>Where do you operate?</summary><p>Delhi NCR: Delhi, Gurugram, Faridabad, Noida, Greater Noida, Ghaziabad and nearby areas. Every pickup, stop and destination must be inside this area.</p></details>
+        <details><summary>How early do I need to book?</summary><p>At least 45 minutes before the start time. Drivers can accept until 30 minutes before; if nobody has by then, the booking closes as "No driver found" and nothing is charged.</p></details>
+        <details><summary>How do I pay?</summary><p>After the trip ends, pay the fare in the app by UPI, from GPay, PhonePe, Paytm or your bank's UPI app. Payments go through PhonePe's payment gateway; MOJUD never sees your UPI PIN.</p></details>
+        <details><summary>Can I cancel?</summary><p>Yes, free of charge, any time before the trip starts. See the <a href="https://mojud.life/refunds.html">refund and cancellation policy</a>.</p></details>
+        <details><summary>My car is automatic. Will the driver know how to drive it?</summary><p>Yes. Drivers tell us whether they drive manual, automatic or both, and only drivers who can drive your car's gearbox are offered your ride.</p></details>
+        <details><summary>Is there an iPhone app?</summary><p>Not yet. The apps are on Android first; iPhone comes after Google Play.</p></details>
+      </div>
+    </div>
+  </section>
 </main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="#top" style="margin-bottom:12px">
+          <svg width="24" height="24" viewBox="0 0 144 144" aria-hidden="true"><g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none"><line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/><line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/><line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/></g><circle cx="72" cy="72" r="9" fill="#CE9A3C"/></svg>
+          MOJUD
+        </a>
+        <p style="margin:0;max-width:30em">A driver for your own car, in Delhi NCR. MOJUD is an Udyam-registered micro enterprise from Khargone, Madhya Pradesh.</p>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:team@mojud.life">team@mojud.life</a></li>
+          <li><a href="tel:+919425326724">+91 94253 26724</a></li>
+          <li><a href="https://mojud.life/">mojud.life</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Policies</h4>
+        <ul>
+          <li><a href="https://mojud.life/terms.html">Terms of service</a></li>
+          <li><a href="https://mojud.life/privacy.html">Privacy policy</a></li>
+          <li><a href="https://mojud.life/refunds.html">Refunds and cancellation</a></li>
+          <li><a href="https://mojud.life/contact.html">Contact us</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base"><span>© 2026 MOJUD</span><span>Android test builds, not yet on Google Play · Updated {{UPDATED}}</span></div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  document.body.classList.remove('no-js');
+  var head = document.getElementById('head');
+  function onScroll() { head.classList.toggle('stuck', window.scrollY > 8); }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  var items = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    items.forEach(function (el) { el.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  items.forEach(function (el, i) { el.style.transitionDelay = (i % 4) * 70 + 'ms'; io.observe(el); });
+})();
+</script>
 </body>
 </html>
