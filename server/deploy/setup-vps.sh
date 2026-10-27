@@ -84,6 +84,9 @@ preflight() {
 	if [[ -z "${ADMIN_TOKEN:-}" ]]; then
 		warn "ADMIN_TOKEN not set — the payouts back office (/admin/*) will be off"
 	fi
+	if [[ -z "${SUREPASS_TOKEN:-}" ]]; then
+		warn "SUREPASS_TOKEN not set — driver KYC checks are off and no driver can be verified"
+	fi
 	if [[ -z "${OLA_MAPS_CLIENT_ID:-}" || -z "${OLA_MAPS_CLIENT_SECRET:-}" ]]; then
 		warn "OLA_MAPS_CLIENT_ID/OLA_MAPS_CLIENT_SECRET not set — map search will be off"
 	fi
@@ -234,6 +237,9 @@ phase_service() {
 		PHONEPE_WEBHOOK_PASSWORD=${PHONEPE_WEBHOOK_PASSWORD:-}
 		COMMISSION_PERCENT=${COMMISSION_PERCENT:-13}
 		ADMIN_TOKEN=${ADMIN_TOKEN:-}
+		SUREPASS_TOKEN=${SUREPASS_TOKEN:-}
+		SUREPASS_BASE_URL=${SUREPASS_BASE_URL:-}
+		SUREPASS_DIGILOCKER_REDIRECT_URL=${SUREPASS_DIGILOCKER_REDIRECT_URL:-https://$DOMAIN/kyc/digilocker/done}
 	EOF
 	umask 022
 	chown root:root "$SERVER_ENV"; chmod 600 "$SERVER_ENV"

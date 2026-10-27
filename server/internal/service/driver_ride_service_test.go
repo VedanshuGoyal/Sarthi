@@ -185,9 +185,10 @@ func openRide(id string, start time.Time, hours int, gearbox string) domain.Ride
 
 func newRideService(store *fakeRideStore) *DriverRideService {
 	svc := NewDriverRideService(store, fakeProfiles{
-		"auto":    {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionAutomatic},
+		"auto":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionAutomatic},
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
+		"review":  {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionBoth},
 	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
 	svc.now = func() time.Time { return testNow }
 	codes := []string{"1111", "2222", "3333"}
@@ -274,6 +275,10 @@ func TestRequests_requiresClearedKYC(t *testing.T) {
 	}
 	if err := svc.SetDuty(context.Background(), "pending", true, nil); !errors.Is(err, ErrDriverNotCleared) {
 		t.Errorf("SetDuty err = %v, want ErrDriverNotCleared", err)
+	}
+	// Submitted means a person still has to look: not cleared yet.
+	if err := svc.SetDuty(context.Background(), "review", true, nil); !errors.Is(err, ErrDriverNotCleared) {
+		t.Errorf("SetDuty (under review) err = %v, want ErrDriverNotCleared", err)
 	}
 }
 

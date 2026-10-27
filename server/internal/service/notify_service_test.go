@@ -99,7 +99,7 @@ func newNotifyTest(t *testing.T) (*NotifyService, *fakeTokens, *fakeSender, *mem
 	sender := &fakeSender{gone: map[string]bool{}}
 	tracker := memstore.NewDriverTracker(7)
 	profiles := fakeProfiles{
-		"auto":    {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionAutomatic},
+		"auto":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionAutomatic},
 		"manual":  {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionManual},
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"far":     {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},

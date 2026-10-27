@@ -54,28 +54,49 @@ type DriverKYCStore interface {
 	SetKYCStatus(ctx context.Context, driverID string, status domain.KYCStatus, recordSubmission bool) error
 	UpsertBankAccount(ctx context.Context, driverID string, p repository.UpsertBankAccountParams) (domain.DriverBankAccount, error)
 	FindBankAccount(ctx context.Context, driverID string) (domain.DriverBankAccount, error)
+
+	SetDigiLockerSession(ctx context.Context, driverID, clientID string) error
+	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error
+	SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error
+	DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error
+	RecordCheck(ctx context.Context, driverID string, kind domain.KYCCheckKind, ref string, outcome domain.KYCCheckOutcome, detail string) error
+	CountChecks(ctx context.Context, driverID string, kind domain.KYCCheckKind, since time.Time) (int, error)
+	ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error)
 }
 
 // DriverKYCService runs the driver app's six-step Document View: it validates
-// what each step collects, stores images in the blob store and their metadata
-// in PostgreSQL, and owns the driver's overall onboarding status.
+// what each step collects, checks the Aadhaar, licence and bank account at
+// source, stores images in the blob store and their metadata in PostgreSQL,
+// and owns the driver's overall onboarding status.
 type DriverKYCService struct {
 	store  DriverKYCStore
 	blob   storage.Blob
 	cipher *secret.Cipher
 	pepper []byte
-	now    func() time.Time
+
+	// verifier checks documents at source; nil means checks are off and no
+	// driver can finish KYC. digiLockerRedirect is where DigiLocker ends.
+	verifier           IdentityVerifier
+	digiLockerRedirect string
+
+	now func() time.Time
 }
 
-// NewDriverKYCService wires the service to its store, blob backend, and the
-// keys protecting Aadhaar and bank numbers at rest.
-func NewDriverKYCService(store DriverKYCStore, blob storage.Blob, cipher *secret.Cipher, pepper []byte) *DriverKYCService {
+// NewDriverKYCService wires the service to its store, blob backend, the keys
+// protecting Aadhaar and bank numbers at rest, and the identity verifier
+// (nil turns checks off) with DigiLocker's redirect URL.
+func NewDriverKYCService(
+	store DriverKYCStore, blob storage.Blob, cipher *secret.Cipher, pepper []byte,
+	verifier IdentityVerifier, digiLockerRedirect string,
+) *DriverKYCService {
 	return &DriverKYCService{
-		store:  store,
-		blob:   blob,
-		cipher: cipher,
-		pepper: pepper,
-		now:    time.Now,
+		store:              store,
+		blob:               blob,
+		cipher:             cipher,
+		pepper:             pepper,
+		verifier:           verifier,
+		digiLockerRedirect: digiLockerRedirect,
+		now:                time.Now,
 	}
 }
 
@@ -286,7 +307,24 @@ type ProfileUpdate struct {
 //
 // The Aadhaar number is the exception to "store what you're given": only its
 // last four digits and a keyed fingerprint are persisted, never the number.
+//
+// Once DigiLocker has verified the Aadhaar, the name, date of birth and gender
+// are the Aadhaar's: sending them unchanged is fine, changing them is
+// [ErrIdentityLocked].
 func (s *DriverKYCService) UpdateProfile(ctx context.Context, driverID string, u ProfileUpdate) error {
+	if u.FullName != nil || u.DateOfBirth != nil || u.Gender != nil {
+		profile, err := s.store.FindProfile(ctx, driverID)
+		if err != nil {
+			return err
+		}
+		if profile.AadhaarVerifiedAt != nil {
+			if changesIdentity(profile, u) {
+				return ErrIdentityLocked
+			}
+			u.FullName, u.DateOfBirth, u.Gender = nil, nil, nil
+		}
+	}
+
 	var p repository.UpdateProfileParams
 
 	if u.Transmission != nil {
@@ -366,6 +404,13 @@ func (s *DriverKYCService) SetBankAccount(
 		return domain.DriverBankAccount{}, fmt.Errorf("%w: enter a valid IFSC code", ErrInvalidProfile)
 	}
 
+	// Checked before it's stored: an account the bank doesn't know would
+	// only fail later, at the first payout.
+	checked, err := s.verifyBankAccount(ctx, driverID, number, code)
+	if err != nil {
+		return domain.DriverBankAccount{}, err
+	}
+
 	sealed, err := s.cipher.Seal([]byte(number))
 	if err != nil {
 		return domain.DriverBankAccount{}, err
@@ -376,6 +421,8 @@ func (s *DriverKYCService) SetBankAccount(
 		AccountNumberEncrypted: sealed,
 		AccountNumberLast4:     number[len(number)-4:],
 		IFSCCode:               code,
+		Verified:               true,
+		VerifiedName:           checked.Name,
 	})
 	if err != nil {
 		return domain.DriverBankAccount{}, err
@@ -387,8 +434,10 @@ func (s *DriverKYCService) SetBankAccount(
 }
 
 // Submit closes the Document View: it re-checks that every step is filled in
-// server-side — the app's own progress tracking is a convenience, not the
-// authority — and moves the driver into the review queue.
+// and verified server-side — the app's own progress tracking is a
+// convenience, not the authority — then clears the driver to drive when the
+// Aadhaar, licence and bank account all name the same person, or leaves them
+// submitted for a person to look at, with the reason in the review note.
 func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.DriverKYC, error) {
 	kyc, err := s.Load(ctx, driverID)
 	if err != nil {
@@ -398,10 +447,30 @@ func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.
 		return domain.DriverKYC{}, fmt.Errorf("%w: %s", ErrKYCIncomplete, strings.Join(missing, ", "))
 	}
 
-	if err := s.store.SetKYCStatus(ctx, driverID, domain.KYCSubmitted, true); err != nil {
+	status := domain.KYCVerified
+	issues := reviewIssues(kyc)
+	if len(issues) > 0 {
+		status = domain.KYCSubmitted
+	}
+	if err := s.store.DecideKYC(ctx, driverID, status, strings.Join(issues, "; ")); err != nil {
 		return domain.DriverKYC{}, err
 	}
 	return s.Load(ctx, driverID)
+}
+
+// changesIdentity reports whether u would change an Aadhaar-verified field.
+func changesIdentity(p domain.DriverProfile, u ProfileUpdate) bool {
+	if u.FullName != nil && strings.TrimSpace(*u.FullName) != p.FullName {
+		return true
+	}
+	if u.DateOfBirth != nil &&
+		(p.DateOfBirth == nil || u.DateOfBirth.Format(time.DateOnly) != p.DateOfBirth.Format(time.DateOnly)) {
+		return true
+	}
+	if u.Gender != nil && domain.Gender(strings.TrimSpace(strings.ToLower(*u.Gender))) != p.Gender {
+		return true
+	}
+	return false
 }
 
 // missingSteps names every Document View step still outstanding, so the app
@@ -415,13 +484,13 @@ func missingSteps(kyc domain.DriverKYC) []string {
 	if kyc.Profile.FullName == "" || kyc.Profile.DateOfBirth == nil || kyc.Profile.Gender == "" {
 		missing = append(missing, "photo and name")
 	}
-	if kyc.Profile.AadhaarLast4 == "" {
-		missing = append(missing, "Aadhaar number")
+	if kyc.Profile.AadhaarVerifiedAt == nil {
+		missing = append(missing, "Aadhaar (verify with DigiLocker)")
 	}
-	if kyc.Profile.DrivingLicenseNumber == "" {
-		missing = append(missing, "driving licence number")
+	if kyc.Profile.LicenseVerifiedAt == nil {
+		missing = append(missing, "driving licence")
 	}
-	if kyc.BankAccount == nil {
+	if kyc.BankAccount == nil || kyc.BankAccount.VerifiedAt == nil {
 		missing = append(missing, "bank details")
 	}
 
@@ -429,7 +498,7 @@ func missingSteps(kyc domain.DriverKYC) []string {
 	for _, d := range kyc.Documents {
 		uploaded[d.Kind] = true
 	}
-	for _, kind := range domain.DocumentKinds {
+	for _, kind := range domain.RequiredDocumentKinds {
 		if !uploaded[kind] {
 			missing = append(missing, documentLabels[kind])
 		}

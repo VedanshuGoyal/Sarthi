@@ -378,8 +378,8 @@ func TestSubmitRequiresEveryStep(t *testing.T) {
 	// The message has to name what's outstanding, or the driver has nowhere
 	// to go from the refusal.
 	for _, want := range []string{
-		"type of vehicle", "photo and name", "Aadhaar number",
-		"driving licence number", "bank details", "Aadhaar photo",
+		"type of vehicle", "photo and name", "Aadhaar (verify with DigiLocker)",
+		"driving licence", "bank details", "photo",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
@@ -390,7 +390,9 @@ func TestSubmitRequiresEveryStep(t *testing.T) {
 	}
 }
 
-func TestSubmitMarksTheDriverSubmitted(t *testing.T) {
+// When the Aadhaar, licence and bank all name the driver, they're cleared
+// without anyone looking.
+func TestSubmitClearsAMatchingDriver(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	completeKYC(t, svc, store)
 
@@ -399,11 +401,176 @@ func TestSubmitMarksTheDriverSubmitted(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	if kyc.Profile.KYCStatus != domain.KYCSubmitted {
-		t.Errorf("status = %q, want %q", kyc.Profile.KYCStatus, domain.KYCSubmitted)
+	if kyc.Profile.KYCStatus != domain.KYCVerified {
+		t.Errorf("status = %q, want %q (note %q)", kyc.Profile.KYCStatus, domain.KYCVerified, kyc.Profile.KYCReviewNote)
 	}
 	if store.submittedAt == nil {
 		t.Error("kycSubmittedAt was not recorded")
+	}
+}
+
+// A name that differs goes to a person, with the reason recorded.
+func TestSubmitSendsAMismatchToReview(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	completeKYC(t, svc, store)
+	store.bankAccount.VerifiedName = "RAVI SHARMA"
+
+	kyc, err := svc.Submit(t.Context(), testDriverID)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if kyc.Profile.KYCStatus != domain.KYCSubmitted {
+		t.Errorf("status = %q, want %q", kyc.Profile.KYCStatus, domain.KYCSubmitted)
+	}
+	if !strings.Contains(kyc.Profile.KYCReviewNote, "RAVI SHARMA") {
+		t.Errorf("review note %q doesn't name the mismatch", kyc.Profile.KYCReviewNote)
+	}
+}
+
+func TestDigiLockerVerifiesTheAadhaar(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	verifier := svc.verifier.(*fakeVerifier)
+	ctx := t.Context()
+
+	if _, err := svc.StartDigiLocker(ctx, testDriverID); !errors.Is(err, ErrInvalidProfile) {
+		t.Fatalf("start without an Aadhaar number: err = %v, want ErrInvalidProfile", err)
+	}
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{AadhaarNumber: ptr("1234 5678 9012")}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+
+	session, err := svc.StartDigiLocker(ctx, testDriverID)
+	if err != nil {
+		t.Fatalf("StartDigiLocker: %v", err)
+	}
+	if session.URL == "" || session.RedirectURL != testRedirect {
+		t.Errorf("session = %+v", session)
+	}
+
+	verifier.state = domain.DigiLockerPending
+	if _, err := svc.CompleteDigiLocker(ctx, testDriverID); !errors.Is(err, ErrVerificationPending) {
+		t.Fatalf("complete while pending: err = %v, want ErrVerificationPending", err)
+	}
+
+	verifier.state = domain.DigiLockerCompleted
+	kyc, err := svc.CompleteDigiLocker(ctx, testDriverID)
+	if err != nil {
+		t.Fatalf("CompleteDigiLocker: %v", err)
+	}
+	p := kyc.Profile
+	if p.AadhaarVerifiedAt == nil || p.FullName != "Asha Kumari" || p.Gender != domain.GenderFemale {
+		t.Errorf("profile after DigiLocker = %+v", p)
+	}
+	if store.profile.DigiLockerClientID != "" {
+		t.Error("the used DigiLocker session was not cleared")
+	}
+
+	// The name is the Aadhaar's now; resending it is fine, changing it isn't.
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{FullName: ptr("Asha Kumari")}); err != nil {
+		t.Errorf("resending the same name: %v", err)
+	}
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{FullName: ptr("Someone Else")}); !errors.Is(err, ErrIdentityLocked) {
+		t.Errorf("changing the name: err = %v, want ErrIdentityLocked", err)
+	}
+}
+
+func TestDigiLockerRejectsAnotherAadhaar(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	ctx := t.Context()
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{AadhaarNumber: ptr("123456781111")}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if _, err := svc.StartDigiLocker(ctx, testDriverID); err != nil {
+		t.Fatalf("StartDigiLocker: %v", err)
+	}
+	if _, err := svc.CompleteDigiLocker(ctx, testDriverID); !errors.Is(err, ErrAadhaarMismatch) {
+		t.Fatalf("err = %v, want ErrAadhaarMismatch", err)
+	}
+	if store.profile.AadhaarVerifiedAt != nil {
+		t.Error("a mismatched Aadhaar was marked verified")
+	}
+}
+
+func TestVerifyDrivingLicense(t *testing.T) {
+	cases := map[string]struct {
+		rec     domain.LicenseRecord
+		found   bool
+		wantErr error
+	}{
+		"valid":     {rec: validLicense(), found: true},
+		"not found": {found: false, wantErr: ErrLicenseNotFound},
+		"expired": {rec: func() domain.LicenseRecord {
+			r := validLicense()
+			r.ValidUntil = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+			return r
+		}(), found: true, wantErr: ErrLicenseRejected},
+		"two-wheels": {rec: func() domain.LicenseRecord { r := validLicense(); r.Classes = []string{"MCWG"}; return r }(), found: true, wantErr: ErrLicenseRejected},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, store, _ := newTestService(t)
+			verifier := svc.verifier.(*fakeVerifier)
+			verifier.license, verifier.licenseFound = tc.rec, tc.found
+			dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+			store.profile.DateOfBirth = &dob
+
+			kyc, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "mp09 2019 0012345")
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr != nil {
+				if store.profile.LicenseVerifiedAt != nil {
+					t.Error("a refused licence was marked verified")
+				}
+				return
+			}
+			if verifier.licenseNumber != "MP0920190012345" {
+				t.Errorf("looked up %q, want the normalised number", verifier.licenseNumber)
+			}
+			if kyc.Profile.LicenseVerifiedAt == nil || kyc.Profile.DrivingLicenseNumber != "MP0920190012345" {
+				t.Errorf("profile = %+v", kyc.Profile)
+			}
+		})
+	}
+}
+
+func TestChecksAreLimitedPerDay(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+	svc.verifier.(*fakeVerifier).licenseFound = false
+
+	for i := range MaxChecksPerDay {
+		if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrLicenseNotFound) {
+			t.Fatalf("attempt %d: err = %v", i+1, err)
+		}
+	}
+	if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrTooManyChecks) {
+		t.Errorf("err = %v, want ErrTooManyChecks", err)
+	}
+}
+
+func TestSetBankAccountRefusesAnAccountTheBankDoesntKnow(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	svc.verifier.(*fakeVerifier).bank = domain.BankAccountRecord{}
+
+	_, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234")
+	if !errors.Is(err, ErrBankAccountInvalid) {
+		t.Fatalf("err = %v, want ErrBankAccountInvalid", err)
+	}
+	if store.bankAccount != nil {
+		t.Error("an unverified account was stored")
+	}
+}
+
+func TestChecksNeedAVerifier(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	svc.verifier = nil
+	if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234"); !errors.Is(err, ErrVerificationUnavailable) {
+		t.Errorf("bank: err = %v, want ErrVerificationUnavailable", err)
+	}
+	if _, err := svc.StartDigiLocker(t.Context(), testDriverID); !errors.Is(err, ErrVerificationUnavailable) {
+		t.Errorf("digilocker: err = %v, want ErrVerificationUnavailable", err)
 	}
 }
 
@@ -417,7 +584,7 @@ func TestEditingAfterSubmissionReopensReview(t *testing.T) {
 	}
 
 	if err := svc.UpdateProfile(t.Context(), testDriverID, ProfileUpdate{
-		FullName: ptr("Asha Kumari Singh"),
+		Transmission: ptr(string(domain.DriverTransmissionManual)),
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
 	}
@@ -487,7 +654,7 @@ func newTestService(t *testing.T) (*DriverKYCService, *fakeKYCStore, *fakeBlob) 
 	t.Helper()
 	store := newFakeKYCStore()
 	blob := newFakeBlob()
-	svc := NewDriverKYCService(store, blob, testCipher(t), []byte("test-pepper"))
+	svc := NewDriverKYCService(store, blob, testCipher(t), []byte("test-pepper"), newFakeVerifier(), testRedirect)
 	// Fixed clock so the age checks don't drift with the calendar.
 	svc.now = func() time.Time {
 		return time.Date(2026, time.August, 7, 12, 0, 0, 0, time.UTC)
@@ -495,30 +662,36 @@ func newTestService(t *testing.T) (*DriverKYCService, *fakeKYCStore, *fakeBlob) 
 	return svc, store, blob
 }
 
-// completeKYC fills in every step, so a test can start from a driver who is
-// ready to submit.
+// completeKYC fills in and verifies every step, so a test can start from a
+// driver who is ready to submit.
 func completeKYC(t *testing.T, svc *DriverKYCService, store *fakeKYCStore) {
 	t.Helper()
 	ctx := t.Context()
 	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
 
 	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{
-		Transmission:         ptr(string(domain.DriverTransmissionBoth)),
-		FullName:             ptr("Asha Kumari"),
-		DateOfBirth:          &dob,
-		Gender:               ptr(string(domain.GenderFemale)),
-		AadhaarNumber:        ptr("123456789012"),
-		DrivingLicenseNumber: ptr("DL0120190012345"),
+		Transmission:  ptr(string(domain.DriverTransmissionBoth)),
+		FullName:      ptr("Asha Kumari"),
+		DateOfBirth:   &dob,
+		Gender:        ptr(string(domain.GenderFemale)),
+		AadhaarNumber: ptr("123456789012"),
 	}); err != nil {
 		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if _, err := svc.StartDigiLocker(ctx, testDriverID); err != nil {
+		t.Fatalf("StartDigiLocker: %v", err)
+	}
+	if _, err := svc.CompleteDigiLocker(ctx, testDriverID); err != nil {
+		t.Fatalf("CompleteDigiLocker: %v", err)
+	}
+	if _, err := svc.VerifyDrivingLicense(ctx, testDriverID, "MP0920190012345"); err != nil {
+		t.Fatalf("VerifyDrivingLicense: %v", err)
 	}
 	if _, err := svc.SetBankAccount(ctx, testDriverID, "Asha Kumari", "123456789012", "HDFC0001234"); err != nil {
 		t.Fatalf("SetBankAccount: %v", err)
 	}
-	for _, kind := range domain.DocumentKinds {
-		if _, err := svc.UploadDocument(ctx, testDriverID, kind, encodeJPEG(t, 100, 100)); err != nil {
-			t.Fatalf("UploadDocument(%s): %v", kind, err)
-		}
+	if _, err := svc.UploadDocument(ctx, testDriverID, domain.DocumentSelfie, encodeJPEG(t, 100, 100)); err != nil {
+		t.Fatalf("UploadDocument(selfie): %v", err)
 	}
 	if store.profile.KYCStatus != domain.KYCIncomplete {
 		t.Fatalf("setup left status %q, want incomplete", store.profile.KYCStatus)
@@ -577,6 +750,8 @@ type fakeKYCStore struct {
 	lastProfileUpdate repository.UpdateProfileParams
 	profileUpdates    int
 	submittedAt       *time.Time
+
+	checks []fakeCheck
 
 	upsertErr error
 	nextID    int
@@ -682,6 +857,11 @@ func (f *fakeKYCStore) UpsertBankAccount(
 		AccountNumberLast4: p.AccountNumberLast4,
 		IFSCCode:           p.IFSCCode,
 		UpdatedAt:          time.Now(),
+		VerifiedName:       p.VerifiedName,
+	}
+	if p.Verified {
+		now := time.Now()
+		account.VerifiedAt = &now
 	}
 	f.bankAccount = &account
 	return account, nil
@@ -692,4 +872,133 @@ func (f *fakeKYCStore) FindBankAccount(context.Context, string) (domain.DriverBa
 		return domain.DriverBankAccount{}, repository.ErrBankAccountNotFound
 	}
 	return *f.bankAccount, nil
+}
+
+func (f *fakeKYCStore) SetDigiLockerSession(_ context.Context, _ string, clientID string) error {
+	f.profile.DigiLockerClientID = clientID
+	return nil
+}
+
+func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec domain.AadhaarRecord) error {
+	now := time.Now()
+	f.profile.FullName, f.profile.DateOfBirth = rec.Name, &rec.DateOfBirth
+	if rec.Gender != "" {
+		f.profile.Gender = rec.Gender
+	}
+	f.profile.AadhaarVerifiedAt = &now
+	f.profile.DigiLockerClientID = ""
+	f.profile.KYCStatus = domain.KYCIncomplete
+	return nil
+}
+
+func (f *fakeKYCStore) SaveLicenseVerification(_ context.Context, _ string, rec domain.LicenseRecord) error {
+	now := time.Now()
+	f.profile.DrivingLicenseNumber = rec.Number
+	f.profile.LicenseVerifiedAt = &now
+	f.profile.LicenseName = rec.Name
+	f.profile.LicenseValidUntil = nil
+	if !rec.ValidUntil.IsZero() {
+		f.profile.LicenseValidUntil = &domain.Date{Time: rec.ValidUntil}
+	}
+	f.profile.LicenseClasses = rec.Classes
+	f.profile.KYCStatus = domain.KYCIncomplete
+	return nil
+}
+
+func (f *fakeKYCStore) DecideKYC(_ context.Context, _ string, status domain.KYCStatus, note string) error {
+	f.profile.KYCStatus, f.profile.KYCReviewNote = status, note
+	if status != domain.KYCIncomplete && f.submittedAt == nil {
+		now := time.Now()
+		f.submittedAt, f.profile.KYCSubmittedAt = &now, &now
+	}
+	return nil
+}
+
+func (f *fakeKYCStore) RecordCheck(
+	_ context.Context, _ string, kind domain.KYCCheckKind, _ string, outcome domain.KYCCheckOutcome, _ string,
+) error {
+	f.checks = append(f.checks, fakeCheck{kind, outcome})
+	return nil
+}
+
+// CountChecks mirrors the repository's counting rules.
+func (f *fakeKYCStore) CountChecks(_ context.Context, _ string, kind domain.KYCCheckKind, _ time.Time) (int, error) {
+	n := 0
+	for _, c := range f.checks {
+		if c.kind != kind || c.outcome == domain.CheckPending || c.outcome == domain.CheckError {
+			continue
+		}
+		if kind == domain.CheckDigiLocker && c.outcome != domain.CheckStarted {
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+func (f *fakeKYCStore) ListKYCReviews(context.Context, domain.KYCStatus) ([]domain.KYCReview, error) {
+	return nil, nil
+}
+
+type fakeCheck struct {
+	kind    domain.KYCCheckKind
+	outcome domain.KYCCheckOutcome
+}
+
+const testRedirect = "https://api.example/kyc/digilocker/done"
+
+func validLicense() domain.LicenseRecord {
+	return domain.LicenseRecord{
+		Number:     "MP0920190012345",
+		Name:       "ASHA KUMARI",
+		ValidUntil: time.Date(2039, time.July, 23, 0, 0, 0, 0, time.UTC),
+		Classes:    []string{"LMV", "MCWG"},
+	}
+}
+
+// fakeVerifier answers like Surepass for a driver named Asha Kumari whose
+// Aadhaar ends 9012.
+type fakeVerifier struct {
+	state         domain.DigiLockerState
+	aadhaar       domain.AadhaarRecord
+	license       domain.LicenseRecord
+	licenseFound  bool
+	licenseNumber string
+	bank          domain.BankAccountRecord
+}
+
+func newFakeVerifier() *fakeVerifier {
+	return &fakeVerifier{
+		state: domain.DigiLockerCompleted,
+		aadhaar: domain.AadhaarRecord{
+			Name:        "Asha Kumari",
+			DateOfBirth: time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC),
+			Gender:      domain.GenderFemale,
+			Last4:       "9012",
+		},
+		license:      validLicense(),
+		licenseFound: true,
+		bank:         domain.BankAccountRecord{Exists: true, Name: "ASHA KUMARI"},
+	}
+}
+
+func (f *fakeVerifier) StartDigiLocker(context.Context, string) (domain.DigiLockerSession, error) {
+	return domain.DigiLockerSession{ClientID: "digilocker_test", URL: "https://digilocker.example/x"}, nil
+}
+
+func (f *fakeVerifier) DigiLockerStatus(context.Context, string) (domain.DigiLockerState, error) {
+	return f.state, nil
+}
+
+func (f *fakeVerifier) DigiLockerAadhaar(context.Context, string) (domain.AadhaarRecord, error) {
+	return f.aadhaar, nil
+}
+
+func (f *fakeVerifier) DrivingLicense(_ context.Context, number string, _ time.Time) (domain.LicenseRecord, bool, error) {
+	f.licenseNumber = number
+	return f.license, f.licenseFound, nil
+}
+
+func (f *fakeVerifier) BankAccount(context.Context, string, string) (domain.BankAccountRecord, error) {
+	return f.bank, nil
 }

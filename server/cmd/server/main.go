@@ -18,6 +18,7 @@ import (
 
 	"github.com/sarthi/server/internal/api"
 	"github.com/sarthi/server/internal/config"
+	"github.com/sarthi/server/internal/kyc/surepass"
 	"github.com/sarthi/server/internal/maps/olamaps"
 	"github.com/sarthi/server/internal/memstore"
 	"github.com/sarthi/server/internal/payment/phonepe"
@@ -147,11 +148,23 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Aadhaar (through DigiLocker), licence and bank account are checked at
+	// source by Surepass.
+	var verifier service.IdentityVerifier
+	if cfg.Surepass.Token != "" {
+		verifier = surepass.New(cfg.Surepass.BaseURL, cfg.Surepass.Token)
+		slog.Info("kyc: Surepass checks enabled", "digilockerRedirect", cfg.Surepass.DigiLockerRedirectURL)
+	} else {
+		slog.Warn("kyc: no SUREPASS_TOKEN set; Aadhaar, licence and bank checks are off " +
+			"and no driver can finish KYC")
+	}
 	driverKYC := service.NewDriverKYCService(
 		repository.NewDriverKYCRepository(pool),
 		blob,
 		documentCipher,
 		cfg.Secrets.Pepper,
+		verifier,
+		cfg.Surepass.DigiLockerRedirectURL,
 	)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for

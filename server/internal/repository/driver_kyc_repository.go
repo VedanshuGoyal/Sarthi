@@ -174,7 +174,11 @@ type UpdateProfileParams struct {
 
 // UpdateProfile applies a step's fields to the driver row, leaving the rest
 // untouched. A duplicate Aadhaar maps to [ErrAadhaarTaken].
+//
+// A different Aadhaar or licence number undoes that number's verification:
+// what DigiLocker or the licence lookup confirmed was the old one.
 func (r *DriverKYCRepository) UpdateProfile(ctx context.Context, driverID string, p UpdateProfileParams) error {
+	// The CASEs read the row's values from before this UPDATE.
 	const q = `
 		UPDATE drivers SET
 			name                   = coalesce($2, name),
@@ -183,7 +187,13 @@ func (r *DriverKYCRepository) UpdateProfile(ctx context.Context, driverID string
 			transmission           = coalesce($5, transmission),
 			aadhaar_last4          = coalesce($6, aadhaar_last4),
 			aadhaar_fingerprint    = coalesce($7, aadhaar_fingerprint),
-			driving_license_number = coalesce($8, driving_license_number)
+			driving_license_number = coalesce($8, driving_license_number),
+			aadhaar_verified_at    = CASE
+				WHEN $7::text IS DISTINCT FROM NULL AND $7::text IS DISTINCT FROM aadhaar_fingerprint
+				THEN NULL ELSE aadhaar_verified_at END,
+			license_verified_at    = CASE
+				WHEN $8::text IS DISTINCT FROM NULL AND $8::text IS DISTINCT FROM driving_license_number
+				THEN NULL ELSE license_verified_at END
 		WHERE id = $1`
 
 	tag, err := r.pool.Exec(ctx, q, driverID,
@@ -232,26 +242,227 @@ func (r *DriverKYCRepository) SetKYCStatus(
 	return nil
 }
 
-// FindProfile returns the driver's typed KYC fields, or [ErrDriverNotFound].
-func (r *DriverKYCRepository) FindProfile(ctx context.Context, driverID string) (domain.DriverProfile, error) {
-	const q = `
-		SELECT name, date_of_birth, coalesce(gender, ''), transmission,
-		       coalesce(aadhaar_last4, ''), coalesce(driving_license_number, ''),
-		       kyc_status, kyc_submitted_at
-		FROM drivers WHERE id = $1`
+// profileColumns is the SELECT list scanProfile reads, from `drivers d`.
+const profileColumns = `d.name, d.date_of_birth, coalesce(d.gender, ''), d.transmission,
+	coalesce(d.aadhaar_last4, ''), coalesce(d.driving_license_number, ''),
+	d.kyc_status, d.kyc_submitted_at,
+	d.aadhaar_verified_at, coalesce(d.digilocker_client_id, ''),
+	d.license_verified_at, coalesce(d.license_name, ''), d.license_valid_until,
+	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, '')`
 
-	var p domain.DriverProfile
-	err := r.pool.QueryRow(ctx, q, driverID).Scan(
+// profileScan returns the Scan targets for profileColumns, and a func that
+// finishes p once the row has been read.
+func profileScan(p *domain.DriverProfile) ([]any, func()) {
+	var validUntil *time.Time
+	dest := []any{
 		&p.FullName, &p.DateOfBirth, &p.Gender, &p.Transmission,
 		&p.AadhaarLast4, &p.DrivingLicenseNumber, &p.KYCStatus, &p.KYCSubmittedAt,
-	)
+		&p.AadhaarVerifiedAt, &p.DigiLockerClientID,
+		&p.LicenseVerifiedAt, &p.LicenseName, &validUntil,
+		&p.LicenseClasses, &p.KYCReviewNote,
+	}
+	return dest, func() {
+		if validUntil != nil {
+			p.LicenseValidUntil = &domain.Date{Time: *validUntil}
+		}
+		if len(p.LicenseClasses) == 0 {
+			p.LicenseClasses = nil
+		}
+	}
+}
+
+// FindProfile returns the driver's typed KYC fields, or [ErrDriverNotFound].
+func (r *DriverKYCRepository) FindProfile(ctx context.Context, driverID string) (domain.DriverProfile, error) {
+	const q = `SELECT ` + profileColumns + ` FROM drivers d WHERE d.id = $1`
+
+	var p domain.DriverProfile
+	dest, finish := profileScan(&p)
+	err := r.pool.QueryRow(ctx, q, driverID).Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.DriverProfile{}, ErrDriverNotFound
 	}
 	if err != nil {
 		return domain.DriverProfile{}, fmt.Errorf("finding driver profile: %w", err)
 	}
+	finish()
 	return p, nil
+}
+
+// SetDigiLockerSession records the DigiLocker session a driver was sent to
+// (empty clears it).
+func (r *DriverKYCRepository) SetDigiLockerSession(ctx context.Context, driverID, clientID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE drivers SET digilocker_client_id = NULLIF($2, '') WHERE id = $1`, driverID, clientID)
+	if err != nil {
+		return fmt.Errorf("saving digilocker session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDriverNotFound
+	}
+	return nil
+}
+
+// SaveAadhaarVerification takes the driver's name, date of birth and gender
+// from their Aadhaar (gender only when DigiLocker gave one we know), marks
+// the Aadhaar verified and closes the DigiLocker session. Like any edit, it
+// puts the driver back to incomplete.
+func (r *DriverKYCRepository) SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error {
+	const q = `
+		UPDATE drivers SET
+			name                 = $2,
+			date_of_birth        = $3,
+			gender               = coalesce(NULLIF($4, ''), gender),
+			-- The licence was looked up with the old date of birth.
+			license_verified_at  = CASE WHEN date_of_birth IS DISTINCT FROM $3::date
+				THEN NULL ELSE license_verified_at END,
+			aadhaar_verified_at  = now(),
+			digilocker_client_id = NULL,
+			kyc_status           = 'incomplete'
+		WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, q, driverID, rec.Name, rec.DateOfBirth, string(rec.Gender))
+	if err != nil {
+		return fmt.Errorf("saving aadhaar verification: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDriverNotFound
+	}
+	return nil
+}
+
+// SaveLicenseVerification stores a licence the lookup found, with what it
+// returned, and puts the driver back to incomplete.
+func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error {
+	const q = `
+		UPDATE drivers SET
+			driving_license_number  = $2,
+			license_verified_at     = now(),
+			license_name            = NULLIF($3, ''),
+			license_valid_until     = $4,
+			license_vehicle_classes = $5,
+			kyc_status              = 'incomplete'
+		WHERE id = $1`
+
+	var validUntil *time.Time
+	if !rec.ValidUntil.IsZero() {
+		validUntil = &rec.ValidUntil
+	}
+	tag, err := r.pool.Exec(ctx, q, driverID, rec.Number, rec.Name, validUntil, rec.Classes)
+	if err != nil {
+		return fmt.Errorf("saving licence verification: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDriverNotFound
+	}
+	return nil
+}
+
+// DecideKYC sets the driver's status with the reason behind it: the outcome
+// of a submission, or a reviewer's decision. Leaving incomplete stamps
+// kyc_submitted_at the first time.
+func (r *DriverKYCRepository) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error {
+	const q = `
+		UPDATE drivers
+		SET kyc_status       = $2,
+		    kyc_review_note  = NULLIF($3, ''),
+		    kyc_submitted_at = CASE
+		        WHEN $2 <> 'incomplete' THEN coalesce(kyc_submitted_at, now())
+		        ELSE kyc_submitted_at
+		    END
+		WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, q, driverID, status, note)
+	if err != nil {
+		return fmt.Errorf("deciding kyc: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDriverNotFound
+	}
+	return nil
+}
+
+// RecordCheck logs one call to the verification provider.
+func (r *DriverKYCRepository) RecordCheck(
+	ctx context.Context, driverID string, kind domain.KYCCheckKind, ref string, outcome domain.KYCCheckOutcome, detail string,
+) error {
+	const q = `
+		INSERT INTO driver_kyc_checks (driver_id, kind, provider_ref, outcome, detail)
+		VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''))`
+	if _, err := r.pool.Exec(ctx, q, driverID, kind, ref, outcome, detail); err != nil {
+		return fmt.Errorf("recording kyc check: %w", err)
+	}
+	return nil
+}
+
+// CountChecks counts a driver's attempts at kind since a time: each licence
+// lookup or penny drop, each DigiLocker session opened. Calls the provider
+// couldn't answer don't count against the driver.
+func (r *DriverKYCRepository) CountChecks(
+	ctx context.Context, driverID string, kind domain.KYCCheckKind, since time.Time,
+) (int, error) {
+	const q = `
+		SELECT count(*) FROM driver_kyc_checks
+		WHERE driver_id = $1 AND kind = $2 AND created_at >= $3
+		  AND outcome NOT IN ('pending', 'error')
+		  AND (kind <> 'digilocker' OR outcome = 'started')`
+	var n int
+	if err := r.pool.QueryRow(ctx, q, driverID, kind, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting kyc checks: %w", err)
+	}
+	return n, nil
+}
+
+// ListKYCReviews returns the drivers whose KYC is in status, oldest
+// submission first.
+func (r *DriverKYCRepository) ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error) {
+	const q = `
+		SELECT d.id, d.phone_e164, ` + profileColumns + `,
+		       b.account_holder_name, b.account_number_last4, b.ifsc_code, b.updated_at,
+		       b.verified_at, coalesce(b.verified_name, '')
+		FROM drivers d
+		LEFT JOIN driver_bank_accounts b ON b.driver_id = d.id
+		WHERE d.kyc_status = $1
+		ORDER BY d.kyc_submitted_at NULLS LAST, d.created_at
+		LIMIT 200`
+
+	rows, err := r.pool.Query(ctx, q, status)
+	if err != nil {
+		return nil, fmt.Errorf("listing kyc reviews: %w", err)
+	}
+	defer rows.Close()
+
+	var out []domain.KYCReview
+	for rows.Next() {
+		var (
+			rv               domain.KYCReview
+			holder, last4    *string
+			ifsc             *string
+			updated, checked *time.Time
+			verifiedName     string
+		)
+		dest, finish := profileScan(&rv.Profile)
+		dest = append([]any{&rv.DriverID, &rv.Phone}, dest...)
+		dest = append(dest, &holder, &last4, &ifsc, &updated, &checked, &verifiedName)
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf("scanning kyc review: %w", err)
+		}
+		finish()
+		if holder != nil {
+			rv.BankAccount = &domain.DriverBankAccount{
+				AccountHolderName:  *holder,
+				AccountNumberLast4: *last4,
+				IFSCCode:           *ifsc,
+				UpdatedAt:          *updated,
+				VerifiedAt:         checked,
+				VerifiedName:       verifiedName,
+			}
+		}
+		out = append(out, rv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading kyc reviews: %w", err)
+	}
+	return out, nil
 }
 
 // UpsertBankAccountParams carries payout details. AccountNumberEncrypted is
@@ -261,6 +472,11 @@ type UpsertBankAccountParams struct {
 	AccountNumberEncrypted []byte
 	AccountNumberLast4     string
 	IFSCCode               string
+
+	// Verified says a penny drop found the account; VerifiedName is the name
+	// the bank gave for it.
+	Verified     bool
+	VerifiedName string
 }
 
 // UpsertBankAccount saves or replaces a driver's payout details.
@@ -270,20 +486,23 @@ func (r *DriverKYCRepository) UpsertBankAccount(
 	const q = `
 		INSERT INTO driver_bank_accounts
 			(driver_id, account_holder_name, account_number_encrypted,
-			 account_number_last4, ifsc_code)
-		VALUES ($1, $2, $3, $4, $5)
+			 account_number_last4, ifsc_code, verified_at, verified_name)
+		VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() END, NULLIF($7, ''))
 		ON CONFLICT (driver_id) DO UPDATE SET
 			account_holder_name      = EXCLUDED.account_holder_name,
 			account_number_encrypted = EXCLUDED.account_number_encrypted,
 			account_number_last4     = EXCLUDED.account_number_last4,
 			ifsc_code                = EXCLUDED.ifsc_code,
+			verified_at              = EXCLUDED.verified_at,
+			verified_name            = EXCLUDED.verified_name,
 			updated_at               = now()
-		RETURNING account_holder_name, account_number_last4, ifsc_code, updated_at`
+		RETURNING ` + bankColumns
 
 	var a domain.DriverBankAccount
 	err := r.pool.QueryRow(ctx, q, driverID,
 		p.AccountHolderName, p.AccountNumberEncrypted, p.AccountNumberLast4, p.IFSCCode,
-	).Scan(&a.AccountHolderName, &a.AccountNumberLast4, &a.IFSCCode, &a.UpdatedAt)
+		p.Verified, p.VerifiedName,
+	).Scan(bankScan(&a)...)
 	if err != nil {
 		return domain.DriverBankAccount{}, fmt.Errorf("saving bank account: %w", err)
 	}
@@ -293,13 +512,10 @@ func (r *DriverKYCRepository) UpsertBankAccount(
 // FindBankAccount returns a driver's payout details without the account
 // number, or [ErrBankAccountNotFound].
 func (r *DriverKYCRepository) FindBankAccount(ctx context.Context, driverID string) (domain.DriverBankAccount, error) {
-	const q = `
-		SELECT account_holder_name, account_number_last4, ifsc_code, updated_at
-		FROM driver_bank_accounts WHERE driver_id = $1`
+	const q = `SELECT ` + bankColumns + ` FROM driver_bank_accounts WHERE driver_id = $1`
 
 	var a domain.DriverBankAccount
-	err := r.pool.QueryRow(ctx, q, driverID).
-		Scan(&a.AccountHolderName, &a.AccountNumberLast4, &a.IFSCCode, &a.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, driverID).Scan(bankScan(&a)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.DriverBankAccount{}, ErrBankAccountNotFound
 	}
@@ -307,4 +523,15 @@ func (r *DriverKYCRepository) FindBankAccount(ctx context.Context, driverID stri
 		return domain.DriverBankAccount{}, fmt.Errorf("finding bank account: %w", err)
 	}
 	return a, nil
+}
+
+// bankColumns is the SELECT list bankScan reads.
+const bankColumns = `account_holder_name, account_number_last4, ifsc_code, updated_at,
+	verified_at, coalesce(verified_name, '')`
+
+func bankScan(a *domain.DriverBankAccount) []any {
+	return []any{
+		&a.AccountHolderName, &a.AccountNumberLast4, &a.IFSCCode, &a.UpdatedAt,
+		&a.VerifiedAt, &a.VerifiedName,
+	}
 }

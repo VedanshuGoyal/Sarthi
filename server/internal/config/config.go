@@ -2,6 +2,7 @@
 package config
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"fmt"
 	"math"
@@ -57,6 +58,24 @@ type Config struct {
 	// AdminToken guards the back-office routes (GET /users, /admin/…).
 	// Empty turns them off.
 	AdminToken string
+
+	// Surepass checks drivers' Aadhaar (DigiLocker), licence and bank account.
+	// Without a token those checks are off and no driver can finish KYC.
+	Surepass SurepassConfig
+}
+
+// DefaultDigiLockerRedirectURL is the page DigiLocker ends on in production.
+const DefaultDigiLockerRedirectURL = "https://api.mojud.life/kyc/digilocker/done"
+
+// SurepassConfig holds the KYC provider's credentials, from Surepass's
+// console.
+type SurepassConfig struct {
+	Token string
+	// BaseURL overrides Surepass's production API — for a sandbox or a local
+	// fake; empty means production.
+	BaseURL string
+	// DigiLockerRedirectURL is where DigiLocker sends the driver when done.
+	DigiLockerRedirectURL string
 }
 
 // PhonePeConfig holds PhonePe payment gateway credentials, from the business
@@ -194,8 +213,13 @@ func Load() (Config, error) {
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
 		AdminToken:            os.Getenv("ADMIN_TOKEN"),
-		DatabaseURL:           dsn,
-		Addr:                  addr,
+		Surepass: SurepassConfig{
+			Token:                 strings.TrimSpace(os.Getenv("SUREPASS_TOKEN")),
+			BaseURL:               os.Getenv("SUREPASS_BASE_URL"),
+			DigiLockerRedirectURL: cmp.Or(os.Getenv("SUREPASS_DIGILOCKER_REDIRECT_URL"), DefaultDigiLockerRedirectURL),
+		},
+		DatabaseURL: dsn,
+		Addr:        addr,
 		Fast2SMS: Fast2SMSConfig{
 			APIKey: os.Getenv("FAST2SMS_API_KEY"),
 			OTPID:  os.Getenv("FAST2SMS_OTP_ID"),

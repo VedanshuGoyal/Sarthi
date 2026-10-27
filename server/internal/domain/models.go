@@ -117,13 +117,18 @@ const (
 	DocumentDrivingLicense DocumentKind = "driving_license"
 )
 
-// DocumentKinds lists every kind a driver must supply, in the order the app's
-// Document View asks for them.
+// DocumentKinds lists every kind the server accepts, in the order the app's
+// Document View used to ask for them.
 var DocumentKinds = []DocumentKind{
 	DocumentSelfie,
 	DocumentAadhaar,
 	DocumentDrivingLicense,
 }
+
+// RequiredDocumentKinds are the images a driver must upload. The Aadhaar and
+// licence are checked at source (DigiLocker, the licence lookup) instead of
+// from photos; older apps may still send those photos.
+var RequiredDocumentKinds = []DocumentKind{DocumentSelfie}
 
 // DocumentStatus is where one uploaded image sits in review.
 type DocumentStatus string
@@ -173,6 +178,22 @@ type DriverProfile struct {
 	DrivingLicenseNumber string             `json:"drivingLicenseNumber,omitempty"`
 	KYCStatus            KYCStatus          `json:"kycStatus"`
 	KYCSubmittedAt       *time.Time         `json:"kycSubmittedAt,omitempty"`
+
+	// AadhaarVerifiedAt is when DigiLocker confirmed the Aadhaar. From then on
+	// FullName, DateOfBirth and Gender are the Aadhaar's and can't be edited.
+	AadhaarVerifiedAt *time.Time `json:"aadhaarVerifiedAt,omitempty"`
+	// DigiLockerClientID is the DigiLocker session the driver has open.
+	DigiLockerClientID string `json:"-"`
+
+	// What the licence lookup returned for DrivingLicenseNumber.
+	LicenseVerifiedAt *time.Time `json:"licenseVerifiedAt,omitempty"`
+	LicenseName       string     `json:"licenseName,omitempty"`
+	LicenseValidUntil *Date      `json:"licenseValidUntil,omitempty"`
+	LicenseClasses    []string   `json:"licenseClasses,omitempty"`
+
+	// KYCReviewNote says why a submission is waiting on a person, or why it
+	// was rejected.
+	KYCReviewNote string `json:"kycReviewNote,omitempty"`
 }
 
 // DriverBankAccount is where a driver's earnings are paid. The account number
@@ -183,6 +204,11 @@ type DriverBankAccount struct {
 	AccountNumberLast4 string    `json:"accountNumberLast4"`
 	IFSCCode           string    `json:"ifscCode"`
 	UpdatedAt          time.Time `json:"updatedAt"`
+
+	// VerifiedAt is when a penny drop confirmed the account exists, and
+	// VerifiedName the name the bank holds for it.
+	VerifiedAt   *time.Time `json:"verifiedAt,omitempty"`
+	VerifiedName string     `json:"verifiedName,omitempty"`
 }
 
 // DriverKYC is the whole Document View as the app needs to render it: what has

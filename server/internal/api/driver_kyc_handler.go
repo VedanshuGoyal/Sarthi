@@ -169,6 +169,65 @@ func (h *DriverKYCHandler) DocumentContent(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// StartDigiLocker handles POST /driver/kyc/digilocker: the DigiLocker page
+// for the app to open, and the URL it ends on.
+func (h *DriverKYCHandler) StartDigiLocker(w http.ResponseWriter, r *http.Request) {
+	session, err := h.svc.StartDigiLocker(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		h.writeKYCError(w, err, "could not start DigiLocker")
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+// CompleteDigiLocker handles POST /driver/kyc/digilocker/complete, which the
+// app calls when the driver comes back from DigiLocker.
+func (h *DriverKYCHandler) CompleteDigiLocker(w http.ResponseWriter, r *http.Request) {
+	kyc, err := h.svc.CompleteDigiLocker(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		h.writeKYCError(w, err, "could not read your DigiLocker result")
+		return
+	}
+	writeJSON(w, http.StatusOK, kyc)
+}
+
+// VerifyDrivingLicense handles POST /driver/kyc/driving-license.
+func (h *DriverKYCHandler) VerifyDrivingLicense(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Number string `json:"number"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	kyc, err := h.svc.VerifyDrivingLicense(r.Context(), userIDFrom(r.Context()), req.Number)
+	if err != nil {
+		h.writeKYCError(w, err, "could not check your licence")
+		return
+	}
+	writeJSON(w, http.StatusOK, kyc)
+}
+
+// DigiLockerDone handles GET /kyc/digilocker/done, where DigiLocker sends the
+// driver when they finish. The app reads the result itself; this page only
+// tells the driver to go back to it.
+func DigiLockerDone(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	io.WriteString(w, digiLockerDonePage)
+}
+
+const digiLockerDonePage = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigiLocker done</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+font-family:system-ui,sans-serif;background:#E7F0F8;color:#0B2239;text-align:center;padding:16px}
+h1{font-size:20px;margin:0 0 8px}p{margin:0;color:#4a5d70}
+</style></head>
+<body><div><h1>All done</h1><p>Close this page to go back to the MOJUD Driver app.</p></div></body></html>`
+
 // Submit handles POST /driver/kyc/submit.
 func (h *DriverKYCHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	kyc, err := h.svc.Submit(r.Context(), userIDFrom(r.Context()))
@@ -208,6 +267,26 @@ func (h *DriverKYCHandler) writeKYCError(w http.ResponseWriter, err error, fallb
 		writeErrorCode(w, http.StatusConflict, "kyc_incomplete", err.Error(), 0)
 	case errors.Is(err, repository.ErrAadhaarTaken):
 		writeErrorCode(w, http.StatusConflict, "aadhaar_taken", err.Error(), 0)
+	case errors.Is(err, service.ErrIdentityLocked):
+		writeErrorCode(w, http.StatusConflict, "identity_locked", err.Error(), 0)
+	case errors.Is(err, service.ErrVerificationUnavailable):
+		writeErrorCode(w, http.StatusServiceUnavailable, "verification_unavailable", err.Error(), 0)
+	case errors.Is(err, service.ErrTooManyChecks):
+		writeErrorCode(w, http.StatusTooManyRequests, "too_many_attempts", err.Error(), 0)
+	case errors.Is(err, service.ErrVerificationPending):
+		writeErrorCode(w, http.StatusConflict, "verification_pending", err.Error(), 0)
+	case errors.Is(err, service.ErrNoDigiLockerSession):
+		writeErrorCode(w, http.StatusConflict, "no_digilocker_session", err.Error(), 0)
+	case errors.Is(err, service.ErrVerificationFailed):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "verification_failed", err.Error(), 0)
+	case errors.Is(err, service.ErrAadhaarMismatch):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "aadhaar_mismatch", err.Error(), 0)
+	case errors.Is(err, service.ErrLicenseNotFound):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "license_not_found", err.Error(), 0)
+	case errors.Is(err, service.ErrLicenseRejected):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "license_rejected", err.Error(), 0)
+	case errors.Is(err, service.ErrBankAccountInvalid):
+		writeErrorCode(w, http.StatusUnprocessableEntity, "bank_account_invalid", err.Error(), 0)
 	case errors.Is(err, repository.ErrDocumentNotFound), errors.Is(err, storage.ErrNotFound):
 		writeError(w, http.StatusNotFound, "document not found")
 	case errors.Is(err, repository.ErrDriverNotFound):

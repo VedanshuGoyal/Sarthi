@@ -38,7 +38,7 @@ func NewRouter(
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
 	pay := NewPaymentHandler(payments, bookings, webhook)
-	adm := NewAdminHandler(payouts)
+	adm := NewAdminHandler(payouts, driverKYC)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -96,6 +96,8 @@ func NewRouter(
 	mux.HandleFunc("GET /users", requireAdmin(adminToken, h.ListUsers))
 	mux.HandleFunc("GET /admin/payouts/due", requireAdmin(adminToken, adm.DuePayouts))
 	mux.HandleFunc("POST /admin/payouts", requireAdmin(adminToken, adm.RecordPayout))
+	mux.HandleFunc("GET /admin/kyc", requireAdmin(adminToken, adm.KYCReviews))
+	mux.HandleFunc("POST /admin/kyc/{driverId}", requireAdmin(adminToken, adm.DecideKYC))
 
 	// Driver app: the same phone/OTP registration flow as the customer app,
 	// but a separate account type/session (see DriverAuthHandler).
@@ -114,6 +116,13 @@ func NewRouter(
 	mux.HandleFunc("POST /driver/kyc/submit", requireAuth(driverSessions, dk.Submit))
 	mux.HandleFunc("POST /driver/kyc/documents/{kind}", requireAuth(driverSessions, dk.UploadDocument))
 	mux.HandleFunc("GET /driver/kyc/documents/{kind}/content", requireAuth(driverSessions, dk.DocumentContent))
+	// Checks at source: Aadhaar through DigiLocker, the licence by lookup.
+	// (Bank details are checked inside POST /driver/kyc/bank-account.)
+	mux.HandleFunc("POST /driver/kyc/digilocker", requireAuth(driverSessions, dk.StartDigiLocker))
+	mux.HandleFunc("POST /driver/kyc/digilocker/complete", requireAuth(driverSessions, dk.CompleteDigiLocker))
+	mux.HandleFunc("POST /driver/kyc/driving-license", requireAuth(driverSessions, dk.VerifyDrivingLicense))
+	// Where DigiLocker sends the driver back to; public, static.
+	mux.HandleFunc("GET /kyc/digilocker/done", DigiLockerDone)
 
 	// Driver ride panels: open requests near the driver, their own rides,
 	// the accept → arrive → start → complete steps (and rating the customer

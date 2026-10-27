@@ -434,14 +434,14 @@ func newStartOTP() (string, error) {
 	return fmt.Sprintf("%04d", n.Int64()), nil
 }
 
-// clearedProfile returns driverID's profile if their KYC lets them drive.
-// Submitted counts until there is a review tool to move drivers to verified.
+// clearedProfile returns driverID's profile if their KYC lets them drive:
+// verified, automatically on submission or by a reviewer.
 func (s *DriverRideService) clearedProfile(ctx context.Context, driverID string) (domain.DriverProfile, error) {
 	p, err := s.profiles.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverProfile{}, err
 	}
-	if p.KYCStatus != domain.KYCSubmitted && p.KYCStatus != domain.KYCVerified {
+	if p.KYCStatus != domain.KYCVerified {
 		return domain.DriverProfile{}, ErrDriverNotCleared
 	}
 	return p, nil

@@ -33,14 +33,66 @@ func requireAdmin(token string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 // AdminHandler is MOJUD's back office: what drivers are owed and the
-// payouts made to them.
+// payouts made to them, and drivers whose KYC needs a person.
 type AdminHandler struct {
 	payouts *service.PayoutService
+	kyc     *service.DriverKYCService
 }
 
 // NewAdminHandler wires the handler.
-func NewAdminHandler(payouts *service.PayoutService) *AdminHandler {
-	return &AdminHandler{payouts: payouts}
+func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService) *AdminHandler {
+	return &AdminHandler{payouts: payouts, kyc: kyc}
+}
+
+// KYCReviews handles GET /admin/kyc[?status=submitted|rejected|verified|incomplete]:
+// drivers in that status (default submitted — the review queue), with what
+// each check returned and why they weren't cleared automatically.
+func (h *AdminHandler) KYCReviews(w http.ResponseWriter, r *http.Request) {
+	status := domain.KYCStatus(r.URL.Query().Get("status"))
+	if status == "" {
+		status = domain.KYCSubmitted
+	}
+	switch status {
+	case domain.KYCSubmitted, domain.KYCRejected, domain.KYCVerified, domain.KYCIncomplete:
+	default:
+		writeError(w, http.StatusBadRequest, "unknown status")
+		return
+	}
+	reviews, err := h.kyc.ListKYCReviews(r.Context(), status)
+	if err != nil {
+		slog.Error("admin: listing kyc reviews", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not list drivers")
+		return
+	}
+	if reviews == nil {
+		reviews = []domain.KYCReview{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"drivers": reviews})
+}
+
+// DecideKYC handles POST /admin/kyc/{driverId} {"status": "verified"|"rejected",
+// "note": "..."}. The note is shown to the driver; a rejection needs one.
+func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	err := h.kyc.DecideKYC(r.Context(), r.PathValue("driverId"), domain.KYCStatus(req.Status), req.Note)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, service.ErrInvalidProfile):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, repository.ErrDriverNotFound):
+		writeError(w, http.StatusNotFound, "driver not found")
+	default:
+		slog.Error("admin: deciding kyc", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not save the decision")
+	}
 }
 
 // duePayoutsResponse is the payouts list, read at AsOf — pass it back when
