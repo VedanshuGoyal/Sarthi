@@ -35,6 +35,7 @@ const (
 	pushTypeRideCancelled  = "ride_cancelled"
 	pushTypeRideCompleted  = "ride_completed"
 	pushTypePaymentPaid    = "payment_received"
+	pushTypeKYCDecided     = "kyc_decided"
 )
 
 const (
@@ -317,6 +318,40 @@ func (s *NotifyService) PaymentReceived(ctx context.Context, b domain.Booking) {
 			}
 		}
 		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypePaymentPaid, "rideId", b.ID, "devices", sent)
+	})
+}
+
+// KYCDecided tells a driver what a reviewer decided about their documents:
+// cleared to drive, or what to fix (note).
+func (s *NotifyService) KYCDecided(ctx context.Context, driverID string, status domain.KYCStatus, note string) {
+	title, body := "You're verified", "You can go online and take rides now."
+	if status != domain.KYCVerified {
+		title, body = "Your documents need attention", note
+		if body == "" {
+			body = "Open the app to see what to fix."
+		}
+	}
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   title,
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "kyc",
+				Data:    map[string]string{"type": pushTypeKYCDecided, "status": string(status)},
+				TTL:     7 * 24 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeKYCDecided, "driverId", driverID, "devices", sent)
 	})
 }
 

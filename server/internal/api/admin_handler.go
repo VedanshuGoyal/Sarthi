@@ -8,11 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
 	"github.com/sarthi/server/internal/repository"
 	"github.com/sarthi/server/internal/service"
+	"github.com/sarthi/server/internal/storage"
 )
 
 // requireAdmin wraps a handler so it only runs for `Authorization: Bearer
@@ -37,11 +39,32 @@ func requireAdmin(token string, next http.HandlerFunc) http.HandlerFunc {
 type AdminHandler struct {
 	payouts *service.PayoutService
 	kyc     *service.DriverKYCService
+	notify  *service.NotifyService
 }
 
-// NewAdminHandler wires the handler.
-func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService) *AdminHandler {
-	return &AdminHandler{payouts: payouts, kyc: kyc}
+// NewAdminHandler wires the handler. notify tells drivers about KYC
+// decisions.
+func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService, notify *service.NotifyService) *AdminHandler {
+	return &AdminHandler{payouts: payouts, kyc: kyc, notify: notify}
+}
+
+// DriverDocument handles GET /admin/drivers/{driverId}/documents/{kind}: the
+// image itself, streamed (no signed link), for the reviewer to look at.
+func (h *AdminHandler) DriverDocument(w http.ResponseWriter, r *http.Request) {
+	img, err := h.kyc.ReadDocument(r.Context(), r.PathValue("driverId"), domain.DocumentKind(r.PathValue("kind")))
+	switch {
+	case errors.Is(err, service.ErrUnknownDocumentKind), errors.Is(err, repository.ErrDocumentNotFound),
+		errors.Is(err, storage.ErrNotFound):
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	case err != nil:
+		slog.Error("admin: reading document", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not load the image")
+		return
+	}
+	w.Header().Set("Content-Type", service.DocumentContentType)
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Write(img)
 }
 
 // KYCReviews handles GET /admin/kyc[?status=submitted|rejected|verified|incomplete]:
@@ -81,9 +104,13 @@ func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	err := h.kyc.DecideKYC(r.Context(), r.PathValue("driverId"), domain.KYCStatus(req.Status), req.Note)
+	driverID, status := r.PathValue("driverId"), domain.KYCStatus(req.Status)
+	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note)
 	switch {
 	case err == nil:
+		if h.notify != nil {
+			h.notify.KYCDecided(r.Context(), driverID, status, strings.TrimSpace(req.Note))
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, service.ErrInvalidProfile):
 		writeError(w, http.StatusBadRequest, err.Error())

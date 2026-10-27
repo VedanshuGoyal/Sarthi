@@ -282,6 +282,18 @@ func (s *DriverKYCService) putDriverPhoto(ctx context.Context, selfieKey string,
 	return photo
 }
 
+// ReadDocument returns a driver's stored image, for the back office.
+func (s *DriverKYCService) ReadDocument(ctx context.Context, driverID string, kind domain.DocumentKind) ([]byte, error) {
+	if !validDocumentKind(kind) {
+		return nil, ErrUnknownDocumentKind
+	}
+	doc, err := s.store.FindDocument(ctx, driverID, kind)
+	if err != nil {
+		return nil, err
+	}
+	return s.readBlob(ctx, doc.ObjectKey)
+}
+
 func (s *DriverKYCService) readBlob(ctx context.Context, key string) ([]byte, error) {
 	r, err := s.blob.Get(ctx, key)
 	if err != nil {

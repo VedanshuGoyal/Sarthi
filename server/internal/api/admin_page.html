@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>MOJUD Admin</title>
+<style>
+  :root {
+    --ink: #0B2239; --accent: #2A93BE; --canvas: #E7F0F8; --card: #fff;
+    --muted: #5b6b7c; --line: #d5e1ec; --ok: #1f8a4c; --bad: #c0392b; --warn: #a86b00;
+    --warn-bg: #fff6e0; --bad-bg: #fdecea; --ok-bg: #e8f6ee;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--ink); color: #fff; padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: .2px; }
+  header button { background: transparent; color: #fff; border: 1px solid #ffffff55; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: #fff;
+    color: var(--ink); padding: 8px 14px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.reject { background: #fff; border-color: var(--bad); color: var(--bad); }
+  input, textarea { font: inherit; width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+    border-radius: 8px; background: #fff; color: var(--ink); }
+  textarea { min-height: 60px; resize: vertical; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .stack > * + * { margin-top: 12px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tabs button { border-radius: 999px; padding: 6px 14px; }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .count { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+    background: var(--accent); color: #fff; font-size: 12px; text-align: center; }
+  .driver { display: grid; grid-template-columns: 96px 1fr; gap: 16px; }
+  .photo { width: 96px; height: 96px; border-radius: 12px; background: var(--canvas) center/cover no-repeat;
+    display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; color: var(--muted);
+    cursor: zoom-in; }
+  .name { font-size: 18px; font-weight: 650; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .note { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+  .note.bad { background: var(--bad-bg); color: var(--bad); }
+  .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .check { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .check h3 { font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .check .v { font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .msg { font-size: 14px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+  th { background: #f4f8fb; font-weight: 600; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hidden { display: none !important; }
+  dialog { border: none; border-radius: 12px; padding: 0; max-width: min(92vw, 560px); }
+  dialog img { display: block; width: 100%; }
+  dialog::backdrop { background: #0b2239cc; }
+  @media (max-width: 560px) {
+    .driver { grid-template-columns: 1fr; }
+    .photo { width: 120px; height: 120px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>MOJUD Admin</h1>
+  <button id="signout" class="hidden" type="button">Sign out</button>
+</header>
+<main>
+  <section id="signin" class="card stack hidden" style="max-width:420px;margin:40px auto">
+    <h2 style="margin:0;font-size:18px">Sign in</h2>
+    <p class="sub" style="margin:0">Paste the admin token.</p>
+    <input id="token" type="password" autocomplete="off" placeholder="Admin token">
+    <div class="row"><button id="signin-btn" class="primary" type="button">Sign in</button>
+      <span id="signin-msg" class="msg bad"></span></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="submitted">Review<span class="count hidden" id="count-submitted"></span></button>
+      <button role="tab" data-tab="rejected">Rejected</button>
+      <button role="tab" data-tab="verified">Verified</button>
+      <button role="tab" data-tab="incomplete">In progress</button>
+      <button role="tab" data-tab="payouts">Payouts</button>
+    </nav>
+    <div id="list" class="stack"></div>
+  </section>
+</main>
+<dialog id="viewer"><img alt="Driver photo"></dialog>
+
+<script>
+"use strict";
+const KEY = "mojud-admin-token";
+const $ = (s) => document.querySelector(s);
+let token = sessionStorage.getItem(KEY) || "";
+let tab = "submitted";
+const photoURLs = [];
+
+// el builds DOM with text, never HTML, so names from drivers can't inject markup.
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (k === "class") n.className = v;
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) n.append(k.nodeType ? k : String(k));
+  return n;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Authorization": "Bearer " + token, ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (res.status === 401) { signOut("Token not accepted."); throw new Error("unauthorized"); }
+  if (!res.ok) {
+    let msg = res.status + "";
+    try { msg = (await res.json()).error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return res;
+}
+
+const fmtDate = (s) => s ? new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—";
+const fmtTime = (s) => s ? new Date(s).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
+const rupees = (p) => "₹" + (p / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+const mark = (ok) => el("span", { class: ok ? "ok" : "bad" }, ok ? "✓ " : "✗ ");
+
+function signOut(msg) {
+  sessionStorage.removeItem(KEY);
+  token = "";
+  $("#app").classList.add("hidden");
+  $("#signout").classList.add("hidden");
+  $("#signin").classList.remove("hidden");
+  $("#signin-msg").textContent = msg || "";
+}
+
+async function signIn() {
+  token = $("#token").value.trim();
+  if (!token) return;
+  $("#signin-msg").textContent = "";
+  try {
+    await api("/admin/kyc?status=submitted");
+  } catch (e) {
+    if (e.message !== "unauthorized") $("#signin-msg").textContent = e.message;
+    return;
+  }
+  sessionStorage.setItem(KEY, token);
+  $("#token").value = "";
+  showApp();
+}
+
+function showApp() {
+  $("#signin").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  $("#signout").classList.remove("hidden");
+  select(tab);
+}
+
+function select(name) {
+  tab = name;
+  for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-selected", b.dataset.tab === name);
+  photoURLs.splice(0).forEach(URL.revokeObjectURL);
+  name === "payouts" ? loadPayouts() : loadKYC(name);
+}
+
+async function refreshCount() {
+  try {
+    const { drivers } = await (await api("/admin/kyc?status=submitted")).json();
+    const c = $("#count-submitted");
+    c.textContent = drivers.length;
+    c.classList.toggle("hidden", drivers.length === 0);
+  } catch {}
+}
+
+async function loadKYC(status) {
+  const list = $("#list");
+  list.replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  let drivers;
+  try {
+    ({ drivers } = await (await api("/admin/kyc?status=" + status)).json());
+  } catch (e) {
+    list.replaceChildren(el("p", { class: "empty bad" }, e.message));
+    return;
+  }
+  refreshCount();
+  if (!drivers.length) {
+    list.replaceChildren(el("p", { class: "empty" }, status === "submitted" ? "Nobody waiting for review." : "No drivers here."));
+    return;
+  }
+  list.replaceChildren(...drivers.map(driverCard));
+}
+
+function driverCard(d) {
+  const p = d.profile, b = d.bankAccount;
+  const photo = el("div", { class: "photo", title: "Open photo" }, (p.fullName || "?").trim().charAt(0).toUpperCase());
+  loadPhoto(d.driverId, photo);
+
+  const msg = el("span", { class: "msg" });
+  const note = el("textarea", { placeholder: "Note for the driver (needed to reject)" });
+  const approve = el("button", { class: "approve", type: "button" }, p.kycStatus === "verified" ? "Verified" : "Approve");
+  const reject = el("button", { class: "reject", type: "button" }, p.kycStatus === "verified" ? "Revoke" : "Reject");
+  if (p.kycStatus === "verified") approve.disabled = true;
+
+  async function decide(status) {
+    if (status === "rejected" && !note.value.trim()) { msg.className = "msg bad"; msg.textContent = "Write a note first."; note.focus(); return; }
+    approve.disabled = reject.disabled = true;
+    msg.className = "msg"; msg.textContent = "Saving…";
+    try {
+      await api("/admin/kyc/" + encodeURIComponent(d.driverId), { method: "POST", body: JSON.stringify({ status, note: note.value.trim() }) });
+      msg.className = "msg ok"; msg.textContent = status === "verified" ? "Approved. Driver notified." : "Rejected. Driver notified.";
+      setTimeout(() => select(tab), 900);
+    } catch (e) {
+      msg.className = "msg bad"; msg.textContent = e.message;
+      approve.disabled = p.kycStatus === "verified"; reject.disabled = false;
+    }
+  }
+  approve.addEventListener("click", () => decide("verified"));
+  reject.addEventListener("click", () => decide("rejected"));
+
+  const aadhaarOK = !!p.aadhaarVerifiedAt, dlOK = !!p.licenseVerifiedAt, bankOK = !!(b && b.verifiedAt);
+  return el("article", { class: "card" },
+    el("div", { class: "driver" },
+      photo,
+      el("div", { class: "stack" },
+        el("div", {},
+          el("p", { class: "name" }, p.fullName || "(no name yet)"),
+          el("div", { class: "sub" },
+            el("a", { href: "tel:" + d.phone }, d.phone),
+            " · ", p.transmission ? ({ manual: "Manual", automatic: "Automatic", both: "Manual + automatic" }[p.transmission] || p.transmission) : "gearbox not set",
+            p.kycSubmittedAt ? " · submitted " + fmtTime(p.kycSubmittedAt) : "")),
+        p.kycReviewNote ? el("div", { class: "note" + (p.kycStatus === "rejected" ? " bad" : "") }, p.kycReviewNote) : null,
+        el("div", { class: "checks" },
+          el("div", { class: "check" },
+            el("h3", {}, mark(aadhaarOK), "Aadhaar · DigiLocker"),
+            aadhaarOK ? el("div", { class: "v" }, p.fullName) : el("div", { class: "bad" }, "Not verified"),
+            el("div", { class: "sub" }, "XXXX XXXX " + (p.aadhaarLast4 || "····")),
+            el("div", { class: "sub" }, "Born " + fmtDate(p.dateOfBirth) + (p.gender ? " · " + p.gender : ""))),
+          el("div", { class: "check" },
+            el("h3", {}, mark(dlOK), "Driving licence"),
+            el("div", { class: "v" }, p.licenseName || (dlOK ? "(no name on record)" : "Not verified")),
+            el("div", { class: "sub mono" }, p.drivingLicenseNumber || "—"),
+            el("div", { class: "sub" }, "Valid till " + fmtDate(p.licenseValidUntil) +
+              (p.licenseClasses && p.licenseClasses.length ? " · " + p.licenseClasses.join(", ") : ""))),
+          el("div", { class: "check" },
+            el("h3", {}, mark(bankOK), "Bank account"),
+            b ? el("div", { class: "v" }, b.verifiedName || "(bank gave no name)") : el("div", { class: "bad" }, "Not added"),
+            b ? el("div", { class: "sub" }, "Typed: " + b.accountHolderName) : null,
+            b ? el("div", { class: "sub mono" }, "••" + b.accountNumberLast4 + " · " + b.ifscCode) : null)),
+        el("div", { class: "stack" }, note, el("div", { class: "actions" }, approve, reject, msg))))
+  );
+}
+
+async function loadPhoto(driverId, box) {
+  try {
+    const res = await api("/admin/drivers/" + encodeURIComponent(driverId) + "/documents/selfie");
+    const url = URL.createObjectURL(await res.blob());
+    photoURLs.push(url);
+    box.textContent = "";
+    box.style.backgroundImage = "url(" + url + ")";
+    box.addEventListener("click", () => { const v = $("#viewer"); v.querySelector("img").src = url; v.showModal(); });
+  } catch {}
+}
+
+async function loadPayouts() {
+  const list = $("#list");
+  list.replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  let data;
+  try {
+    data = await (await api("/admin/payouts/due")).json();
+  } catch (e) {
+    list.replaceChildren(el("p", { class: "empty bad" }, e.message));
+    return;
+  }
+  refreshCount();
+  const csv = el("button", { type: "button", onclick: () => downloadCSV(data.asOf) }, "Download CSV for bank upload");
+  const head = el("div", { class: "row" }, el("span", { class: "sub" }, "Owed as of " + fmtTime(data.asOf)), csv);
+  if (!data.drivers.length) {
+    list.replaceChildren(head, el("p", { class: "empty" }, "Nothing owed right now."));
+    return;
+  }
+  const total = data.drivers.reduce((s, d) => s + d.amountPaise, 0);
+  const rows = data.drivers.map((d) => {
+    const ref = el("input", { placeholder: "UTR / reference", style: "min-width:150px" });
+    const msg = el("div", { class: "msg" });
+    const save = el("button", { class: "primary", type: "button" }, "Mark paid");
+    save.addEventListener("click", async () => {
+      if (!ref.value.trim()) { msg.className = "msg bad"; msg.textContent = "Enter the UTR."; return; }
+      save.disabled = true; msg.className = "msg"; msg.textContent = "Saving…";
+      try {
+        await api("/admin/payouts", { method: "POST", body: JSON.stringify({ driverId: d.driverId, reference: ref.value.trim(), asOf: data.asOf }) });
+        msg.className = "msg ok"; msg.textContent = "Recorded.";
+      } catch (e) { msg.className = "msg bad"; msg.textContent = e.message; save.disabled = false; }
+    });
+    return el("tr", {},
+      el("td", {}, el("div", { class: "v" }, d.driverName), el("div", { class: "sub" }, d.driverPhone)),
+      el("td", {}, d.rides),
+      el("td", { class: "v" }, rupees(d.amountPaise)),
+      el("td", {}, d.accountHolderName || el("span", { class: "bad" }, "No bank details"),
+        el("div", { class: "sub mono" }, (d.accountNumber || "") + (d.ifscCode ? " · " + d.ifscCode : ""))),
+      el("td", {}, el("div", { class: "row" }, ref, save), msg));
+  });
+  list.replaceChildren(head,
+    el("div", { class: "table-wrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Driver", "Rides", "Owed", "Pay to", "Transfer"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, rows))),
+    el("p", { class: "sub" }, "Total owed: " + rupees(total)));
+}
+
+async function downloadCSV(asOf) {
+  const res = await api("/admin/payouts/due?format=csv&asOf=" + encodeURIComponent(asOf));
+  const url = URL.createObjectURL(await res.blob());
+  el("a", { href: url, download: "mojud-payouts.csv" }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+$("#signin-btn").addEventListener("click", signIn);
+$("#token").addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
+$("#signout").addEventListener("click", () => signOut());
+for (const b of document.querySelectorAll("[data-tab]")) b.addEventListener("click", () => select(b.dataset.tab));
+$("#viewer").addEventListener("click", () => $("#viewer").close());
+token ? showApp() : signOut();
+</script>
+</body>
+</html>

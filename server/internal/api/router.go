@@ -38,7 +38,7 @@ func NewRouter(
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
 	pay := NewPaymentHandler(payments, bookings, webhook)
-	adm := NewAdminHandler(payouts, driverKYC)
+	adm := NewAdminHandler(payouts, driverKYC, notify)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -98,6 +98,10 @@ func NewRouter(
 	mux.HandleFunc("POST /admin/payouts", requireAdmin(adminToken, adm.RecordPayout))
 	mux.HandleFunc("GET /admin/kyc", requireAdmin(adminToken, adm.KYCReviews))
 	mux.HandleFunc("POST /admin/kyc/{driverId}", requireAdmin(adminToken, adm.DecideKYC))
+	mux.HandleFunc("GET /admin/drivers/{driverId}/documents/{kind}", requireAdmin(adminToken, adm.DriverDocument))
+	// The back-office web page. Public HTML: every call it makes needs the
+	// admin token, which the person using it pastes in.
+	mux.HandleFunc("GET /admin", AdminPage)
 
 	// Driver app: the same phone/OTP registration flow as the customer app,
 	// but a separate account type/session (see DriverAuthHandler).
