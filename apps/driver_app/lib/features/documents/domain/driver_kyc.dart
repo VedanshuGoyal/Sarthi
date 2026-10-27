@@ -10,10 +10,11 @@ enum KycStatus {
   /// Still filling in the six steps.
   incomplete,
 
-  /// Everything supplied; waiting on a reviewer.
+  /// Everything supplied, but something needs a person to look before the
+  /// driver can go online — see [DriverKyc.reviewNote].
   submitted,
 
-  /// Cleared to drive.
+  /// Every check passed: cleared to drive.
   verified,
 
   /// Something was refused and needs redoing.
@@ -30,22 +31,33 @@ enum KycStatus {
 /// The masked payout details the backend returns. The account number itself is
 /// encrypted server-side and never comes back — only the last four digits, so
 /// the driver can recognise their own account.
+///
+/// [verifiedAt] is set once the bank confirmed the account exists (a penny
+/// drop), and [verifiedName] is the name the bank holds for it.
 class BankAccountSummary {
   const BankAccountSummary({
     required this.accountHolderName,
     required this.accountNumberLast4,
     required this.ifscCode,
+    this.verifiedAt,
+    this.verifiedName,
   });
 
   final String accountHolderName;
   final String accountNumberLast4;
   final String ifscCode;
+  final DateTime? verifiedAt;
+  final String? verifiedName;
+
+  bool get isVerified => verifiedAt != null;
 
   factory BankAccountSummary.fromJson(Map<String, dynamic> json) {
     return BankAccountSummary(
       accountHolderName: json['accountHolderName'] as String? ?? '',
       accountNumberLast4: json['accountNumberLast4'] as String? ?? '',
       ifscCode: json['ifscCode'] as String? ?? '',
+      verifiedAt: DriverKyc._parseDate(json['verifiedAt']),
+      verifiedName: DriverKyc._nonEmpty(json['verifiedName']),
     );
   }
 }
@@ -56,6 +68,11 @@ class BankAccountSummary {
 /// [aadhaarLast4] is all that comes back of the Aadhaar number — the server
 /// stores nothing more of it — so the app shows a masked value rather than
 /// re-displaying what the driver typed.
+///
+/// The `…VerifiedAt` fields are the server's checks: Aadhaar through
+/// DigiLocker, the licence through the transport department's records. Once
+/// the Aadhaar is verified, [fullName], [dateOfBirth] and [gender] are the
+/// Aadhaar's and can't be edited.
 class DriverKyc {
   const DriverKyc({
     this.status = KycStatus.incomplete,
@@ -67,6 +84,12 @@ class DriverKyc {
     this.drivingLicenseNumber,
     this.uploadedKinds = const {},
     this.bankAccount,
+    this.aadhaarVerifiedAt,
+    this.licenseVerifiedAt,
+    this.licenseName,
+    this.licenseValidUntil,
+    this.licenseClasses = const [],
+    this.reviewNote,
   });
 
   final KycStatus status;
@@ -82,6 +105,23 @@ class DriverKyc {
   final Set<DocumentKind> uploadedKinds;
 
   final BankAccountSummary? bankAccount;
+
+  final DateTime? aadhaarVerifiedAt;
+  final DateTime? licenseVerifiedAt;
+
+  /// The name on the driving licence, as the transport department has it.
+  final String? licenseName;
+  final DateTime? licenseValidUntil;
+
+  /// What the licence covers, e.g. `LMV`, `MCWG`.
+  final List<String> licenseClasses;
+
+  /// Why the driver is under review or was rejected, safe to show.
+  final String? reviewNote;
+
+  bool get isAadhaarVerified => aadhaarVerifiedAt != null;
+  bool get isLicenseVerified => licenseVerifiedAt != null;
+  bool get isBankVerified => bankAccount?.isVerified ?? false;
 
   factory DriverKyc.fromJson(Map<String, dynamic> json) {
     final profile = json['profile'] as Map<String, dynamic>? ?? const {};
@@ -105,6 +145,15 @@ class DriverKyc {
       drivingLicenseNumber: _nonEmpty(profile['drivingLicenseNumber']),
       uploadedKinds: uploaded,
       bankAccount: bank == null ? null : BankAccountSummary.fromJson(bank),
+      aadhaarVerifiedAt: _parseDate(profile['aadhaarVerifiedAt']),
+      licenseVerifiedAt: _parseDate(profile['licenseVerifiedAt']),
+      licenseName: _nonEmpty(profile['licenseName']),
+      licenseValidUntil: _parseDate(profile['licenseValidUntil']),
+      licenseClasses: [
+        for (final c in profile['licenseClasses'] as List<dynamic>? ?? const [])
+          if (c is String && c.isNotEmpty) c,
+      ],
+      reviewNote: _nonEmpty(profile['kycReviewNote']),
     );
   }
 
@@ -116,7 +165,7 @@ class DriverKyc {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  /// Parses the server's timestamps, which are RFC 3339.
+  /// Parses the server's timestamps (RFC 3339) and plain dates (YYYY-MM-DD).
   static DateTime? _parseDate(Object? value) {
     final text = value as String?;
     if (text == null || text.isEmpty) return null;

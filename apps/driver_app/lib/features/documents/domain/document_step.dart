@@ -15,12 +15,12 @@ enum DocumentStep {
   ),
   aadhar(
     title: 'Aadhar Card',
-    subtitle: 'Aadhar number and photo',
+    subtitle: 'Verify with DigiLocker',
     icon: Icons.credit_card_outlined,
   ),
   drivingLicense(
     title: 'Driving License',
-    subtitle: 'License number and photo',
+    subtitle: 'License number, checked instantly',
     icon: Icons.motorcycle_outlined,
   ),
   permissions(
@@ -30,7 +30,7 @@ enum DocumentStep {
   ),
   bankDetails(
     title: 'Bank Details',
-    subtitle: 'Where your earnings get paid out',
+    subtitle: 'Where your earnings are paid, verified with your bank',
     icon: Icons.account_balance_outlined,
   );
 

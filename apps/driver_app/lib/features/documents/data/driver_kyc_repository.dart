@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/driver_kyc.dart';
 import '../domain/gender.dart';
@@ -18,7 +19,8 @@ class KycException implements Exception {
   final String message;
 
   /// The backend's machine-readable tag (`aadhaar_taken`, `kyc_incomplete`,
-  /// `document_too_large`, `unsupported_image`), or null for generic errors.
+  /// `verification_pending`, `aadhaar_mismatch`, `license_not_found`, …), or
+  /// null for generic errors.
   final String? code;
 
   @override
@@ -75,8 +77,43 @@ class DriverKycRepository {
     return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
-  /// Saves the payout details. The account number is encrypted server-side and
-  /// never returned; the response carries only its last four digits.
+  /// Opens a DigiLocker session for the Aadhaar check. The Aadhaar number must
+  /// already be saved — the backend compares DigiLocker's last four digits
+  /// against it.
+  Future<DigiLockerSession> startDigiLocker() async {
+    final body = await _send(
+      'POST',
+      '/driver/kyc/digilocker',
+      payload: const {},
+    );
+    return DigiLockerSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// Reads the DigiLocker session's result. Throws a [KycException] with code
+  /// `verification_pending` while the driver hasn't finished in DigiLocker.
+  Future<DriverKyc> completeDigiLocker() async {
+    final body = await _send(
+      'POST',
+      '/driver/kyc/digilocker/complete',
+      payload: const {},
+    );
+    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// Saves the licence number and has the backend look it up against the
+  /// driver's date of birth.
+  Future<DriverKyc> verifyDrivingLicense(String number) async {
+    final body = await _send(
+      'POST',
+      '/driver/kyc/driving-license',
+      payload: {'number': number.trim().toUpperCase()},
+    );
+    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+  }
+
+  /// Saves the payout details once the backend has checked the account with
+  /// the bank. The account number is encrypted server-side and never
+  /// returned; the response carries only its last four digits.
   Future<DriverKyc> setBankAccount({
     required String accountHolderName,
     required String accountNumber,
@@ -111,9 +148,10 @@ class DriverKycRepository {
     return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 
-  /// Submits the completed Document View for review. Throws a [KycException]
-  /// with code `kyc_incomplete` — whose message names what is missing — when
-  /// the backend finds a step outstanding.
+  /// Submits the completed Document View. The backend answers `verified` when
+  /// every check agrees, or `submitted` when a person needs to look. Throws a
+  /// [KycException] with code `kyc_incomplete` — whose message names what is
+  /// missing — when the backend finds a step outstanding.
   Future<DriverKyc> submit() async {
     final body = await _send('POST', '/driver/kyc/submit', payload: const {});
     return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);

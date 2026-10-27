@@ -5,8 +5,10 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../document_providers.dart';
 import '../domain/document_validators.dart';
+import '../widgets/verified_details.dart';
 
-/// Document step 6 — where the driver's earnings get paid out.
+/// Document step 6 — where the driver's earnings get paid out. The backend
+/// checks the account with the bank before saving it.
 class BankDetailsStep extends ConsumerStatefulWidget {
   const BankDetailsStep({super.key});
 
@@ -45,6 +47,16 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
   }
 
   Future<void> _submit() async {
+    final vm = ref.read(documentRegistrationViewModelProvider);
+
+    // A verified account with nothing re-entered: nothing to change.
+    if ((vm.kyc.bankAccount?.isVerified ?? false) &&
+        _accountNumber.text.trim().isEmpty &&
+        _confirmAccountNumber.text.trim().isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+
     for (final error in [
       DocumentValidators.bankAccountHolderName(_holderName.text),
       DocumentValidators.bankAccountNumber(_accountNumber.text),
@@ -60,7 +72,7 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
       }
     }
 
-    final vm = ref.read(documentRegistrationViewModelProvider);
+    setState(() => _error = null);
     await vm.setBankDetails(
       accountHolderName: _holderName.text,
       accountNumber: _accountNumber.text,
@@ -83,8 +95,20 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
     return SarthiFormScaffold(
       leading: const BackButton(),
       title: 'Bank details',
-      subtitle: 'Your earnings are paid out to this account after every trip.',
+      subtitle:
+          'Your earnings are paid to this account. We check it with '
+          'your bank.',
       fields: [
+        if (saved != null && saved.isVerified) ...[
+          VerifiedDetails(
+            title: 'Verified with your bank',
+            lines: [
+              saved.verifiedName ?? '',
+              'Account ending ${saved.accountNumberLast4} · ${saved.ifscCode}',
+            ],
+          ),
+          const SizedBox(height: DeepSignalTokens.s22),
+        ],
         SarthiTextField(
           label: 'Account holder name',
           controller: _holderName,
@@ -139,7 +163,7 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
         ],
       ],
       footer: SarthiPrimaryButton(
-        label: vm.isSaving ? 'Saving…' : 'Finish',
+        label: vm.isSaving ? 'Checking with your bank…' : 'Finish',
         onPressed: vm.isSaving ? null : _submit,
       ),
     );

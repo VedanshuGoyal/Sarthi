@@ -11,6 +11,9 @@ import '../domain/gender.dart';
 import '../widgets/local_photo.dart';
 
 /// Document step 2 — selfie, full name, date of birth, and gender.
+///
+/// Once the Aadhar is verified the name, date of birth and gender are the
+/// Aadhar's: shown read-only, and never re-sent.
 class PhotoAndNameStep extends ConsumerStatefulWidget {
   const PhotoAndNameStep({super.key});
 
@@ -76,6 +79,10 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       setState(() => _error = 'Take a selfie to continue');
       return;
     }
+    if (vm.kyc.isAadhaarVerified) {
+      Navigator.of(context).pop();
+      return;
+    }
     final nameError = AuthValidators.name(_name.text);
     if (nameError != null) {
       setState(() => _error = nameError);
@@ -110,6 +117,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
     final dob = _dateOfBirth;
     final selfiePath = vm.data.capturePathFor(DocumentKind.selfie);
     final selfieState = vm.data.uploadStateFor(DocumentKind.selfie);
+    final locked = vm.kyc.isAadhaarVerified;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
@@ -167,9 +175,14 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
           ),
         ),
         const SizedBox(height: DeepSignalTokens.s22),
+        if (locked) ...[
+          Text('From your Aadhar', style: t.body(size: 12, color: t.muted)),
+          const SizedBox(height: DeepSignalTokens.s8),
+        ],
         SarthiTextField(
           label: 'Full name',
           controller: _name,
+          readOnly: locked,
           hintText: 'Full name',
           keyboardType: TextInputType.name,
           textCapitalization: TextCapitalization.words,
@@ -179,7 +192,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
         Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: _pickDateOfBirth,
+            onTap: locked ? null : _pickDateOfBirth,
             borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
             child: Container(
               padding: const EdgeInsets.all(DeepSignalTokens.s14),
@@ -211,7 +224,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
               ChoiceChip(
                 label: Text(g.label),
                 selected: _gender == g,
-                onSelected: (_) => setState(() => _gender = g),
+                onSelected: locked ? null : (_) => setState(() => _gender = g),
               ),
           ],
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
+import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/document_step.dart';
 import '../domain/driver_documents.dart';
@@ -35,6 +36,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSaving = false;
   String? _error;
+  String? _errorCode;
 
   /// On-device state: capture paths and permission grants.
   DriverDocuments get data => _data;
@@ -50,6 +52,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
   /// The last failure, safe to show to the driver. Cleared by the next write.
   String? get error => _error;
+
+  /// The backend's tag for [error] (`verification_pending`, …), so a view can
+  /// react to a specific failure rather than parse its message.
+  String? get errorCode => _errorCode;
 
   /// Loads the driver's saved progress and re-attaches any captures still on
   /// the device. Safe to call more than once.
@@ -75,15 +81,14 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
           _kyc.dateOfBirth != null &&
           _kyc.gender != null &&
           _kyc.hasUploaded(DocumentKind.selfie),
-    DocumentStep.aadhar =>
-      _kyc.aadhaarLast4 != null && _kyc.hasUploaded(DocumentKind.aadhaar),
-    DocumentStep.drivingLicense =>
-      _kyc.drivingLicenseNumber != null &&
-          _kyc.hasUploaded(DocumentKind.drivingLicense),
+    // The checks, not the typed numbers: a number nobody verified proves
+    // nothing.
+    DocumentStep.aadhar => _kyc.isAadhaarVerified,
+    DocumentStep.drivingLicense => _kyc.isLicenseVerified,
     // OS grants, not backend state — the permissions step re-reads these from
     // the system every time it opens.
     DocumentStep.permissions => _data.hasAllPermissions,
-    DocumentStep.bankDetails => _kyc.bankAccount != null,
+    DocumentStep.bankDetails => _kyc.isBankVerified,
   };
 
   /// A step is reachable once every step before it is complete; the first
@@ -98,8 +103,11 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
   bool get isAllComplete => completedCount == DocumentStep.values.length;
 
-  /// Whether the driver's documents have gone in for review.
-  bool get isSubmitted => _kyc.status != KycStatus.incomplete;
+  /// Whether the driver is cleared to drive — the only status that opens Home.
+  bool get isVerified => _kyc.status == KycStatus.verified;
+
+  /// Whether a person is checking the driver's details.
+  bool get isUnderReview => _kyc.status == KycStatus.submitted;
 
   /// Stores a freshly captured photo and uploads it straight away.
   ///
@@ -149,8 +157,17 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   Future<void> setAadhar({required String number}) =>
       _save(() => _repository.updateProfile(aadhaarNumber: number));
 
-  Future<void> setDrivingLicense({required String number}) =>
-      _save(() => _repository.updateProfile(drivingLicenseNumber: number));
+  /// Opens a DigiLocker session; null on failure, with [error] set.
+  Future<DigiLockerSession?> startDigiLocker() =>
+      _run(() => _repository.startDigiLocker());
+
+  /// Reads how the DigiLocker session went. False with [errorCode]
+  /// `verification_pending` while the driver hasn't finished there.
+  Future<bool> completeDigiLocker() =>
+      _save(() => _repository.completeDigiLocker());
+
+  Future<bool> verifyDrivingLicense(String number) =>
+      _save(() => _repository.verifyDrivingLicense(number));
 
   Future<void> setBankDetails({
     required String accountHolderName,
@@ -179,7 +196,8 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Submits the completed Document View for review.
+  /// Submits the completed Document View. The backend clears the driver
+  /// straight away when every check agrees, or queues them for a person.
   ///
   /// The backend re-checks every step, so a mismatch between what the app
   /// thinks is done and what was actually saved surfaces here as an error
@@ -199,15 +217,26 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// Runs a write, folding the returned state in and surfacing failures.
   /// Returns whether it succeeded.
   Future<bool> _save(Future<DriverKyc> Function() write) async {
+    final kyc = await _run(write);
+    if (kyc == null) return false;
+    _kyc = kyc;
+    notifyListeners();
+    return true;
+  }
+
+  /// Runs a request with [isSaving] up, returning its result, or null with
+  /// [error] and [errorCode] set.
+  Future<T?> _run<T>(Future<T> Function() request) async {
     _isSaving = true;
     _error = null;
+    _errorCode = null;
     notifyListeners();
     try {
-      _kyc = await write();
-      return true;
+      return await request();
     } on KycException catch (e) {
       _error = e.message;
-      return false;
+      _errorCode = e.code;
+      return null;
     } finally {
       _isSaving = false;
       notifyListeners();

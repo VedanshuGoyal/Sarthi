@@ -101,6 +101,47 @@ void main() {
       check(kyc.uploadedKinds).unorderedEquals([DocumentKind.selfie]);
     });
 
+    test('parses the verification checks', () {
+      final kyc = DriverKyc.fromJson({
+        'profile': {
+          'kycStatus': 'submitted',
+          'aadhaarVerifiedAt': '2026-10-27T06:30:00Z',
+          'licenseVerifiedAt': '2026-10-27T06:31:00Z',
+          'licenseName': 'ASHA KUMARI',
+          'licenseValidUntil': '2039-07-23',
+          'licenseClasses': ['LMV', 'MCWG'],
+          'kycReviewNote': 'Name on the bank account differs from Aadhaar',
+        },
+        'documents': <dynamic>[],
+        'bankAccount': {
+          'accountHolderName': 'Asha Kumari',
+          'accountNumberLast4': '2345',
+          'ifscCode': 'HDFC0001234',
+          'verifiedAt': '2026-10-27T06:32:00Z',
+          'verifiedName': 'ASHA K',
+        },
+      });
+
+      check(kyc.isAadhaarVerified).isTrue();
+      check(kyc.isLicenseVerified).isTrue();
+      check(kyc.isBankVerified).isTrue();
+      check(kyc.licenseName).equals('ASHA KUMARI');
+      check(kyc.licenseValidUntil).equals(DateTime(2039, 7, 23));
+      check(kyc.licenseClasses).deepEquals(['LMV', 'MCWG']);
+      check(kyc.reviewNote).isNotNull().contains('bank account');
+      check(kyc.bankAccount!.verifiedName).equals('ASHA K');
+    });
+
+    test('nothing is verified until the backend says so', () {
+      final kyc = DriverKyc.fromJson(completeKyc());
+
+      check(kyc.isAadhaarVerified).isFalse();
+      check(kyc.isLicenseVerified).isFalse();
+      check(kyc.isBankVerified).isFalse();
+      check(kyc.licenseClasses).isEmpty();
+      check(kyc.reviewNote).isNull();
+    });
+
     test('treats empty strings as absent', () {
       final kyc = DriverKyc.fromJson({
         'profile': {
@@ -185,6 +226,68 @@ void main() {
       check(seen!.url.path).equals('/driver/kyc/bank-account');
       final body = jsonDecode(seen!.body) as Map<String, dynamic>;
       check(body['ifscCode']).equals('HDFC0001234');
+    });
+  });
+
+  group('verification requests', () {
+    test('startDigiLocker POSTs and returns the session to open', () async {
+      http.Request? seen;
+      final repository = repositoryReturning({
+        'url': 'https://digilocker.test/start',
+        'redirectUrl': 'https://api.test/kyc/digilocker/done',
+        'expiresAt': '2026-10-27T06:40:00Z',
+      }, onRequest: (r) => seen = r);
+
+      final session = await repository.startDigiLocker();
+
+      check(seen!.method).equals('POST');
+      check(seen!.url.path).equals('/driver/kyc/digilocker');
+      check(seen!.headers['Authorization']).equals('Bearer test-token');
+      check(session.url.toString()).equals('https://digilocker.test/start');
+      check(
+        session.redirectUrl,
+      ).isNotNull().has((u) => u.path, 'path').equals('/kyc/digilocker/done');
+      check(session.expiresAt).isNotNull();
+    });
+
+    test('completeDigiLocker POSTs to the complete route', () async {
+      http.Request? seen;
+      final repository = repositoryReturning(
+        completeKyc(),
+        onRequest: (r) => seen = r,
+      );
+
+      await repository.completeDigiLocker();
+
+      check(seen!.method).equals('POST');
+      check(seen!.url.path).equals('/driver/kyc/digilocker/complete');
+    });
+
+    test('completeDigiLocker reports a session still in progress', () async {
+      final repository = repositoryReturning({
+        'error': "DigiLocker isn't finished yet",
+        'code': 'verification_pending',
+      }, status: 409);
+
+      await check(repository.completeDigiLocker()).throws<KycException>(
+        (failure) =>
+            failure.has((e) => e.code, 'code').equals('verification_pending'),
+      );
+    });
+
+    test('verifyDrivingLicense sends the number uppercased', () async {
+      http.Request? seen;
+      final repository = repositoryReturning(
+        completeKyc(),
+        onRequest: (r) => seen = r,
+      );
+
+      await repository.verifyDrivingLicense(' mp0920190012345 ');
+
+      check(seen!.method).equals('POST');
+      check(seen!.url.path).equals('/driver/kyc/driving-license');
+      final body = jsonDecode(seen!.body) as Map<String, dynamic>;
+      check(body).deepEquals({'number': 'MP0920190012345'});
     });
   });
 

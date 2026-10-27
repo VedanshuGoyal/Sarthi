@@ -70,9 +70,9 @@ class _AppRoot extends ConsumerWidget {
 /// verification.
 ///
 /// The gate reads the backend's KYC status, not local progress, so it survives
-/// a reinstall and can't be bypassed from the device. It currently opens as
-/// soon as the documents are submitted; once there's a review tool it should
-/// wait for [KycStatus.verified] instead.
+/// a reinstall and can't be bypassed from the device. It opens only at
+/// [KycStatus.verified] — the backend's checks passed, or a reviewer cleared
+/// the driver — which is also the only status the server sends rides to.
 class _SignedInRoot extends ConsumerWidget {
   const _SignedInRoot({required this.driver});
 
@@ -80,10 +80,10 @@ class _SignedInRoot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final submitted = ref.watch(
-      documentRegistrationViewModelProvider.select((vm) => vm.isSubmitted),
+    final verified = ref.watch(
+      documentRegistrationViewModelProvider.select((vm) => vm.isVerified),
     );
-    return submitted
+    return verified
         ? DriverHomeShell(driver: driver)
         : const DocumentViewScreen();
   }

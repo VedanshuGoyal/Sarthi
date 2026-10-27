@@ -15,7 +15,8 @@ import 'vehicle_type_step.dart';
 
 /// The post-registration document flow: six KYC steps the driver completes
 /// one at a time before reaching Home. `_AppRoot` shows this screen for any
-/// signed-in driver until their documents are in (see main.dart).
+/// signed-in driver until they're verified (see main.dart) — including while
+/// a person reviews them, or after a reviewer sent something back.
 ///
 /// Each step saves to the backend as it's finished, so progress here is the
 /// backend's answer, not the app's — reinstalling or switching phones picks up
@@ -73,16 +74,31 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final underReview = vm.kyc.status == KycStatus.submitted;
+    final status = vm.kyc.status;
+    final underReview = status == KycStatus.submitted;
+    final rejected = status == KycStatus.rejected;
+    final note = vm.kyc.reviewNote;
 
     return SarthiFormScaffold(
-      title: underReview ? 'Documents submitted' : 'Complete your registration',
-      subtitle: underReview
-          ? "We're checking your documents. This usually takes a day — "
-                "you'll be able to go online as soon as they clear."
-          : "Finish these ${DocumentStep.values.length} steps to start "
-                'accepting rides. Each one unlocks once the last is done.',
+      title: switch (status) {
+        KycStatus.submitted => 'Under review',
+        KycStatus.rejected => 'Some details need fixing',
+        _ => 'Complete your registration',
+      },
+      subtitle: switch (status) {
+        KycStatus.submitted =>
+          "We're checking your details. You can go online once they're "
+              'cleared.',
+        KycStatus.rejected => 'Fix the details below and submit again.',
+        _ =>
+          'Finish these ${DocumentStep.values.length} steps to start '
+              'accepting rides. Each one unlocks once the last is done.',
+      },
       fields: [
+        if (note != null && (underReview || rejected)) ...[
+          _ReviewNote(note: note, attention: rejected),
+          const SizedBox(height: DeepSignalTokens.s22),
+        ],
         Row(
           children: [
             Expanded(
@@ -119,13 +135,54 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
           Text(vm.error!, style: t.body(size: 13, color: Colors.red)),
         ],
       ],
-      // Nothing to submit until all six are done, and nothing to submit twice.
-      footer: vm.isAllComplete && !underReview
+      // Nothing to submit until all six are done, and nothing to submit twice;
+      // while under review, the driver can ask again whether they're cleared.
+      footer: underReview
+          ? SarthiPrimaryButton(label: 'Check again', onPressed: vm.load)
+          : vm.isAllComplete
           ? SarthiPrimaryButton(
               label: vm.isSaving ? 'Submitting…' : 'Submit for verification',
               onPressed: vm.isSaving ? null : _submit,
             )
           : null,
+    );
+  }
+}
+
+/// Why the driver is under review, or what a reviewer refused.
+class _ReviewNote extends StatelessWidget {
+  const _ReviewNote({required this.note, required this.attention});
+
+  final String note;
+
+  /// Rejected rather than waiting: drawn in red.
+  final bool attention;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = DeepSignalTokens.of(context);
+    final color = attention ? Colors.red : t.muted;
+    return Container(
+      padding: const EdgeInsets.all(DeepSignalTokens.s14),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: attention ? Colors.red : t.hairline),
+        borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            attention ? Icons.error_outline_rounded : Icons.info_outline,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(width: DeepSignalTokens.s14),
+          Expanded(
+            child: Text(note, style: t.body(size: 13, color: t.fg)),
+          ),
+        ],
+      ),
     );
   }
 }

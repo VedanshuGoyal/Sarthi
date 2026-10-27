@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../document_providers.dart';
-import '../domain/document_kind.dart';
 import '../domain/document_validators.dart';
-import '../widgets/document_photo_picker.dart';
+import '../domain/driver_kyc.dart';
+import '../widgets/verified_details.dart';
 
-/// Document step 4 — driving license number and a photo of the card.
+/// Document step 4 — the driving licence number, looked up against the
+/// transport department's records with the driver's date of birth.
 class DrivingLicenseStep extends ConsumerStatefulWidget {
   const DrivingLicenseStep({super.key});
 
@@ -28,6 +29,8 @@ class _DrivingLicenseStepState extends ConsumerState<DrivingLicenseStep> {
             .kyc
             .drivingLicenseNumber ??
         '';
+    // The footer flips between "Verify" and "Continue" as the number changes.
+    _number.addListener(() => setState(() {}));
   }
 
   @override
@@ -36,67 +39,75 @@ class _DrivingLicenseStepState extends ConsumerState<DrivingLicenseStep> {
     super.dispose();
   }
 
-  Future<void> _onPhotoTaken(String path) async {
-    setState(() => _error = null);
-    await ref
-        .read(documentRegistrationViewModelProvider)
-        .capturePhoto(DocumentKind.drivingLicense, path);
-  }
+  /// Whether what's in the field is the number the backend verified.
+  bool _showsVerified(DriverKyc kyc) =>
+      kyc.isLicenseVerified &&
+      _normalised(_number.text) == kyc.drivingLicenseNumber;
 
-  Future<void> _submit() async {
-    final vm = ref.read(documentRegistrationViewModelProvider);
+  static String _normalised(String value) =>
+      value.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
 
+  Future<void> _verify() async {
     final numberError = DocumentValidators.drivingLicenseNumber(_number.text);
     if (numberError != null) {
       setState(() => _error = numberError);
       return;
     }
-    if (!vm.kyc.hasUploaded(DocumentKind.drivingLicense)) {
-      setState(() => _error = 'Take a photo of your driving license');
-      return;
-    }
 
-    await vm.setDrivingLicense(number: _number.text);
-    if (vm.error != null) {
-      setState(() => _error = vm.error);
-      return;
-    }
-    if (mounted) Navigator.of(context).pop();
+    setState(() => _error = null);
+    final vm = ref.read(documentRegistrationViewModelProvider);
+    final verified = await vm.verifyDrivingLicense(_normalised(_number.text));
+    if (!mounted) return;
+    if (!verified) setState(() => _error = vm.error);
   }
 
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(documentRegistrationViewModelProvider);
     final t = DeepSignalTokens.of(context);
+    final kyc = vm.kyc;
+    final verified = _showsVerified(kyc);
+    final validUntil = kyc.licenseValidUntil;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
       title: 'Driving license',
-      subtitle: 'Your license number and a clear photo of the card.',
+      subtitle: 'We check your license number with the transport department.',
       fields: [
         SarthiTextField(
           label: 'License number',
           controller: _number,
-          hintText: 'License number',
+          hintText: 'e.g. MP0920190012345',
           textCapitalization: TextCapitalization.characters,
           prefixIcon: const Icon(Icons.motorcycle_outlined),
         ),
-        const SizedBox(height: DeepSignalTokens.s14),
-        DocumentPhotoPicker(
-          photoPath: vm.data.capturePathFor(DocumentKind.drivingLicense),
-          uploadState: vm.data.uploadStateFor(DocumentKind.drivingLicense),
-          onPhotoTaken: _onPhotoTaken,
-          label: 'Take a photo of your driving license',
-        ),
+        if (verified) ...[
+          const SizedBox(height: DeepSignalTokens.s14),
+          VerifiedDetails(
+            title: 'License verified',
+            lines: [
+              kyc.licenseName ?? '',
+              if (validUntil != null)
+                'Valid till ${formatCardDate(validUntil)}',
+              if (kyc.licenseClasses.isNotEmpty)
+                'Covers ${kyc.licenseClasses.join(' · ')}',
+            ],
+          ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: DeepSignalTokens.s8),
           Text(_error!, style: t.body(size: 13, color: Colors.red)),
         ],
       ],
-      footer: SarthiPrimaryButton(
-        label: vm.isSaving ? 'Saving…' : 'Continue',
-        onPressed: vm.isSaving ? null : _submit,
-      ),
+      footer: verified
+          ? SarthiPrimaryButton(
+              label: 'Continue',
+              onPressed: () => Navigator.of(context).pop(),
+            )
+          : SarthiPrimaryButton(
+              label: vm.isSaving ? 'Checking…' : 'Verify license',
+              onPressed: vm.isSaving ? null : _verify,
+            ),
     );
   }
 }
