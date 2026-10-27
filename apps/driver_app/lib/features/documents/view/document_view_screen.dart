@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../core/services/push_service.dart';
+import '../../notifications/notification_providers.dart';
 import '../document_providers.dart';
 import '../domain/document_step.dart';
 import '../domain/driver_kyc.dart';
@@ -29,13 +33,51 @@ class DocumentViewScreen extends ConsumerStatefulWidget {
 }
 
 class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
+  /// The push type the backend sends when a reviewer decides.
+  static const String _kycDecided = 'kyc_decided';
+
+  final List<StreamSubscription<void>> _push = [];
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    // A reviewer's decision arrives as a push; reloading then is what moves a
+    // newly verified driver on to Home (the gate watches the status).
+    final push = ref.read(pushServiceProvider);
+    void onPush(PushEvent event) {
+      if (event.type == _kycDecided) _reload();
+    }
+
+    _push
+      ..add(push.arrivals.listen(onPush))
+      ..add(push.taps.listen(onPush));
+    _lifecycle = AppLifecycleListener(onResume: _reloadIfWaiting);
     // Deferred: providers can't be written to during a build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(documentRegistrationViewModelProvider).load();
+      // Registered now, not only on Home, so the decision can reach drivers
+      // who are still waiting on it.
+      unawaited(ref.read(pushRegistrationProvider).start());
     });
+  }
+
+  @override
+  void dispose() {
+    for (final sub in _push) {
+      sub.cancel();
+    }
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  void _reload() => ref.read(documentRegistrationViewModelProvider).load();
+
+  /// Coming back to the app while under review: the decision may have landed
+  /// without a push (notifications off).
+  void _reloadIfWaiting() {
+    final vm = ref.read(documentRegistrationViewModelProvider);
+    if (vm.kyc.status == KycStatus.submitted && !vm.isLoading) _reload();
   }
 
   Future<void> _submit() async {

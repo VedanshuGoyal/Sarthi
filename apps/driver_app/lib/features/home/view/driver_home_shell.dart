@@ -127,6 +127,10 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   void _onPushArrival(PushEvent event) {
     if (event.type == 'ride_cancelled') {
       ref.read(myRidesViewModelProvider).load();
+    } else if (event.type == 'kyc_decided') {
+      // A reviewer revoked the driver: re-reading KYC sends them back to the
+      // Document View (main.dart's gate).
+      ref.read(documentRegistrationViewModelProvider).load();
     } else if (event.type == _paymentReceived) {
       _reloadMoney();
     } else {
