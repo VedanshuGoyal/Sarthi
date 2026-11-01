@@ -238,12 +238,15 @@ func run() error {
 	if cfg.AdminToken == "" {
 		slog.Warn("admin: no ADMIN_TOKEN set; GET /users and /admin/* are off")
 	}
+	// The ops dashboard's counts (GET /admin/stats): PostgreSQL, plus who is
+	// on duty from the presence index.
+	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, webhook, cfg.AdminToken),
+			payments, payouts, stats, webhook, cfg.AdminToken),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -35,17 +35,34 @@ func requireAdmin(token string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 // AdminHandler is MOJUD's back office: what drivers are owed and the
-// payouts made to them, and drivers whose KYC needs a person.
+// payouts made to them, drivers whose KYC needs a person, and the ops
+// dashboard's numbers.
 type AdminHandler struct {
 	payouts *service.PayoutService
 	kyc     *service.DriverKYCService
 	notify  *service.NotifyService
+	stats   *service.StatsService
 }
 
 // NewAdminHandler wires the handler. notify tells drivers about KYC
 // decisions.
-func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService, notify *service.NotifyService) *AdminHandler {
-	return &AdminHandler{payouts: payouts, kyc: kyc, notify: notify}
+func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService, notify *service.NotifyService, stats *service.StatsService) *AdminHandler {
+	return &AdminHandler{payouts: payouts, kyc: kyc, notify: notify, stats: stats}
+}
+
+// Stats handles GET /admin/stats: counts for the ops dashboard — accounts,
+// drivers by KYC status and on duty, bookings by status, completed rides
+// with their fares and commission for today / 7 / 30 IST days, and the
+// payouts total. Counts and paise only; no personal data.
+func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	st, err := h.stats.Stats(r.Context())
+	if err != nil {
+		slog.Error("admin: reading stats", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not load stats")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, st)
 }
 
 // DriverDocument handles GET /admin/drivers/{driverId}/documents/{kind}: the

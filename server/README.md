@@ -120,6 +120,7 @@ migrate -path migrations -database "$DATABASE_URL" up
 | POST   | `/auth/logout`      | — (Bearer token)                                  | Revokes the caller's session token |
 | GET    | `/maps/token`       | — (Bearer token)                                  | `{accessToken, expiresIn}` — an Ola Maps token minted server-side (cached, shared across users until ~5 min before expiry). 503 `maps_not_configured` without credentials, 502 `maps_unavailable` if Ola refuses |
 | GET    | `/users`            | — (Bearer `ADMIN_TOKEN`)                          | All accounts, newest first (back office; 404 when `ADMIN_TOKEN` is unset) |
+| GET    | `/admin/stats`      | — (Bearer `ADMIN_TOKEN`)                          | Ops dashboard counts: customers/drivers, drivers by KYC status, on duty, bookings by status (`expired` derived like `/me/bookings`), completed rides + gross fare + commission for today / 7 / 30 IST days, payouts due. Spec: `docs/features/admin-stats.md` |
 | GET    | `/healthz`          | —                                                 | Liveness |
 
 Authenticated endpoints expect the session token as `Authorization: Bearer <token>`.

@@ -25,6 +25,7 @@ func NewRouter(
 	notify *service.NotifyService,
 	payments *service.PaymentService,
 	payouts *service.PayoutService,
+	stats *service.StatsService,
 	webhook WebhookVerifier,
 	adminToken string,
 ) http.Handler {
@@ -38,7 +39,7 @@ func NewRouter(
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
 	pay := NewPaymentHandler(payments, bookings, webhook)
-	adm := NewAdminHandler(payouts, driverKYC, notify)
+	adm := NewAdminHandler(payouts, driverKYC, notify, stats)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -92,8 +93,10 @@ func NewRouter(
 	// secret stays on the server.
 	mux.HandleFunc("GET /maps/token", requireAuth(sessions, mp.Token))
 
-	// Back office, behind ADMIN_TOKEN: every account, and driver payouts.
+	// Back office, behind ADMIN_TOKEN: every account, driver payouts, KYC
+	// review, and the ops dashboard's counts.
 	mux.HandleFunc("GET /users", requireAdmin(adminToken, h.ListUsers))
+	mux.HandleFunc("GET /admin/stats", requireAdmin(adminToken, adm.Stats))
 	mux.HandleFunc("GET /admin/payouts/due", requireAdmin(adminToken, adm.DuePayouts))
 	mux.HandleFunc("POST /admin/payouts", requireAdmin(adminToken, adm.RecordPayout))
 	mux.HandleFunc("GET /admin/kyc", requireAdmin(adminToken, adm.KYCReviews))
