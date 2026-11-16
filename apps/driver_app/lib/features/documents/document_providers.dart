@@ -12,6 +12,7 @@ import 'view_model/document_registration_view_model.dart';
 /// `driverAuthRepositoryProvider`.
 final driverKycRepositoryProvider = Provider<DriverKycRepository>((ref) {
   return DriverKycRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () =>
         ref.read(driverAuthControllerProvider).valueOrNull?.token,
   );
