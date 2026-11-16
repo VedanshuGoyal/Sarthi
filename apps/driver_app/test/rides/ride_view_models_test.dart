@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:checks/checks.dart';
+import 'package:driver_app/core/services/location_service.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/view/ride_format.dart';
@@ -29,6 +30,21 @@ class _GatedRides extends FakeRidesRepository {
     final wait = gate;
     if (wait != null) await wait.future;
     return summary;
+  }
+}
+
+/// A [FakeLocationService] whose fix waits on [gate] when it's set — GPS
+/// taking its time.
+class _GatedLocation extends FakeLocationService {
+  Completer<void>? gate;
+
+  @override
+  Future<DevicePosition?> currentPosition({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    final wait = gate;
+    if (wait != null) await wait.future;
+    return position;
   }
 }
 
@@ -100,6 +116,51 @@ void main() {
 
       check(error).isNotNull().contains('overlaps');
       check(vm.requests).length.equals(2);
+    });
+  });
+
+  group('DutyViewModel races', () {
+    test('going offline mid-refresh is not undone by that refresh', () async {
+      final repo = FakeRidesRepository()..openRides = [ride(id: 'a')];
+      final location = _GatedLocation();
+      final vm = DutyViewModel(
+        repository: repo,
+        location: location,
+        pollEvery: const Duration(hours: 1),
+      );
+      addTearDown(vm.dispose);
+      await vm.setOnline(true);
+
+      // The poll is still waiting on a GPS fix when the driver goes offline.
+      final gate = location.gate = Completer<void>();
+      final polling = vm.refresh(locate: true);
+      await vm.setOnline(false);
+      gate.complete();
+      await polling;
+
+      check(repo.duty).deepEquals([true, false]);
+      check(vm.isOnline).isFalse();
+      check(vm.requests).isEmpty();
+    });
+
+    test('signing out while going online starts no poll', () async {
+      final repo = FakeRidesRepository();
+      final location = _GatedLocation();
+      final vm = DutyViewModel(
+        repository: repo,
+        location: location,
+        pollEvery: const Duration(milliseconds: 5),
+      );
+
+      final gate = location.gate = Completer<void>();
+      final going = vm.setOnline(true);
+      vm.dispose();
+      gate.complete();
+      await going;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // Nothing reported this driver online, then or on a leaked timer.
+      check(repo.duty).isEmpty();
     });
   });
 
