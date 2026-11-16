@@ -84,7 +84,11 @@ void main() {
       final details = body['details'] as Map<String, dynamic>;
       check(details['hours']).equals(4);
       check(details['fare']).equals(440);
-      check(details['scheduledAt']).equals('2026-07-20T09:15:00.000');
+      // An instant, not a wall time the server must guess the zone of.
+      check(
+        details['scheduledAt'],
+      ).equals(DateTime(2026, 7, 20, 9, 15).toUtc().toIso8601String());
+      check(details['scheduledAt'] as String).endsWith('Z');
       check(
         (details['pickup'] as Map<String, dynamic>)['address'],
       ).equals('Connaught Place, New Delhi');
