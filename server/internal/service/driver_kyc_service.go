@@ -571,11 +571,17 @@ func validGender(g domain.Gender) bool {
 	return false
 }
 
-// yearsBetween returns completed years from dob to now.
+// yearsBetween returns completed years from dob to now, by calendar date:
+// the birthday is reached on its month and day (today's date in IST),
+// whatever the leap years in between. A 29 February birthday falls on
+// 1 March in other years.
 func yearsBetween(dob, now time.Time) int {
-	years := now.Year() - dob.Year()
-	// Not yet past this year's birthday: one fewer completed year.
-	if now.YearDay() < dob.YearDay() {
+	n := now.In(ist)
+	today := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+	birth := time.Date(dob.Year(), dob.Month(), dob.Day(), 0, 0, 0, 0, time.UTC)
+	years := today.Year() - birth.Year()
+	// Not yet this year's birthday: one fewer completed year.
+	if birth.AddDate(years, 0, 0).After(today) {
 		years--
 	}
 	return years

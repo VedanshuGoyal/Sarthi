@@ -639,6 +639,31 @@ func TestOpenDocumentReportsAMissingDocument(t *testing.T) {
 
 // --- helpers -------------------------------------------------------------
 
+func TestYearsBetweenCountsByCalendarDate(t *testing.T) {
+	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	cases := []struct {
+		name     string
+		dob, now time.Time
+		want     int
+	}{
+		// Day-of-year shifts by one after February across leap years; these
+		// two were wrong when birthdays were compared by YearDay.
+		{"18th birthday, born in a leap year", day(2008, time.August, 7), day(2026, time.August, 7), 18},
+		{"day before the 18th birthday, now a leap year", day(2006, time.March, 2), day(2024, time.March, 1), 17},
+		{"18th birthday, now a leap year", day(2006, time.March, 2), day(2024, time.March, 2), 18},
+		{"29 Feb birthday, 28 Feb", day(2008, time.February, 29), day(2026, time.February, 28), 17},
+		{"29 Feb birthday, 1 Mar", day(2008, time.February, 29), day(2026, time.March, 1), 18},
+		// Just after midnight IST on the birthday is still 6 August in UTC.
+		{"birthday begins in IST", day(2008, time.August, 7), time.Date(2026, time.August, 6, 19, 0, 0, 0, time.UTC), 18},
+		{"evening before, IST", day(2008, time.August, 7), time.Date(2026, time.August, 6, 18, 0, 0, 0, time.UTC), 17},
+	}
+	for _, c := range cases {
+		if got := yearsBetween(c.dob, c.now); got != c.want {
+			t.Errorf("%s: yearsBetween = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 func testCipher(t *testing.T) *secret.Cipher {
