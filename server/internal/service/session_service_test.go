@@ -76,7 +76,10 @@ func TestSessionService_IssueWritesThroughAndValidates(t *testing.T) {
 		t.Fatal("session should expire after it is created")
 	}
 	// Durable store and cache both hold it.
-	if _, ok := repo.stored[sess.Token]; !ok {
+	if _, ok := repo.stored[sess.Token]; ok {
+		t.Fatal("the raw token must never be stored")
+	}
+	if _, ok := repo.stored[tokenKey(sess.Token)]; !ok {
 		t.Fatal("session not persisted to the durable store")
 	}
 	// Validation reads from the cache.
@@ -120,7 +123,7 @@ func TestSessionService_Revoke(t *testing.T) {
 	if _, ok := s.Validate(sess.Token); ok {
 		t.Fatal("revoked token should not validate")
 	}
-	if _, ok := repo.stored[sess.Token]; ok {
+	if _, ok := repo.stored[tokenKey(sess.Token)]; ok {
 		t.Fatal("revoked token should be gone from the durable store")
 	}
 }
@@ -129,8 +132,9 @@ func TestSessionService_WarmLoadsCacheFromDB(t *testing.T) {
 	repo, cache := newFakeSessionRepo(), newFakeSessionCache()
 	// Simulate rows already in the DB from before a restart.
 	now := time.Now()
-	repo.stored["t1"] = domain.Session{Token: "t1", UserID: "u1", ExpiresAt: now.Add(time.Hour)}
-	repo.stored["t2"] = domain.Session{Token: "t2", UserID: "u2", ExpiresAt: now.Add(time.Hour)}
+	// Rows hold token hashes (see tokenKey), as migration 0020 left them.
+	repo.stored[tokenKey("t1")] = domain.Session{Token: tokenKey("t1"), UserID: "u1", ExpiresAt: now.Add(time.Hour)}
+	repo.stored[tokenKey("t2")] = domain.Session{Token: tokenKey("t2"), UserID: "u2", ExpiresAt: now.Add(time.Hour)}
 
 	s := NewSessionService(repo, cache)
 	n, err := s.Warm(context.Background())

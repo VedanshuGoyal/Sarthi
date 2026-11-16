@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -62,18 +64,21 @@ func (s *SessionService) Issue(ctx context.Context, userID string) (domain.Sessi
 		CreatedAt: now,
 		ExpiresAt: now.Add(s.ttl),
 	}
-	// Write the durable copy first: if the DB write fails we never hand out a
-	// token that wouldn't survive a restart.
-	if err := s.repo.Create(ctx, sess); err != nil {
+	// Only the token's hash is stored and cached; the raw token goes back to
+	// the client and nowhere else. Write the durable copy first: if the DB
+	// write fails we never hand out a token that wouldn't survive a restart.
+	stored := sess
+	stored.Token = tokenKey(token)
+	if err := s.repo.Create(ctx, stored); err != nil {
 		return domain.Session{}, err
 	}
-	s.cache.Put(sess)
+	s.cache.Put(stored)
 	return sess, nil
 }
 
 // Validate returns the user id for a token, reading only the cache (no DB hit).
 func (s *SessionService) Validate(token string) (userID string, ok bool) {
-	sess, ok := s.cache.Get(token)
+	sess, ok := s.cache.Get(tokenKey(token))
 	if !ok {
 		return "", false
 	}
@@ -83,10 +88,11 @@ func (s *SessionService) Validate(token string) (userID string, ok bool) {
 // Revoke deletes a session from both stores (logout). Unknown tokens are a
 // no-op.
 func (s *SessionService) Revoke(ctx context.Context, token string) error {
-	if err := s.repo.Delete(ctx, token); err != nil {
+	key := tokenKey(token)
+	if err := s.repo.Delete(ctx, key); err != nil {
 		return err
 	}
-	s.cache.Delete(token)
+	s.cache.Delete(key)
 	return nil
 }
 
@@ -99,6 +105,14 @@ func (s *SessionService) Warm(ctx context.Context) (int, error) {
 	}
 	s.cache.Load(sessions)
 	return len(sessions), nil
+}
+
+// tokenKey is what the database and cache hold in place of a bearer token:
+// its SHA-256, hex-encoded. A dump or backup of the sessions tables then holds
+// no working credentials. Migration 0020 converted tokens issued before.
+func tokenKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // newToken returns a URL-safe, high-entropy opaque token.
