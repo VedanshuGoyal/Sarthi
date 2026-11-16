@@ -594,6 +594,34 @@ func TestEditingAfterSubmissionReopensReview(t *testing.T) {
 	}
 }
 
+// Re-saving a step unchanged — or sending nothing — must not take a verified
+// driver off the road.
+func TestUnchangedProfileKeepsAVerifiedDriverVerified(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	completeKYC(t, svc, store)
+	if _, err := svc.Submit(t.Context(), testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	p := store.profile
+	unchanged := map[string]ProfileUpdate{
+		"empty":        {},
+		"transmission": {Transmission: ptr(string(p.Transmission))},
+		"identity, as on the Aadhaar": {
+			FullName: ptr(p.FullName), DateOfBirth: p.DateOfBirth, Gender: ptr(string(p.Gender)),
+		},
+		"same Aadhaar number, spaced": {AadhaarNumber: ptr("1234 5678 9012")},
+		"same licence, lower case":    {DrivingLicenseNumber: ptr("mp09 2019 0012345")},
+	}
+	for name, u := range unchanged {
+		if err := svc.UpdateProfile(t.Context(), testDriverID, u); err != nil {
+			t.Fatalf("%s: UpdateProfile: %v", name, err)
+		}
+		if store.profile.KYCStatus != domain.KYCVerified {
+			t.Fatalf("%s: status = %q, want still verified", name, store.profile.KYCStatus)
+		}
+	}
+}
+
 func TestOpenDocumentPrefersASignedURL(t *testing.T) {
 	svc, _, blob := newTestService(t)
 	if _, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 80, 80)); err != nil {
@@ -849,6 +877,9 @@ func (f *fakeKYCStore) UpdateProfile(_ context.Context, _ string, p repository.U
 	}
 	if p.AadhaarLast4 != nil {
 		f.profile.AadhaarLast4 = *p.AadhaarLast4
+	}
+	if p.AadhaarFingerprint != nil {
+		f.profile.AadhaarFingerprint = *p.AadhaarFingerprint
 	}
 	if p.DrivingLicenseNumber != nil {
 		f.profile.DrivingLicenseNumber = *p.DrivingLicenseNumber

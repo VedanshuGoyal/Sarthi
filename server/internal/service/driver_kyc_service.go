@@ -323,18 +323,19 @@ type ProfileUpdate struct {
 // Once DigiLocker has verified the Aadhaar, the name, date of birth and gender
 // are the Aadhaar's: sending them unchanged is fine, changing them is
 // [ErrIdentityLocked].
+//
+// Only a real change reopens the driver's KYC: re-saving a step as it is (or
+// sending nothing) leaves a verified driver verified.
 func (s *DriverKYCService) UpdateProfile(ctx context.Context, driverID string, u ProfileUpdate) error {
-	if u.FullName != nil || u.DateOfBirth != nil || u.Gender != nil {
-		profile, err := s.store.FindProfile(ctx, driverID)
-		if err != nil {
-			return err
+	profile, err := s.store.FindProfile(ctx, driverID)
+	if err != nil {
+		return err
+	}
+	if profile.AadhaarVerifiedAt != nil && (u.FullName != nil || u.DateOfBirth != nil || u.Gender != nil) {
+		if changesIdentity(profile, u) {
+			return ErrIdentityLocked
 		}
-		if profile.AadhaarVerifiedAt != nil {
-			if changesIdentity(profile, u) {
-				return ErrIdentityLocked
-			}
-			u.FullName, u.DateOfBirth, u.Gender = nil, nil, nil
-		}
+		u.FullName, u.DateOfBirth, u.Gender = nil, nil, nil
 	}
 
 	var p repository.UpdateProfileParams
@@ -391,8 +392,24 @@ func (s *DriverKYCService) UpdateProfile(ctx context.Context, driverID string, u
 	if err := s.store.UpdateProfile(ctx, driverID, p); err != nil {
 		return err
 	}
+	if !profileChanges(profile, p) {
+		return nil
+	}
 	// Editing a step invalidates any earlier submission.
 	return s.store.SetKYCStatus(ctx, driverID, domain.KYCIncomplete, false)
+}
+
+// profileChanges reports whether applying p would change any stored field
+// of old.
+func profileChanges(old domain.DriverProfile, p repository.UpdateProfileParams) bool {
+	differs := func(v *string, current string) bool { return v != nil && *v != current }
+	return differs(p.Transmission, string(old.Transmission)) ||
+		differs(p.FullName, old.FullName) ||
+		differs(p.Gender, string(old.Gender)) ||
+		differs(p.AadhaarFingerprint, old.AadhaarFingerprint) ||
+		differs(p.DrivingLicenseNumber, old.DrivingLicenseNumber) ||
+		(p.DateOfBirth != nil &&
+			(old.DateOfBirth == nil || p.DateOfBirth.Format(time.DateOnly) != old.DateOfBirth.Format(time.DateOnly)))
 }
 
 // SetBankAccount validates and stores where a driver's earnings are paid. The

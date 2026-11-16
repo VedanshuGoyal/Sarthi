@@ -176,8 +176,11 @@ type DriverProfile struct {
 	Transmission         DriverTransmission `json:"transmission,omitempty"`
 	AadhaarLast4         string             `json:"aadhaarLast4,omitempty"`
 	DrivingLicenseNumber string             `json:"drivingLicenseNumber,omitempty"`
-	KYCStatus            KYCStatus          `json:"kycStatus"`
-	KYCSubmittedAt       *time.Time         `json:"kycSubmittedAt,omitempty"`
+	// AadhaarFingerprint is the keyed hash of the typed Aadhaar number, so an
+	// unchanged re-save can be told from a new number. Never serialised.
+	AadhaarFingerprint string     `json:"-"`
+	KYCStatus          KYCStatus  `json:"kycStatus"`
+	KYCSubmittedAt     *time.Time `json:"kycSubmittedAt,omitempty"`
 
 	// AadhaarVerifiedAt is when DigiLocker confirmed the Aadhaar. From then on
 	// FullName, DateOfBirth and Gender are the Aadhaar's and can't be edited.

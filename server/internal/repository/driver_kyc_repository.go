@@ -248,7 +248,8 @@ const profileColumns = `d.name, d.date_of_birth, coalesce(d.gender, ''), d.trans
 	d.kyc_status, d.kyc_submitted_at,
 	d.aadhaar_verified_at, coalesce(d.digilocker_client_id, ''),
 	d.license_verified_at, coalesce(d.license_name, ''), d.license_valid_until,
-	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, '')`
+	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, ''),
+	coalesce(d.aadhaar_fingerprint, '')`
 
 // profileScan returns the Scan targets for profileColumns, and a func that
 // finishes p once the row has been read.
@@ -260,6 +261,7 @@ func profileScan(p *domain.DriverProfile) ([]any, func()) {
 		&p.AadhaarVerifiedAt, &p.DigiLockerClientID,
 		&p.LicenseVerifiedAt, &p.LicenseName, &validUntil,
 		&p.LicenseClasses, &p.KYCReviewNote,
+		&p.AadhaarFingerprint,
 	}
 	return dest, func() {
 		if validUntil != nil {
