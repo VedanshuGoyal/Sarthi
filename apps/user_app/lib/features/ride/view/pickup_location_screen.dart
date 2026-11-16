@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,18 +72,26 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
     super.dispose();
   }
 
+  /// Set once a pickup has been handed back by popping, so a second choice
+  /// before the route is gone can't pop the screen underneath too.
+  bool _chosen = false;
+
   /// Completes the step with [pickup]: persists it to recents (best-effort)
   /// and hands it back. A null [pickup] means the tap couldn't be resolved —
   /// the view model has already surfaced why, so we stay put.
+  ///
+  /// The recents save runs in the background: it's a network call with no
+  /// bearing on the choice, and waiting on it held the customer on this
+  /// screen, with nothing to show for their tap, for as long as it took.
   Future<void> _choose(
     PickupSelectionViewModel vm,
     PickupLocation? pickup,
   ) async {
-    if (pickup == null) return;
-    await vm.rememberSelected();
-    if (!mounted) return;
+    if (pickup == null || _chosen) return;
+    unawaited(vm.rememberSelected());
     final onConfirmed = widget.onConfirmed;
     if (onConfirmed != null) return onConfirmed(context, pickup);
+    _chosen = true;
     Navigator.of(context).pop(pickup);
   }
 

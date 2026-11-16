@@ -6,7 +6,9 @@ import 'data/cars_api.dart';
 import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'data/ola_maps_authenticator.dart';
+import 'data/recent_locations_storage.dart';
 import 'data/recent_pickups_api.dart';
+import 'data/saved_cars_storage.dart';
 import 'data/upi_checkout.dart';
 import 'domain/one_way_trip.dart';
 import 'domain/pickup_location.dart';
@@ -40,9 +42,25 @@ final tripSelectionViewModelProvider =
 /// auth state (like [authRepositoryProvider]).
 final locationRepositoryProvider = Provider<LocationRepository>((ref) {
   String? sessionToken() => ref.read(authControllerProvider).valueOrNull?.token;
+  final backend = ref.watch(backendClientProvider);
   return LocationRepository(
-    tokenProvider: OlaMapsAuthenticator(tokenGetter: sessionToken).accessToken,
-    recentsApi: RecentPickupsApi(tokenGetter: sessionToken),
+    client: ref.watch(thirdPartyClientProvider),
+    tokenProvider: OlaMapsAuthenticator(
+      client: backend,
+      tokenGetter: sessionToken,
+    ).accessToken,
+    recentsApi: RecentPickupsApi(client: backend, tokenGetter: sessionToken),
+    recentsCache: SecureRecentLocationsStorage(
+      userId: ref.watch(_userIdProvider),
+    ),
+  );
+});
+
+/// The signed-in customer's id, so the on-device caches below are kept per
+/// account.
+final _userIdProvider = Provider<String?>((ref) {
+  return ref.watch(
+    authControllerProvider.select((s) => s.valueOrNull?.user.id),
   );
 });
 
@@ -51,6 +69,7 @@ final locationRepositoryProvider = Provider<LocationRepository>((ref) {
 /// Overridden in tests with a fake so no real request is made.
 final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
   return BookingRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });
@@ -97,8 +116,10 @@ final upiCheckoutProvider = Provider<UpiCheckout>((ref) {
 final carsRepositoryProvider = Provider<CarsRepository>((ref) {
   return CarsRepository(
     api: CarsApi(
+      client: ref.watch(backendClientProvider),
       tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
     ),
+    storage: SecureSavedCarsStorage(userId: ref.watch(_userIdProvider)),
   );
 });
 

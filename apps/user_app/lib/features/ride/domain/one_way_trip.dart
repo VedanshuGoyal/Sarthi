@@ -49,7 +49,7 @@ class OneWayTrip {
   Map<String, dynamic> toJson() => {
     'start': start.toJson(),
     'destination': destination.toJson(),
-    'scheduledAt': scheduledAt.toIso8601String(),
+    'scheduledAt': scheduledAt.toUtc().toIso8601String(),
     'estimatedTravelMinutes': estimatedTravelTime.inMinutes,
     'car': car.toJson(),
   };

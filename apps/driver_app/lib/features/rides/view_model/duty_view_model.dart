@@ -71,11 +71,15 @@ class DutyViewModel extends ChangeNotifier {
     try {
       if (online) {
         _position = await _location.currentPosition();
+        // Signed out while locating: this view model is gone, and nothing
+        // would ever cancel a poll started now.
+        if (_disposed) return;
         await _repository.setDuty(
           online: true,
           lat: _position?.lat,
           lng: _position?.lng,
         );
+        if (_disposed) return;
         _isOnline = true;
         _timer = Timer.periodic(pollEvery, (_) => refresh(locate: true));
         await refresh();
@@ -97,6 +101,10 @@ class DutyViewModel extends ChangeNotifier {
 
   /// Re-reads the open requests. With [locate], refreshes the driver's
   /// position first and re-reports it to the backend.
+  ///
+  /// Going off duty while this is in flight wins: locating can take a few
+  /// seconds, and re-reporting "online" after the driver went offline would
+  /// put them back in line for ride pushes behind their back.
   Future<void> refresh({bool locate = false}) async {
     if (!_isOnline || _isLoading) return;
     _isLoading = true;
@@ -104,19 +112,22 @@ class DutyViewModel extends ChangeNotifier {
     try {
       if (locate) {
         _position = await _location.currentPosition() ?? _position;
+        if (!_isOnline || _disposed) return;
         await _repository.setDuty(
           online: true,
           lat: _position?.lat,
           lng: _position?.lng,
         );
       }
-      _requests = await _repository.requests(
+      final requests = await _repository.requests(
         lat: _position?.lat,
         lng: _position?.lng,
       );
+      if (!_isOnline) return;
+      _requests = requests;
       _error = null;
     } on RidesException catch (e) {
-      _error = e.message;
+      if (_isOnline) _error = e.message;
     } finally {
       _isLoading = false;
       _notify();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -59,7 +61,11 @@ void main() {
     tester,
   ) async {
     final harness = _Harness();
-    await harness.pump(tester, suggestions: const [_suggestion], query: 'Connaught');
+    await harness.pump(
+      tester,
+      suggestions: const [_suggestion],
+      query: 'Connaught',
+    );
 
     expect(find.text('Connaught Place'), findsOneWidget);
     // Tap-and-go: choosing a result is the confirmation.
@@ -68,7 +74,11 @@ void main() {
 
   testWidgets('tapping a suggestion confirms it immediately', (tester) async {
     final harness = _Harness();
-    await harness.pump(tester, suggestions: const [_suggestion], query: 'Connaught');
+    await harness.pump(
+      tester,
+      suggestions: const [_suggestion],
+      query: 'Connaught',
+    );
 
     await tester.tap(find.text('Connaught Place'));
     await tester.pumpAndSettle();
@@ -117,4 +127,63 @@ void main() {
     expect(harness.confirmed, isNotNull);
     expect(harness.confirmed!.address, 'My street, New Delhi');
   });
+
+  testWidgets('a slow recents save does not hold the customer on the screen', (
+    tester,
+  ) async {
+    // The backend never answers the recents save.
+    final repo = _HangingRecentsRepository();
+    PickupLocation? picked;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          locationRepositoryProvider.overrideWithValue(repo),
+          pickupSelectionViewModelProvider.overrideWith(
+            (ref) => PickupSelectionViewModel(
+              repository: ref.watch(locationRepositoryProvider),
+              initialQuery: 'Connaught',
+              initialSuggestions: const [_suggestion],
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  picked = await Navigator.of(context).push<PickupLocation>(
+                    MaterialPageRoute(
+                      builder: (_) => const PickupLocationScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Set pickup'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Set pickup'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connaught Place'));
+    await tester.pumpAndSettle();
+
+    expect(picked?.address, 'Connaught Place, New Delhi');
+    expect(find.byType(PickupLocationScreen), findsNothing);
+    // Back where the pickup was asked for, not a screen further down.
+    expect(find.text('Set pickup'), findsOneWidget);
+    expect(repo.remembered.map((p) => p.address), [
+      'Connaught Place, New Delhi',
+    ]);
+  });
+}
+
+class _HangingRecentsRepository extends FakeLocationRepository {
+  @override
+  Future<List<PickupLocation>> rememberPickup(PickupLocation pickup) {
+    remembered.add(pickup);
+    return Completer<List<PickupLocation>>().future;
+  }
 }

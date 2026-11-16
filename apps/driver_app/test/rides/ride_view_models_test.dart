@@ -1,12 +1,52 @@
+import 'dart:async';
+
 import 'package:checks/checks.dart';
+import 'package:driver_app/core/services/location_service.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/view/ride_format.dart';
 import 'package:driver_app/features/rides/view_model/duty_view_model.dart';
+import 'package:driver_app/features/rides/view_model/earnings_view_model.dart';
 import 'package:driver_app/features/rides/view_model/my_rides_view_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
+
+/// A [FakeRidesRepository] whose ride list and earnings are read when asked
+/// for but only answered once [gate] (if set) completes — a slow poll.
+class _GatedRides extends FakeRidesRepository {
+  Completer<void>? gate;
+
+  @override
+  Future<List<Ride>> myRides() async {
+    final answer = List.of(mine);
+    final wait = gate;
+    if (wait != null) await wait.future;
+    return answer;
+  }
+
+  @override
+  Future<Earnings> earnings() async {
+    final wait = gate;
+    if (wait != null) await wait.future;
+    return summary;
+  }
+}
+
+/// A [FakeLocationService] whose fix waits on [gate] when it's set — GPS
+/// taking its time.
+class _GatedLocation extends FakeLocationService {
+  Completer<void>? gate;
+
+  @override
+  Future<DevicePosition?> currentPosition({
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    final wait = gate;
+    if (wait != null) await wait.future;
+    return position;
+  }
+}
 
 void main() {
   group('DutyViewModel', () {
@@ -76,6 +116,51 @@ void main() {
 
       check(error).isNotNull().contains('overlaps');
       check(vm.requests).length.equals(2);
+    });
+  });
+
+  group('DutyViewModel races', () {
+    test('going offline mid-refresh is not undone by that refresh', () async {
+      final repo = FakeRidesRepository()..openRides = [ride(id: 'a')];
+      final location = _GatedLocation();
+      final vm = DutyViewModel(
+        repository: repo,
+        location: location,
+        pollEvery: const Duration(hours: 1),
+      );
+      addTearDown(vm.dispose);
+      await vm.setOnline(true);
+
+      // The poll is still waiting on a GPS fix when the driver goes offline.
+      final gate = location.gate = Completer<void>();
+      final polling = vm.refresh(locate: true);
+      await vm.setOnline(false);
+      gate.complete();
+      await polling;
+
+      check(repo.duty).deepEquals([true, false]);
+      check(vm.isOnline).isFalse();
+      check(vm.requests).isEmpty();
+    });
+
+    test('signing out while going online starts no poll', () async {
+      final repo = FakeRidesRepository();
+      final location = _GatedLocation();
+      final vm = DutyViewModel(
+        repository: repo,
+        location: location,
+        pollEvery: const Duration(milliseconds: 5),
+      );
+
+      final gate = location.gate = Completer<void>();
+      final going = vm.setOnline(true);
+      vm.dispose();
+      gate.complete();
+      await going;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // Nothing reported this driver online, then or on a leaked timer.
+      check(repo.duty).isEmpty();
     });
   });
 
@@ -179,24 +264,27 @@ void main() {
       check(cancelledRide.cancelReason).equals('Plans changed');
     });
 
-    test('rating a completed ride sends stars and note, then upserts', () async {
-      final repo = FakeRidesRepository()
-        ..mine = [ride(id: 'r', status: 'completed')];
-      final vm = MyRidesViewModel(repository: repo);
-      await vm.load();
+    test(
+      'rating a completed ride sends stars and note, then upserts',
+      () async {
+        final repo = FakeRidesRepository()
+          ..mine = [ride(id: 'r', status: 'completed')];
+        final vm = MyRidesViewModel(repository: repo);
+        await vm.load();
 
-      final error = await vm.act(
-        vm.byId('r')!,
-        RideAction.rate,
-        stars: 4,
-        note: 'Great customer',
-      );
+        final error = await vm.act(
+          vm.byId('r')!,
+          RideAction.rate,
+          stars: 4,
+          note: 'Great customer',
+        );
 
-      check(error).isNull();
-      check(repo.lastRating).equals((4, 'Great customer'));
-      check(vm.byId('r')!.myRating!.stars).equals(4);
-      check(vm.byId('r')!.myRating!.note).equals('Great customer');
-    });
+        check(error).isNull();
+        check(repo.lastRating).equals((4, 'Great customer'));
+        check(vm.byId('r')!.myRating!.stars).equals(4);
+        check(vm.byId('r')!.myRating!.note).equals('Great customer');
+      },
+    );
 
     test('rating errors get friendly messages', () async {
       final repo = FakeRidesRepository()
@@ -219,6 +307,59 @@ void main() {
       check(
         await vm.act(vm.byId('r')!, RideAction.rate, stars: 4),
       ).equals("This ride can't be rated right now.");
+    });
+
+    test('a slow load does not undo steps taken while it ran', () async {
+      final repo = _GatedRides()
+        ..mine = [
+          ride(id: 'stay', status: 'accepted'),
+          ride(id: 'gone', status: 'accepted'),
+        ];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      // The poll's answer was read before the driver arrived and handed one
+      // back, and lands after both.
+      final gate = repo.gate = Completer<void>();
+      final polling = vm.load();
+      check(await vm.act(vm.byId('stay')!, RideAction.arrive)).isNull();
+      check(await vm.act(vm.byId('gone')!, RideAction.release)).isNull();
+      gate.complete();
+      await polling;
+
+      check(vm.byId('stay')!.status).equals(RideStatus.arrived);
+      check(vm.byId('gone')).isNull();
+      check(vm.isLoading).isFalse();
+    });
+
+    test('only the latest of two overlapping loads is used', () async {
+      final repo = _GatedRides()..mine = [ride(id: 'r', status: 'accepted')];
+      final vm = MyRidesViewModel(repository: repo);
+
+      final older = repo.gate = Completer<void>();
+      final first = vm.load();
+      repo
+        ..gate = null
+        ..mine = [ride(id: 'r', status: 'arrived')];
+      await vm.load();
+      older.complete();
+      await first;
+
+      check(vm.byId('r')!.status).equals(RideStatus.arrived);
+    });
+
+    test('a load settling after a sign-out notifies no one', () async {
+      final repo = _GatedRides()..mine = [ride(id: 'r', status: 'accepted')];
+      final rides = MyRidesViewModel(repository: repo);
+      final earnings = EarningsViewModel(repository: repo);
+
+      final gate = repo.gate = Completer<void>();
+      final loads = Future.wait([rides.load(), earnings.load()]);
+      rides.dispose();
+      earnings.dispose();
+      gate.complete();
+
+      await loads;
     });
   });
 

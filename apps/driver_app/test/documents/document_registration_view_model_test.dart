@@ -1,8 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:checks/checks.dart';
+import 'package:driver_app/features/auth/data/driver_session_storage.dart';
+import 'package:driver_app/features/auth/domain/driver.dart';
+import 'package:driver_app/features/auth/domain/driver_auth_session.dart';
+import 'package:driver_app/features/auth/driver_auth_controller.dart';
 import 'package:driver_app/features/documents/data/document_file_store.dart';
 import 'package:driver_app/features/documents/data/driver_kyc_repository.dart';
+import 'package:driver_app/features/documents/document_providers.dart';
 import 'package:driver_app/features/documents/domain/digilocker_session.dart';
 import 'package:driver_app/features/documents/domain/document_kind.dart';
 import 'package:driver_app/features/documents/domain/document_step.dart';
@@ -10,6 +16,7 @@ import 'package:driver_app/features/documents/domain/driver_kyc.dart';
 import 'package:driver_app/features/documents/domain/gender.dart';
 import 'package:driver_app/features/documents/domain/vehicle_type.dart';
 import 'package:driver_app/features/documents/view_model/document_registration_view_model.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -209,6 +216,105 @@ void main() {
         check(captures).length.equals(1);
       },
     );
+  });
+
+  group('per driver', () {
+    DriverAuthSession session(String id) => DriverAuthSession(
+      token: 'tok-$id',
+      driver: Driver(id: id, phoneE164: '+919800000001', name: 'Driver $id'),
+    );
+
+    test('the next driver on this phone starts unverified', () async {
+      final repository = _FakeKycRepository(
+        kyc: const DriverKyc(status: KycStatus.verified, fullName: 'Asha'),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          driverSessionStorageProvider.overrideWithValue(
+            _MemorySessionStorage(session('d1')),
+          ),
+          driverKycRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(driverAuthControllerProvider.future);
+
+      final first = container.read(documentRegistrationViewModelProvider);
+      await first.setVehicleType(VehicleType.both);
+      check(first.isVerified).isTrue();
+
+      final auth = container.read(driverAuthControllerProvider.notifier);
+      await auth.signOut();
+      await auth.signIn(session('d2'));
+
+      final second = container.read(documentRegistrationViewModelProvider);
+      check(identical(first, second)).isFalse();
+      check(second.isVerified).isFalse();
+      check(second.kyc.fullName).isEmpty();
+    });
+
+    test('a request settling after a sign-out notifies no one', () async {
+      final repository = _GatedKycRepository(kyc: _completeKyc);
+      final vm = viewModel(repository);
+
+      final verifying = vm.verifyDrivingLicense('MP0920190012345');
+      // Signing out replaces the view model while the check is in flight.
+      vm.dispose();
+      repository.gate.complete();
+
+      check(await verifying).isTrue();
+    });
+  });
+
+  group('double submits', () {
+    test('a retake while the photo is still uploading is ignored', () async {
+      final repository = _FakeKycRepository(
+        kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
+      );
+      final vm = viewModel(repository);
+
+      await Future.wait([
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('first.jpg')),
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('second.jpg')),
+      ]);
+
+      check(repository.uploaded).deepEquals([DocumentKind.selfie]);
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.uploaded);
+
+      // Once it has landed, a retake goes through again.
+      await vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('third.jpg'));
+      check(repository.uploaded).length.equals(2);
+    });
+
+    test('a capture that cannot be stored fails instead of hanging', () async {
+      final repository = _FakeKycRepository();
+      final vm = viewModel(repository);
+
+      await vm.capturePhoto(DocumentKind.selfie, '${tempDir.path}/gone.jpg');
+
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.failed);
+      check(vm.error).isNotNull();
+      check(repository.uploaded).isEmpty();
+    });
+
+    test('a second check while one is in flight is not sent', () async {
+      final repository = _FakeKycRepository(kyc: _completeKyc);
+      final vm = viewModel(repository);
+
+      final results = await Future.wait([
+        vm.verifyDrivingLicense('MP0920190012345'),
+        vm.verifyDrivingLicense('MP0920190012345'),
+      ]);
+
+      check(repository.verifiedLicenses).length.equals(1);
+      check(results).deepEquals([true, false]);
+      check(vm.isSaving).isFalse();
+      check(vm.error).isNull();
+    });
   });
 
   group('saving a step', () {
@@ -476,4 +582,33 @@ class _FakeKycRepository implements DriverKycRepository {
 
   @override
   Future<DriverKyc> submit() async => _respond();
+}
+
+/// A [_FakeKycRepository] whose licence check waits for [gate].
+class _GatedKycRepository extends _FakeKycRepository {
+  _GatedKycRepository({super.kyc});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<DriverKyc> verifyDrivingLicense(String number) async {
+    await gate.future;
+    return super.verifyDrivingLicense(number);
+  }
+}
+
+/// A session store held in memory, starting with [_session].
+class _MemorySessionStorage implements DriverSessionStorage {
+  _MemorySessionStorage(this._session);
+
+  DriverAuthSession? _session;
+
+  @override
+  Future<DriverAuthSession?> read() async => _session;
+
+  @override
+  Future<void> write(DriverAuthSession session) async => _session = session;
+
+  @override
+  Future<void> clear() async => _session = null;
 }

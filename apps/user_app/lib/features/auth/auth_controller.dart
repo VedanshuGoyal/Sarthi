@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
+import '../../core/services/app_http_client.dart';
 import 'data/session_storage.dart';
 import 'domain/auth_session.dart';
 
@@ -51,3 +53,27 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 /// The app-wide session controller.
 final authControllerProvider =
     AsyncNotifierProvider<AuthController, AuthSession?>(AuthController.new);
+
+/// The raw HTTP transport under [backendClientProvider] and
+/// [thirdPartyClientProvider]. Overridden in tests with a mock.
+final httpClientProvider = Provider<http.Client>((ref) => http.Client());
+
+/// The client for every call to the MOJUD backend: time-limited, and a 401
+/// to the current session signs the customer out (it expired or was
+/// revoked). A 401 for an older session's token — a request still in flight
+/// across a sign-out — is ignored.
+final backendClientProvider = Provider<http.Client>((ref) {
+  return AppHttpClient(
+    inner: ref.watch(httpClientProvider),
+    onSessionRejected: (token) {
+      final auth = ref.read(authControllerProvider.notifier);
+      if (auth.token == token) auth.signOut();
+    },
+  );
+});
+
+/// The client for third-party APIs (Ola Maps, Google Routes): time-limited
+/// only — their 401s say nothing about our session.
+final thirdPartyClientProvider = Provider<http.Client>((ref) {
+  return AppHttpClient(inner: ref.watch(httpClientProvider));
+});

@@ -56,9 +56,18 @@ class SavedCarsViewModel extends ChangeNotifier {
     super.dispose();
   }
 
+  /// Bumped by every change to [_cars], so a load that started before one
+  /// can tell its list is older.
+  int _version = 0;
+
   /// Fetches the saved cars. Called once when the provider builds; also the
   /// retry after a failed load.
+  ///
+  /// A load that lands after a car was added or removed keeps the newer
+  /// list the change returned. Any failure — not just a request error —
+  /// ends in [loadFailed], so the dropdown's spinner always stops.
   Future<void> load() async {
+    final version = _version;
     _isLoading = true;
     _loadFailed = false;
     notifyListeners();
@@ -66,8 +75,8 @@ class SavedCarsViewModel extends ChangeNotifier {
     try {
       final cars = await _repository.list();
       if (_disposed) return;
-      _cars = cars;
-    } on Exception {
+      if (version == _version) _cars = cars;
+    } catch (_) {
       if (_disposed) return;
       _loadFailed = true;
     }
@@ -91,7 +100,10 @@ class SavedCarsViewModel extends ChangeNotifier {
         type: type,
         transmission: transmission,
       );
-      if (!_disposed) _cars = result.cars;
+      if (!_disposed) {
+        _cars = result.cars;
+        _version++;
+      }
       return result.car;
     } finally {
       if (!_disposed) {
@@ -109,7 +121,10 @@ class SavedCarsViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       final cars = await _repository.remove(car);
-      if (!_disposed) _cars = cars;
+      if (!_disposed) {
+        _cars = cars;
+        _version++;
+      }
     } finally {
       if (!_disposed) {
         _removing = null;

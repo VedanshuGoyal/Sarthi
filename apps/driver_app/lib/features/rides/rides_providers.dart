@@ -12,6 +12,7 @@ import 'view_model/my_rides_view_model.dart';
 /// bearer token on demand from the in-memory session.
 final ridesRepositoryProvider = Provider<RidesRepository>((ref) {
   return RidesRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () =>
         ref.read(driverAuthControllerProvider).valueOrNull?.token,
   );

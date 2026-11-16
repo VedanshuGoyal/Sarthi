@@ -42,10 +42,13 @@ RideDetailsViewModel _vm(
 
 /// A payment page that closes with [outcome] and remembers what it opened.
 class _FakeCheckout implements UpiCheckout {
-  _FakeCheckout(this.outcome);
+  _FakeCheckout(this.outcome, {this.onOpen});
 
   final CheckoutOutcome outcome;
   final List<PaymentCheckout> opened = [];
+
+  /// Runs while the page is "open", before it closes with [outcome].
+  final void Function()? onOpen;
 
   @override
   Future<CheckoutOutcome> open(
@@ -53,6 +56,7 @@ class _FakeCheckout implements UpiCheckout {
     required String flowId,
   }) async {
     opened.add(checkout);
+    onOpen?.call();
     return outcome;
   }
 }
@@ -161,6 +165,55 @@ void main() {
       check(checkout.opened).isEmpty();
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
     });
+
+    test(
+      'leaving while the order is being made opens no payment page',
+      () async {
+        final server = FakeBookingServer([due()]);
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, checkout: checkout);
+
+        final paying = vm.pay();
+        // Back out of the screen before the server answers with the order.
+        vm.dispose();
+
+        check(await paying).isFalse();
+        check(checkout.opened).isEmpty();
+      },
+    );
+
+    test(
+      'leaving as the UPI page closes still gets the payment checked',
+      () async {
+        final server = FakeBookingServer([due()])..paidAfterSyncs = 2;
+        final repo = server.repository();
+        final bookings = MyBookingsViewModel(
+          repository: repo,
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        late final RideDetailsViewModel vm;
+        // The customer backs out of the ride screen right as PhonePe returns.
+        final checkout = _FakeCheckout(
+          CheckoutOutcome.success,
+          onOpen: () => vm.dispose(),
+        );
+        vm = RideDetailsViewModel(
+          repository: repo,
+          bookings: bookings,
+          bookingId: 'b1',
+          checkout: checkout,
+          paySyncEvery: Duration.zero,
+        );
+
+        await vm.pay();
+
+        // The list the Activity tab shows has the ride paid, so it doesn't
+        // offer to take the money again.
+        check(
+          bookings.byId('b1')!.paymentStatus,
+        ).equals(RidePaymentStatus.paid);
+      },
+    );
 
     test('payments not set up on the server', () async {
       final server = FakeBookingServer([due()])

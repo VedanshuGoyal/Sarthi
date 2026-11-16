@@ -19,18 +19,40 @@ class EarningsViewModel extends ChangeNotifier {
   bool get hasLoaded => _hasLoaded;
   String? get error => _error;
 
+  /// Re-reads the summary. Only the latest load's answer is used, so a slow
+  /// one from before a ride was completed can't put the old totals back.
   Future<void> load() async {
+    final seq = ++_loadSeq;
     _isLoading = true;
-    notifyListeners();
+    _notify();
     try {
-      _earnings = await _repository.earnings();
+      final earnings = await _repository.earnings();
+      if (seq != _loadSeq) return;
+      _earnings = earnings;
       _error = null;
     } on RidesException catch (e) {
-      _error = e.message;
+      if (seq == _loadSeq) _error = e.message;
     } finally {
-      _isLoading = false;
-      _hasLoaded = true;
-      notifyListeners();
+      if (seq == _loadSeq) {
+        _isLoading = false;
+        _hasLoaded = true;
+        _notify();
+      }
     }
+  }
+
+  int _loadSeq = 0;
+  bool _disposed = false;
+
+  /// Notifies only while alive: a different driver signing in replaces this
+  /// view model while a load may still be in flight.
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

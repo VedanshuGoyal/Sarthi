@@ -315,6 +315,40 @@ void main() {
       });
     });
 
+    test(
+      'an unexpected 2xx body is a KycException, not a raw parse error',
+      () async {
+        // A proxy's HTML page, or a shape this build doesn't know.
+        await check(
+          repositoryReturning('<html>ok</html>').load(),
+        ).throws<KycException>();
+        await check(
+          repositoryReturning(['not', 'an', 'object']).submit(),
+        ).throws<KycException>();
+        await check(
+          repositoryReturning({'profile': 'nope'}).load(),
+        ).throws<KycException>();
+      },
+    );
+
+    test('a capture that has gone from disk fails as a KycException', () async {
+      var sent = false;
+      final repository = repositoryReturning(
+        completeKyc(),
+        onRequest: (_) => sent = true,
+      );
+
+      await check(
+        repository.uploadDocument(
+          DocumentKind.selfie,
+          '/no/such/dir/selfie.jpg',
+        ),
+      ).throws<KycException>(
+        (failure) => failure.has((e) => e.message, 'message').contains('photo'),
+      );
+      check(sent).isFalse();
+    });
+
     test('reports an unreachable server rather than throwing raw', () async {
       final repository = DriverKycRepository(
         baseUrl: 'http://test.invalid',

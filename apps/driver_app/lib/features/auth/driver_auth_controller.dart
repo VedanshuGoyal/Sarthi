@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
+import '../../core/services/app_http_client.dart';
 import 'data/driver_session_storage.dart';
 import 'domain/driver_auth_session.dart';
 
@@ -53,3 +55,21 @@ final driverAuthControllerProvider =
     AsyncNotifierProvider<DriverAuthController, DriverAuthSession?>(
       DriverAuthController.new,
     );
+
+/// The raw HTTP transport under [backendClientProvider]. Overridden in
+/// tests with a mock.
+final httpClientProvider = Provider<http.Client>((ref) => http.Client());
+
+/// The client for every call to the MOJUD backend: time-limited, and a 401
+/// to the current session signs the driver out (it expired or was revoked).
+/// A 401 for an older session's token — a request still in flight across a
+/// sign-out — is ignored.
+final backendClientProvider = Provider<http.Client>((ref) {
+  return AppHttpClient(
+    inner: ref.watch(httpClientProvider),
+    onSessionRejected: (token) {
+      final auth = ref.read(driverAuthControllerProvider.notifier);
+      if (auth.token == token) auth.signOut();
+    },
+  );
+});

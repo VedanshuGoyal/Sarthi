@@ -37,6 +37,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   bool _isSaving = false;
   String? _error;
   String? _errorCode;
+  bool _disposed = false;
 
   /// On-device state: capture paths and permission grants.
   DriverDocuments get data => _data;
@@ -61,7 +62,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// the device. Safe to call more than once.
   Future<void> load() async {
     _isLoading = true;
-    notifyListeners();
+    _notify();
     try {
       _kyc = await _repository.load();
       await _restoreCaptures();
@@ -70,7 +71,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       _error = e.message;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -114,23 +115,43 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// [pickedPath] is what `image_picker` returned, which lives in the OS cache
   /// directory; it's copied somewhere durable first so a retry after a failed
   /// upload still has a file to send.
+  ///
+  /// A second capture of the same [kind] while one is still being stored or
+  /// uploaded is ignored: it would overwrite the file under the in-flight
+  /// request, and whichever reply landed last would win.
   Future<void> capturePhoto(DocumentKind kind, String pickedPath) async {
-    final path = await _files.persist(kind, pickedPath);
-    _data = _data
-        .withCapture(kind, path)
-        .withUploadState(kind, DocumentUploadState.uploading);
-    _error = null;
-    notifyListeners();
-
+    if (!_capturing.add(kind)) return;
     try {
-      _kyc = await _repository.uploadDocument(kind, path);
-      _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
-    } on KycException catch (e) {
-      _data = _data.withUploadState(kind, DocumentUploadState.failed);
-      _error = e.message;
+      final String path;
+      try {
+        path = await _files.persist(kind, pickedPath);
+      } on Exception {
+        _data = _data.withUploadState(kind, DocumentUploadState.failed);
+        _error = "Couldn't save the photo. Please take it again.";
+        _notify();
+        return;
+      }
+      _data = _data
+          .withCapture(kind, path)
+          .withUploadState(kind, DocumentUploadState.uploading);
+      _error = null;
+      _notify();
+
+      try {
+        _kyc = await _repository.uploadDocument(kind, path);
+        _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
+      } on KycException catch (e) {
+        _data = _data.withUploadState(kind, DocumentUploadState.failed);
+        _error = e.message;
+      }
+      _notify();
+    } finally {
+      _capturing.remove(kind);
     }
-    notifyListeners();
   }
+
+  /// Kinds with a capture being stored or uploaded right now.
+  final Set<DocumentKind> _capturing = {};
 
   /// Retries a failed upload for [kind] using the capture already on disk.
   Future<void> retryUpload(DocumentKind kind) async {
@@ -193,7 +214,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       backgroundLocationGranted: backgroundLocationGranted,
       batteryUnrestricted: batteryUnrestricted,
     );
-    notifyListeners();
+    _notify();
   }
 
   /// Submits the completed Document View. The backend clears the driver
@@ -209,7 +230,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     if (saved) {
       await _files.discardAll();
       _data = _data.copyWith(capturePaths: const {});
-      notifyListeners();
+      _notify();
     }
     return saved;
   }
@@ -220,17 +241,22 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     final kyc = await _run(write);
     if (kyc == null) return false;
     _kyc = kyc;
-    notifyListeners();
+    _notify();
     return true;
   }
 
   /// Runs a request with [isSaving] up, returning its result, or null with
   /// [error] and [errorCode] set.
+  ///
+  /// Returns null without sending while another request is in flight, so a
+  /// double tap can't send a check (DigiLocker, the licence lookup, the bank
+  /// penny-drop) or the final submission twice.
   Future<T?> _run<T>(Future<T> Function() request) async {
+    if (_isSaving) return null;
     _isSaving = true;
     _error = null;
     _errorCode = null;
-    notifyListeners();
+    _notify();
     try {
       return await request();
     } on KycException catch (e) {
@@ -239,7 +265,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       return null;
     } finally {
       _isSaving = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -254,5 +280,18 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       if (_kyc.hasUploaded(kind)) states[kind] = DocumentUploadState.uploaded;
     }
     _data = _data.copyWith(capturePaths: paths, uploadStates: states);
+  }
+
+  /// Notifies only while alive: a sign-out replaces this view model (see
+  /// `documentRegistrationViewModelProvider`) while a request may still be
+  /// in flight.
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

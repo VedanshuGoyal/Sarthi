@@ -84,7 +84,11 @@ void main() {
       final details = body['details'] as Map<String, dynamic>;
       check(details['hours']).equals(4);
       check(details['fare']).equals(440);
-      check(details['scheduledAt']).equals('2026-07-20T09:15:00.000');
+      // An instant, not a wall time the server must guess the zone of.
+      check(
+        details['scheduledAt'],
+      ).equals(DateTime(2026, 7, 20, 9, 15).toUtc().toIso8601String());
+      check(details['scheduledAt'] as String).endsWith('Z');
       check(
         (details['pickup'] as Map<String, dynamic>)['address'],
       ).equals('Connaught Place, New Delhi');
@@ -131,6 +135,29 @@ void main() {
     await check(
       repo.submitRoundTrip(_booking),
     ).throws<BookingSubmitException>();
+  });
+
+  test("a refused booking carries the server's reason", () async {
+    final repo = _repo(
+      (_) => http.Response(
+        jsonEncode({'error': 'pick a start time at least 45 minutes from now'}),
+        400,
+      ),
+    );
+    await check(repo.submitRoundTrip(_booking)).throws<BookingSubmitException>(
+      (e) => e
+          .has((e) => e.message, 'message')
+          .equals('Pick a start time at least 45 minutes from now.'),
+    );
+  });
+
+  test('an unreadable bookings list is a load failure', () async {
+    for (final body in ['<html>ok</html>', '{"bookings": "nope"}', '[]']) {
+      final repo = _repo((_) => http.Response(body, 200));
+      await check(repo.myBookings()).throws<BookingSubmitException>();
+    }
+    final empty = _repo((_) => http.Response('{}', 200));
+    check(await empty.myBookings()).isEmpty();
   });
 
   group('booking actions', () {

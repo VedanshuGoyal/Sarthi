@@ -11,6 +11,7 @@ import 'view_model/registration_view_model.dart';
 /// token without the repository holding its own copy.
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });

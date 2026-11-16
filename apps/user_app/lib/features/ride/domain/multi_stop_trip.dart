@@ -28,7 +28,7 @@ class MultiStopTrip {
 
   Map<String, dynamic> toJson() => {
     'start': start.toJson(),
-    'scheduledAt': scheduledAt.toIso8601String(),
+    'scheduledAt': scheduledAt.toUtc().toIso8601String(),
     'stops': [for (final stop in stops) stop.toJson()],
   };
 }
