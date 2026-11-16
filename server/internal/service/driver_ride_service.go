@@ -154,6 +154,10 @@ type DriverRideService struct {
 	alerts   RideAlerter
 	now      func() time.Time
 	newCode  func() (string, error)
+
+	// drivers serialises each driver's accepts and starts: both check the
+	// driver's other rides, then write, and two at once could both pass.
+	drivers keyedLocks
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
@@ -246,6 +250,9 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, ErrTransmissionMismatch
 	}
 
+	// From the clash check to the accept, one at a time per driver, so a
+	// double-fired accept on two overlapping rides can't win both.
+	defer s.drivers.lock(driverID)()
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
 		return domain.DriverRide{}, err
@@ -298,6 +305,9 @@ func (s *DriverRideService) Arrive(ctx context.Context, driverID, rideID string)
 // up is locked for a while ([ErrStartLocked]), so 10,000 guesses can't be
 // scripted.
 func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp string) (domain.DriverRide, error) {
+	// One at a time per driver, from the "nothing else underway" check to
+	// the start.
+	defer s.drivers.lock(driverID)()
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
 		return domain.DriverRide{}, err

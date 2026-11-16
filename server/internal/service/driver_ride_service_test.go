@@ -21,6 +21,10 @@ type fakeRideStore struct {
 	mu       sync.Mutex
 	rides    map[string]*domain.RideBooking
 	declined map[string]bool // rideID|driverID
+
+	// afterList, when set, runs after ListForDriver has read — a seam to
+	// widen the window between a check and the write that follows it.
+	afterList func()
 }
 
 func newFakeRideStore(rides ...domain.RideBooking) *fakeRideStore {
@@ -46,12 +50,16 @@ func (f *fakeRideStore) ListOpen(_ context.Context, driverID string, from time.T
 
 func (f *fakeRideStore) ListForDriver(_ context.Context, driverID string, _ int) ([]domain.RideBooking, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	var out []domain.RideBooking
 	for _, rb := range f.rides {
 		if rb.Booking.DriverID == driverID {
 			out = append(out, *rb)
 		}
+	}
+	hook := f.afterList
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
 	return out, nil
 }
@@ -368,6 +376,33 @@ func TestAccept_raceHasOneWinner(t *testing.T) {
 	wg.Wait()
 	if wins.Load() != 1 {
 		t.Errorf("winners = %d, want exactly 1", wins.Load())
+	}
+}
+
+// A double-fired accept on two overlapping rides must not win both: the
+// clash check and the accept run one at a time per driver.
+func TestAccept_sameDriverCantTakeTwoOverlappingRidesAtOnce(t *testing.T) {
+	store := newFakeRideStore(
+		openRide("r1", testNow.Add(time.Hour), 2, "automatic"),
+		openRide("r2", testNow.Add(time.Hour+30*time.Minute), 2, "automatic"),
+	)
+	store.afterList = func() { time.Sleep(20 * time.Millisecond) }
+	svc := newRideService(store)
+
+	var wins atomic.Int32
+	var wg sync.WaitGroup
+	for _, id := range []string{"r1", "r2"} {
+		wg.Go(func() {
+			if _, err := svc.Accept(context.Background(), "both", id); err == nil {
+				wins.Add(1)
+			} else if !errors.Is(err, ErrRideClash) {
+				t.Errorf("Accept %s: err = %v, want ErrRideClash for the loser", id, err)
+			}
+		})
+	}
+	wg.Wait()
+	if wins.Load() != 1 {
+		t.Errorf("the driver won %d overlapping rides, want 1", wins.Load())
 	}
 }
 
