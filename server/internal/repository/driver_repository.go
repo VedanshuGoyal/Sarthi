@@ -7,7 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -25,11 +24,11 @@ const driverColumns = "id, phone_e164, name, vehicle, created_at"
 
 // DriverRepository reads and writes driver accounts.
 type DriverRepository struct {
-	pool *pgxpool.Pool
+	pool DB
 }
 
-// NewDriverRepository wires the repository to a connection pool.
-func NewDriverRepository(pool *pgxpool.Pool) *DriverRepository {
+// NewDriverRepository wires the repository to a pool (or a test's tx).
+func NewDriverRepository(pool DB) *DriverRepository {
 	return &DriverRepository{pool: pool}
 }
 
@@ -37,6 +36,9 @@ func NewDriverRepository(pool *pgxpool.Pool) *DriverRepository {
 type CreateDriverParams struct {
 	PhoneE164 string
 	Name      string
+	// ConsentVersion is the Terms/Privacy version agreed to at sign-up;
+	// "" (old app builds) records no consent.
+	ConsentVersion string
 }
 
 // CreateDriver inserts a new driver account and returns it with the
@@ -44,12 +46,12 @@ type CreateDriverParams struct {
 // [ErrDriverPhoneTaken].
 func (r *DriverRepository) CreateDriver(ctx context.Context, p CreateDriverParams) (domain.Driver, error) {
 	const q = `
-		INSERT INTO drivers (phone_e164, name)
-		VALUES ($1, $2)
+		INSERT INTO drivers (phone_e164, name, consent_version, consented_at)
+		VALUES ($1, $2, NULLIF($3::text, ''), CASE WHEN $3::text <> '' THEN now() END)
 		RETURNING ` + driverColumns
 
 	var d domain.Driver
-	err := r.pool.QueryRow(ctx, q, p.PhoneE164, p.Name).
+	err := r.pool.QueryRow(ctx, q, p.PhoneE164, p.Name, p.ConsentVersion).
 		Scan(&d.ID, &d.PhoneE164, &d.Name, &d.Vehicle, &d.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError

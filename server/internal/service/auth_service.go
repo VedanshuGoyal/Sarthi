@@ -35,6 +35,9 @@ var (
 	// ErrOTPNotVerified means Register was called without a recently verified
 	// code for that number: the pass expired, was used, or never existed.
 	ErrOTPNotVerified = errors.New("your verification expired; verify your number again")
+	// ErrInvalidConsent means the consent version sent at sign-up isn't a
+	// short version tag like "2026-11".
+	ErrInvalidConsent = errors.New("consentVersion must be a short version tag like 2026-11")
 )
 
 // OTPLockedError reports that sending codes to a number is temporarily
@@ -55,7 +58,15 @@ func (e *OTPLockedError) Error() string {
 var (
 	phoneRe = regexp.MustCompile(`^\+91[6-9]\d{9}$`)
 	emailRe = regexp.MustCompile(`^[\w.+-]+@[\w-]+\.[\w.-]+$`)
+	// consentRe is a Terms/Privacy version tag, e.g. "2026-11".
+	consentRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$`)
 )
+
+// validConsent reports whether v is empty (old app builds send none, and
+// are recorded as no consent) or a version tag.
+func validConsent(v string) bool {
+	return v == "" || consentRe.MatchString(v)
+}
 
 // UserStore is the slice of persistence the auth service needs. Defining it
 // here (consumer side) keeps the service testable with a fake.
@@ -299,6 +310,9 @@ type RegisterParams struct {
 	Name        string
 	Email       string
 	DateOfBirth time.Time
+	// ConsentVersion is the Terms/Privacy version the person agreed to;
+	// optional, since older builds don't send it.
+	ConsentVersion string
 }
 
 // Register validates the profile, persists a new account, and logs it in
@@ -319,6 +333,8 @@ func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResul
 		return AuthResult{}, ErrInvalidEmail
 	case !isAdult(p.DateOfBirth):
 		return AuthResult{}, ErrInvalidDOB
+	case !validConsent(p.ConsentVersion):
+		return AuthResult{}, ErrInvalidConsent
 	}
 	// Checked after validation so a typo doesn't burn the pass.
 	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
@@ -330,6 +346,8 @@ func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResul
 		Name:        name,
 		Email:       email,
 		DateOfBirth: p.DateOfBirth,
+
+		ConsentVersion: p.ConsentVersion,
 	})
 	if err != nil {
 		return AuthResult{}, err
