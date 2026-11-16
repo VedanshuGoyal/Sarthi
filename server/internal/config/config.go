@@ -393,6 +393,11 @@ func loadSecrets(allowDev bool) (SecretsConfig, error) {
 	return SecretsConfig{EncryptionKey: key, Pepper: []byte(pepper)}, nil
 }
 
+// DevEncryptionKey is the public key used when ALLOW_DEV_DEFAULTS=1 and no
+// DOCUMENT_ENCRYPTION_KEY is set. cmd/rekey uses it to move data sealed under
+// it to a real key.
+func DevEncryptionKey() []byte { return devSecret("encryption-key") }
+
 // devSecret derives a fixed, deliberately public development key from label.
 func devSecret(label string) []byte {
 	sum := sha256.Sum256([]byte("sarthi-development-" + label))
