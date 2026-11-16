@@ -231,14 +231,26 @@ func (s *DriverRideService) MyRides(ctx context.Context, driverID string) ([]dom
 
 // Accept assigns the open ride rideID to driverID, provided they're cleared,
 // drive its gearbox, and have nothing else booked over the same hours.
+//
+// It is replay-safe: accepting a ride the driver already holds (a retry
+// after a lost reply, a double tap) returns it as it stands, rather than
+// telling them they lost it.
 func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
 	profile, err := s.clearedProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
+	// From reading the ride to the accept, one at a time per driver: a
+	// double-fired accept on two overlapping rides can't win both, and one
+	// fired twice on the same ride sees the first one's result.
+	defer s.drivers.lock(driverID)()
 	target, err := s.store.FindByID(ctx, rideID)
 	if err != nil {
 		return domain.DriverRide{}, err
+	}
+	if held, ok := heldBy(target, driverID); ok {
+		slog.InfoContext(ctx, "ride accept replayed", "driverId", driverID, "rideId", rideID)
+		return held, nil
 	}
 	if target.Booking.Status != domain.RideStatusRequested {
 		return domain.DriverRide{}, repository.ErrRideUnavailable
@@ -254,15 +266,12 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, ErrTransmissionMismatch
 	}
 
-	// From the clash check to the accept, one at a time per driver, so a
-	// double-fired accept on two overlapping rides can't win both.
-	defer s.drivers.lock(driverID)()
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
 	for _, rb := range mine {
-		if !holdsDriver(rb.Booking.Status) {
+		if !holdsDriver(rb.Booking.Status) || rb.Booking.ID == rideID {
 			continue
 		}
 		other, otherPlan, ok := toDriverRide(rb, false)
@@ -278,6 +287,14 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, err
 	}
 	rb, err := s.store.Accept(ctx, rideID, driverID, s.now(), code)
+	if errors.Is(err, repository.ErrRideUnavailable) {
+		// Lost the race — unless to this same driver, by another path.
+		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil {
+			if held, ok := heldBy(now, driverID); ok {
+				return held, nil
+			}
+		}
+	}
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
@@ -324,6 +341,11 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 		if rb.Booking.ID == rideID {
 			target = &mine[i]
 		}
+	}
+	// Already started (a retry after a lost reply): nothing to check again.
+	if target != nil && target.Booking.Status == domain.RideStatusInProgress {
+		ride, _, _ := toDriverRide(*target, true)
+		return ride, nil
 	}
 	if target == nil || target.Booking.Status != domain.RideStatusArrived {
 		return domain.DriverRide{}, repository.ErrRideStateConflict
@@ -472,8 +494,19 @@ func (s *DriverRideService) SetDuty(ctx context.Context, driverID string, online
 // SetDutyStore has SetDuty keep duty in PostgreSQL as well as in presence.
 func (s *DriverRideService) SetDutyStore(d DutyStore) { s.duty = d }
 
+// advance moves driverID's ride from one status to the next. It is
+// replay-safe: asking for the status the ride is already in returns the
+// ride, without telling the customer a second time.
 func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string, from, to domain.RideStatus) (domain.DriverRide, error) {
 	rb, err := s.store.Advance(ctx, rideID, driverID, from, to, s.now())
+	if errors.Is(err, repository.ErrRideStateConflict) {
+		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil &&
+			now.Booking.DriverID == driverID && now.Booking.Status == to {
+			slog.InfoContext(ctx, "ride step replayed", "driverId", driverID, "rideId", rideID, "status", to)
+			ride, _, _ := toDriverRide(now, true)
+			return ride, nil
+		}
+	}
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
@@ -616,6 +649,16 @@ func canDrive(d domain.DriverTransmission, car *domain.RideCar) bool {
 		return true
 	}
 	return string(d) == car.Transmission
+}
+
+// heldBy returns rb as its driver sees it when driverID holds it — accepted,
+// at the pickup or underway.
+func heldBy(rb domain.RideBooking, driverID string) (domain.DriverRide, bool) {
+	if rb.Booking.DriverID != driverID || !holdsDriver(rb.Booking.Status) {
+		return domain.DriverRide{}, false
+	}
+	ride, _, ok := toDriverRide(rb, true)
+	return ride, ok
 }
 
 // holdsDriver reports whether a ride in status s still occupies its driver.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -378,19 +379,126 @@ func TestAccept_refusals(t *testing.T) {
 func TestAccept_raceHasOneWinner(t *testing.T) {
 	store := newFakeRideStore(openRide("r1", testNow.Add(time.Hour), 2, "automatic"))
 	svc := newRideService(store)
+	profiles := fakeProfiles{}
+	for i := range 20 {
+		profiles[fmt.Sprint("d", i)] = domain.DriverProfile{KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth}
+	}
+	svc.profiles = profiles
 
-	var wins atomic.Int32
+	var winners sync.Map
 	var wg sync.WaitGroup
-	for range 20 {
+	for i := range 20 {
 		wg.Go(func() {
-			if _, err := svc.Accept(context.Background(), "both", "r1"); err == nil {
-				wins.Add(1)
+			if _, err := svc.Accept(context.Background(), fmt.Sprint("d", i), "r1"); err == nil {
+				winners.Store(i, true)
+			} else if !errors.Is(err, repository.ErrRideUnavailable) {
+				t.Errorf("loser's err = %v, want ErrRideUnavailable", err)
 			}
 		})
 	}
 	wg.Wait()
-	if wins.Load() != 1 {
-		t.Errorf("winners = %d, want exactly 1", wins.Load())
+	n := 0
+	winners.Range(func(any, any) bool { n++; return true })
+	if n != 1 {
+		t.Errorf("winners = %d, want exactly 1", n)
+	}
+}
+
+// A retried accept — the reply was lost, or the button fired twice — gets
+// the ride the driver holds, not "you lost it". The customer hears once.
+func TestAccept_isReplaySafe(t *testing.T) {
+	ride := openRide("r1", testNow.Add(3*time.Hour), 2, "automatic")
+	ride.Booking.UserID = "u1"
+	store := newFakeRideStore(ride)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+	ctx := context.Background()
+
+	first, err := svc.Accept(ctx, "auto", "r1")
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	again, err := svc.Accept(ctx, "auto", "r1")
+	if err != nil {
+		t.Fatalf("repeated Accept: %v, want the held ride", err)
+	}
+	if again.ID != "r1" || again.Status != domain.RideStatusAccepted || again.Customer == nil {
+		t.Errorf("repeated accept = %+v, want the accepted ride with its customer", again)
+	}
+	if got := store.rides["r1"].Booking.StartOTP; got != "1111" {
+		t.Errorf("start code = %q, want the first accept's 1111 kept", got)
+	}
+	if first.ID != again.ID || len(alerts.events) != 1 {
+		t.Errorf("alerts = %v, want the customer told once", alerts.events)
+	}
+	// Someone else still can't have it.
+	if _, err := svc.Accept(ctx, "both", "r1"); !errors.Is(err, repository.ErrRideUnavailable) {
+		t.Errorf("another driver: err = %v, want ErrRideUnavailable", err)
+	}
+
+	// A double tap by one driver: both taps get the ride.
+	store.rides["r2"] = ptr(openRide("r2", testNow.Add(8*time.Hour), 2, "automatic"))
+	var wins atomic.Int32
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Go(func() {
+			if _, err := svc.Accept(ctx, "auto", "r2"); err == nil {
+				wins.Add(1)
+			} else {
+				t.Errorf("double tap: err = %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if wins.Load() != 5 || store.rides["r2"].Booking.DriverID != "auto" {
+		t.Errorf("double tap: %d of 5 got the ride", wins.Load())
+	}
+}
+
+// Each step, asked for again once it's done, answers with the ride as it
+// stands — and the customer isn't told twice.
+func TestSteps_areReplaySafe(t *testing.T) {
+	ride := openRide("r1", testNow.Add(time.Hour), 2, "automatic")
+	ride.Booking.UserID = "u1"
+	store := newFakeRideStore(ride)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+	ctx := context.Background()
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		if got, err := svc.Arrive(ctx, "auto", "r1"); err != nil || got.Status != domain.RideStatusArrived {
+			t.Fatalf("Arrive = %v, %v", got.Status, err)
+		}
+	}
+	code := store.rides["r1"].Booking.StartOTP
+	if _, err := svc.Start(ctx, "auto", "r1", code); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// The retry may carry any code: the ride is already underway.
+	if got, err := svc.Start(ctx, "auto", "r1", ""); err != nil || got.Status != domain.RideStatusInProgress {
+		t.Errorf("repeated Start = %v, %v; want in_progress", got.Status, err)
+	}
+	for range 2 {
+		if got, err := svc.Complete(ctx, "auto", "r1"); err != nil || got.Status != domain.RideStatusCompleted {
+			t.Fatalf("Complete = %v, %v", got.Status, err)
+		}
+	}
+	want := []string{"assigned u1 r1", "arrived u1 auto r1", "completed u1 r1"}
+	if strings.Join(alerts.events, "|") != strings.Join(want, "|") {
+		t.Errorf("alerts = %q, want each once: %q", alerts.events, want)
+	}
+
+	// Going back a step is still refused, and so is another driver.
+	if _, err := svc.Arrive(ctx, "auto", "r1"); !errors.Is(err, repository.ErrRideStateConflict) {
+		t.Errorf("arrive after completing: err = %v, want ErrRideStateConflict", err)
+	}
+	if _, err := svc.Complete(ctx, "both", "r1"); !errors.Is(err, repository.ErrRideStateConflict) {
+		t.Errorf("another driver completing: err = %v, want ErrRideStateConflict", err)
 	}
 }
 

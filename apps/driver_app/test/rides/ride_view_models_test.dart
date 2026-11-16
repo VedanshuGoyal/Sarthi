@@ -119,6 +119,23 @@ void main() {
       check(handedOver).isEmpty();
     });
 
+    test('a ride "no longer available" that the driver holds counts as '
+        'accepted', () async {
+      // The first tap went through but its reply was lost; the retry hears
+      // "no longer available" from a server that isn't replay-safe.
+      repo.failures[RideAction.accept] = const RidesException(
+        'This ride is no longer available.',
+        code: 'ride_unavailable',
+      );
+      repo.mine = [ride(id: 'a', status: 'accepted')];
+      await vm.setOnline(true);
+      final error = await vm.accept(vm.requests.first);
+
+      check(error).isNull();
+      check(handedOver.single.id).equals('a');
+      check(vm.requests.map((r) => r.id)).deepEquals(['b']);
+    });
+
     test('a clash keeps the ride and passes the reason on', () async {
       repo.failures[RideAction.accept] = const RidesException(
         "This ride overlaps one you've already accepted.",
@@ -217,6 +234,35 @@ void main() {
       check(vm.byId('r')!.status).equals(RideStatus.completed);
       check(vm.completed).length.equals(1);
       check(earningsRefreshed).equals(1);
+    });
+
+    test('a step that had already happened is not reported as an '
+        'error', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'accepted')];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      // The first "I've arrived" landed; its reply didn't. The retry is
+      // refused by a server that isn't replay-safe, and the reload shows
+      // the ride already at the pickup.
+      repo
+        ..failures[RideAction.arrive] = const RidesException(
+          "This ride can't make that change right now.",
+          code: 'ride_state',
+        )
+        ..mine = [ride(id: 'r', status: 'arrived')];
+      check(await vm.act(vm.byId('r')!, RideAction.arrive)).isNull();
+      check(vm.byId('r')!.status).equals(RideStatus.arrived);
+
+      // A refusal for any other reason still says so.
+      repo.failures[RideAction.complete] = const RidesException(
+        "This ride can't make that change right now.",
+        code: 'ride_state',
+      );
+      check(
+        await vm.act(vm.byId('r')!, RideAction.complete),
+      ).equals("This ride can't make that change right now.");
     });
 
     test('starting sends the code and surfaces a wrong one', () async {
