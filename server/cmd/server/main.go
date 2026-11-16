@@ -192,8 +192,11 @@ func run() error {
 
 	// Driver rides: bookings move through accept → arrive → start → complete
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
+	driverRideStore := repository.NewDriverRideRepository(pool)
+	// Re-alerts skip the drivers who declined a ride or handed it back.
+	notify.SetDeclines(driverRideStore)
 	driverRides := service.NewDriverRideService(
-		repository.NewDriverRideRepository(pool),
+		driverRideStore,
 		driverProfiles,
 		presence,
 		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new

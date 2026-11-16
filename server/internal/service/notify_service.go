@@ -53,6 +53,12 @@ const (
 	// drivers who could take the ride.
 	maxAlertedDrivers = 200
 
+	// fewNearbyDrivers is how many fresh nearby drivers who could take a ride
+	// count as enough: with fewer, every verified driver with the app
+	// installed is alerted too (my estimate for launch, when drivers are few
+	// and their apps mostly in the background).
+	fewNearbyDrivers = 5
+
 	// pushTimeout bounds one event's sends.
 	pushTimeout = 30 * time.Second
 
@@ -69,6 +75,15 @@ type PushTokenStore interface {
 	Delete(ctx context.Context, token string) error
 	ForUser(ctx context.Context, userID string) ([]string, error)
 	ForDrivers(ctx context.Context, driverIDs []string) (map[string][]string, error)
+	// VerifiedDriversWithTokens lists up to limit KYC-verified drivers who
+	// have the app installed, most recently registered install first.
+	VerifiedDriversWithTokens(ctx context.Context, limit int) ([]string, error)
+}
+
+// DeclineReader says who passed on a ride: declined it in their feed or
+// handed it back (repository.DriverRideRepository).
+type DeclineReader interface {
+	DeclinedBy(ctx context.Context, rideID string) ([]string, error)
 }
 
 // NearbyDriverFinder searches the live presence index
@@ -99,9 +114,18 @@ type NotifyService struct {
 	sender   push.Sender
 	drivers  NearbyDriverFinder
 	profiles DriverProfileReader
+	declines DeclineReader
 	now      func() time.Time
 	wg       sync.WaitGroup
+
+	// fallbackBelow is fewNearbyDrivers; tests set 0 to see nearby drivers
+	// alone.
+	fallbackBelow int
 }
+
+// SetDeclines lets ride requests skip the drivers who passed on a ride.
+// Without it, a re-alert reaches them again.
+func (s *NotifyService) SetDeclines(d DeclineReader) { s.declines = d }
 
 // NewNotifyService wires the service. sender may be nil (pushes off).
 func NewNotifyService(tokens PushTokenStore, sender push.Sender, drivers NearbyDriverFinder, profiles DriverProfileReader) *NotifyService {
@@ -111,6 +135,8 @@ func NewNotifyService(tokens PushTokenStore, sender push.Sender, drivers NearbyD
 		drivers:  drivers,
 		profiles: profiles,
 		now:      time.Now,
+
+		fallbackBelow: fewNearbyDrivers,
 	}
 }
 
@@ -183,12 +209,26 @@ func (s *NotifyService) DriverReleased(ctx context.Context, b domain.Booking, pl
 }
 
 // alertDrivers sends "New ride request" for b to every eligible online
-// driver near its pickup, except skip.
+// driver near its pickup — and, when few of those are about, to every
+// verified driver with the app installed — except skip and anyone who
+// declined or handed the ride back.
 func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan tripPlan, skip string) {
 	closesIn := plan.ScheduledAt.Add(-acceptCutoff).Sub(s.now())
 	if closesIn <= 0 {
 		return
 	}
+	passed := s.passedOn(ctx, b.ID)
+	if skip != "" {
+		passed[skip] = true
+	}
+	eligible := func(driverID string) bool {
+		if passed[driverID] {
+			return false
+		}
+		p, err := s.profiles.FindProfile(ctx, driverID)
+		return err == nil && clearedToDrive(p, s.now()) == nil && canDrive(p.Transmission, plan.Car)
+	}
+
 	// Only fresh positions, and no cap until eligibility is known: the cap
 	// counts drivers who could take the ride, so nearer stale or ineligible
 	// ones can't crowd them out.
@@ -199,7 +239,6 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 		s.now().Add(-presenceFresh), 0)
 	if err != nil {
 		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
-		return
 	}
 	distance := map[string]float64{}
 	var ids []string
@@ -207,18 +246,19 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 		if len(ids) == maxAlertedDrivers {
 			break
 		}
-		if n.Driver.ID == skip {
-			continue
+		if eligible(n.Driver.ID) {
+			ids = append(ids, n.Driver.ID)
+			distance[n.Driver.ID] = n.DistanceM
 		}
-		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
-		if err != nil || clearedToDrive(p, s.now()) != nil || !canDrive(p.Transmission, plan.Car) {
-			continue
-		}
-		ids = append(ids, n.Driver.ID)
-		distance[n.Driver.ID] = n.DistanceM
+	}
+	// Rides are booked hours ahead, but presence only knows drivers whose
+	// app reported in the last few minutes — a phone in a pocket stops
+	// reporting. When few of those are near, ask the rest too.
+	if len(ids) < s.fallbackBelow {
+		ids = s.withFallbackDrivers(ctx, b.ID, ids, eligible)
 	}
 	if len(ids) == 0 {
-		slog.InfoContext(ctx, "push: no online drivers near request", "rideId", b.ID)
+		slog.InfoContext(ctx, "push: no drivers to alert for request", "rideId", b.ID)
 		return
 	}
 	byDriver, err := s.tokens.ForDrivers(ctx, ids)
@@ -234,10 +274,16 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	title := "New ride request · " + formatFare(fare, estimated)
 	sent := 0
 	for driverID, tokens := range byDriver {
-		body := fmt.Sprintf("%s · %s · %s away", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan),
-			formatDistance(distance[driverID]))
+		body := formatWhen(plan.ScheduledAt) + " · " + tripLabel(b.TripType, plan)
+		d, near := distance[driverID]
+		if near {
+			body += " · " + formatDistance(d) + " away"
+		}
 		if pickup.Address != "" {
 			body += "\nPickup area: " + pickup.Address
+		}
+		if !near {
+			body += "\nGo on duty in the app to see it."
 		}
 		for _, token := range tokens {
 			if s.send(ctx, push.Message{
@@ -253,7 +299,50 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 			}
 		}
 	}
-	slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver), "devices", sent)
+	slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver),
+		"nearby", len(distance), "devices", sent)
+}
+
+// withFallbackDrivers adds to ids, up to maxAlertedDrivers, the verified
+// drivers with the app installed who pass eligible and aren't in ids yet.
+func (s *NotifyService) withFallbackDrivers(ctx context.Context, rideID string, ids []string, eligible func(string) bool) []string {
+	all, err := s.tokens.VerifiedDriversWithTokens(ctx, maxAlertedDrivers)
+	if err != nil {
+		slog.WarnContext(ctx, "push: listing drivers for request failed", "rideId", rideID, "error", err)
+		return ids
+	}
+	have := map[string]bool{}
+	for _, id := range ids {
+		have[id] = true
+	}
+	for _, id := range all {
+		if len(ids) == maxAlertedDrivers {
+			break
+		}
+		if !have[id] && eligible(id) {
+			ids = append(ids, id)
+			have[id] = true
+		}
+	}
+	return ids
+}
+
+// passedOn is the set of drivers who declined ride rideID or handed it
+// back, so a re-alert doesn't ask them again. Empty when unknown.
+func (s *NotifyService) passedOn(ctx context.Context, rideID string) map[string]bool {
+	out := map[string]bool{}
+	if s.declines == nil {
+		return out
+	}
+	ids, err := s.declines.DeclinedBy(ctx, rideID)
+	if err != nil {
+		slog.WarnContext(ctx, "push: reading who declined a ride failed", "rideId", rideID, "error", err)
+		return out
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }
 
 // DriverAssigned tells customer userID that driverName took their ride.
