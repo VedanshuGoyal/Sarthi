@@ -63,6 +63,7 @@ type BookingStore interface {
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
 	Cancel(ctx context.Context, id, userID, reason string, at time.Time) (domain.Booking, error)
 	RateDriver(ctx context.Context, id, userID string, rating domain.RideRating) error
+	DriverBusyElsewhere(ctx context.Context, driverID, bookingID string) (bool, error)
 }
 
 // BookingAlerter tells drivers about bookings (NotifyService): a new ride
@@ -236,7 +237,9 @@ func (s *BookingService) DriverPhoto(ctx context.Context, userID, bookingID stri
 
 // DriverLocation returns where the driver of userID's booking last said they
 // were, while the ride is in its live-tracking window (see sharesLocation) —
-// nil if they haven't shared a position within liveFixMaxAge.
+// nil if they haven't shared a position within liveFixMaxAge, or while they
+// are at or on another customer's ride: the position is the driver's, not
+// this ride's, and that trip is someone else's business.
 // [ErrNotTracking] outside the window.
 func (s *BookingService) DriverLocation(ctx context.Context, userID, bookingID string) (*domain.LiveLocation, error) {
 	ub, err := s.store.FindForUser(ctx, bookingID, userID)
@@ -246,10 +249,17 @@ func (s *BookingService) DriverLocation(ctx context.Context, userID, bookingID s
 	b := ub.Booking
 	plan, err := planOf(b)
 	now := s.now()
-	if err != nil || b.DriverID == "" || !sharesLocation(b.Status, plan.ScheduledAt, now) {
+	if err != nil || b.DriverID == "" || !sharesLocation(b.Status, plan.ScheduledAt, plan.EndsAt(), now) {
 		return nil, ErrNotTracking
 	}
 	if s.live == nil {
+		return nil, nil
+	}
+	busy, err := s.store.DriverBusyElsewhere(ctx, b.DriverID, b.ID)
+	if err != nil {
+		return nil, err
+	}
+	if busy {
 		return nil, nil
 	}
 	loc, ok := s.live.Latest(b.DriverID)

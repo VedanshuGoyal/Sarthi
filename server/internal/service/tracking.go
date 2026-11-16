@@ -25,17 +25,23 @@ const (
 	// liveFixMaxAge is how old a shared position may be and still be shown;
 	// an older one is treated as no position at all.
 	liveFixMaxAge = 30 * time.Minute
+
+	// trackingGrace is how long past its planned end an accepted ride that
+	// never started (the driver didn't turn up) still shares the driver's
+	// position: time to sort out a late driver, not for good (my estimate).
+	trackingGrace = 30 * time.Minute
 )
 
-// sharesLocation reports whether a ride in status, starting at start, is in
-// its live-tracking window at now: the driver is at the pickup or driving,
-// or has the ride and it starts within trackingLead.
-func sharesLocation(status domain.RideStatus, start, now time.Time) bool {
+// sharesLocation reports whether a ride in status, planned from start to
+// end, is in its live-tracking window at now: the driver is at the pickup
+// or driving, or has the ride and it starts within trackingLead and hasn't
+// been over for more than trackingGrace.
+func sharesLocation(status domain.RideStatus, start, end, now time.Time) bool {
 	switch status {
 	case domain.RideStatusArrived, domain.RideStatusInProgress:
 		return true
 	case domain.RideStatusAccepted:
-		return !now.Before(start.Add(-trackingLead))
+		return !now.Before(start.Add(-trackingLead)) && now.Before(end.Add(trackingGrace))
 	default:
 		return false
 	}
