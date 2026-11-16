@@ -122,8 +122,27 @@ migrate -path migrations -database "$DATABASE_URL" up
 | GET    | `/users`            | — (Bearer `ADMIN_TOKEN`)                          | All accounts, newest first (back office; 404 when `ADMIN_TOKEN` is unset) |
 | GET    | `/admin/stats`      | — (Bearer `ADMIN_TOKEN`)                          | Ops dashboard counts: customers/drivers, drivers by KYC status, on duty, bookings by status (`expired` derived like `/me/bookings`), completed rides + gross fare + commission for today / 7 / 30 IST days, payouts due. Spec: `docs/features/admin-stats.md` |
 | GET    | `/healthz`          | —                                                 | Liveness |
+| GET    | `/app/config`       | —                                                 | Public. `{apps:{user_app:{minBuild, latestBuild, downloadUrl}, driver_app:{…}}}` |
 
 Authenticated endpoints expect the session token as `Authorization: Bearer <token>`.
+
+### App builds (client compatibility contract)
+
+APKs are side-loaded, so old builds stay in the field. Both apps send
+`X-App: user_app|driver_app` and `X-Build: <the +N of pubspec's version>` on
+every request (0 for a debug run).
+
+- A build below its app's minimum gets **426** `{error, code:"update_required", downloadUrl}`, and the app shows its update screen.
+- Never blocked: requests without the headers (builds from before the contract), build 0, and `/healthz`, `/readyz`, `/app/config`, `/admin*`, `/users`, the PhonePe webhook and the DigiLocker redirect.
+- The access log adds `app` and `build` to requests that send them. Requests without the headers are tallied at debug level once a minute.
+
+```bash
+export MIN_BUILD_USER_APP=0        # 0 (default) = observe only
+export MIN_BUILD_DRIVER_APP=0
+export LATEST_BUILD_USER_APP=8     # newest published build, for /app/config
+export LATEST_BUILD_DRIVER_APP=7
+export APP_DOWNLOAD_URL=https://apps.mojud.life   # the default
+```
 
 ## Check all registered accounts
 

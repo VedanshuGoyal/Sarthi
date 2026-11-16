@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -73,6 +74,32 @@ type Config struct {
 	// Surepass checks drivers' Aadhaar (DigiLocker), licence and bank account.
 	// Without a token those checks are off and no driver can finish KYC.
 	Surepass SurepassConfig
+
+	// Apps is the client compatibility contract: per app, the oldest build
+	// the API still serves and the newest one published, and where the APKs
+	// are downloaded from (GET /app/config, and 426 below the minimum).
+	Apps AppsConfig
+}
+
+// DefaultAppDownloadURL is where the APKs are published.
+const DefaultAppDownloadURL = "https://apps.mojud.life"
+
+// AppsConfig holds the minimum and latest build of each app. A build is the
+// +N of the app's pubspec version.
+type AppsConfig struct {
+	// DownloadURL (APP_DOWNLOAD_URL) is the page the update screen opens.
+	DownloadURL string
+	// User is the customer app: MIN_BUILD_USER_APP, LATEST_BUILD_USER_APP.
+	User AppBuilds
+	// Driver is the driver app: MIN_BUILD_DRIVER_APP, LATEST_BUILD_DRIVER_APP.
+	Driver AppBuilds
+}
+
+// AppBuilds is one app's build range. Both default to 0; a MinBuild of 0
+// blocks nothing, so the gate only observes until a minimum is set.
+type AppBuilds struct {
+	MinBuild    int
+	LatestBuild int
 }
 
 // DefaultDigiLockerRedirectURL is the page DigiLocker ends on in production.
@@ -234,8 +261,13 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	apps, err := loadApps()
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
+		Apps:                  apps,
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
 		AllowDevDefaults:      allowDev,
@@ -283,6 +315,39 @@ func loadPhonePe() (PhonePeConfig, error) {
 	case "SANDBOX", "PRODUCTION":
 	default:
 		return PhonePeConfig{}, fmt.Errorf("PHONEPE_ENV must be SANDBOX or PRODUCTION, not %q", c.Environment)
+	}
+	return c, nil
+}
+
+// loadApps reads the client compatibility contract. A typo'd build number
+// fails the boot rather than silently turning the gate off.
+func loadApps() (AppsConfig, error) {
+	c := AppsConfig{
+		DownloadURL: cmp.Or(strings.TrimSpace(os.Getenv("APP_DOWNLOAD_URL")), DefaultAppDownloadURL),
+	}
+	if u, err := url.Parse(c.DownloadURL); err != nil || u.Host == "" ||
+		(u.Scheme != "https" && u.Scheme != "http") {
+		return AppsConfig{}, fmt.Errorf("APP_DOWNLOAD_URL must be an http(s) URL, not %q", c.DownloadURL)
+	}
+	for _, f := range []struct {
+		env string
+		dst *int
+	}{
+		{"MIN_BUILD_USER_APP", &c.User.MinBuild},
+		{"LATEST_BUILD_USER_APP", &c.User.LatestBuild},
+		{"MIN_BUILD_DRIVER_APP", &c.Driver.MinBuild},
+		{"LATEST_BUILD_DRIVER_APP", &c.Driver.LatestBuild},
+	} {
+		v := strings.TrimSpace(os.Getenv(f.env))
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return AppsConfig{}, fmt.Errorf("%s must be a build number (the +N of the app's "+
+				"pubspec version), not %q", f.env, v)
+		}
+		*f.dst = n
 	}
 	return c, nil
 }
