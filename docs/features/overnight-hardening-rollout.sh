@@ -43,7 +43,9 @@ MIGRATIONS=(
   0018_money_fks_restrict.up.sql
   0019_kyc_cleared_selfie.up.sql
   0020_hash_session_tokens.up.sql
-  # WAVE2_MIGRATIONS (filled in when the wave-2 branches merge)
+  0028_consent_and_erasure.up.sql
+  0029_retention_indexes.up.sql
+  # WAVE2_MIGRATIONS (0021-0027 to add when those branches merge, in numeric order)
 )
 PUBLISH_APPS="${PUBLISH_APPS:-0}"   # 1 = publish scripts/*-release.apk afterwards
 API="https://api.mojud.life"
