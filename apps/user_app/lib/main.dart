@@ -10,6 +10,7 @@ import 'features/home/view/user_home_shell.dart';
 import 'features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
     show RideSurfaces;
 import 'features/splash/view/splash_screen.dart';
+import 'features/update/view/update_gate.dart';
 
 /// Entry point for the MOJUD customer app.
 ///
@@ -36,6 +37,9 @@ class MojudUserApp extends StatelessWidget {
         extensions: [RideSurfaces(wash: SkylineTokens.light.primarySoft)],
       ),
       themeMode: ThemeMode.light,
+      // Above the navigator, so a build the backend no longer serves is
+      // stopped whichever screen is open.
+      builder: (context, child) => UpdateGate(child: child!),
       home: const _AppRoot(),
     );
   }

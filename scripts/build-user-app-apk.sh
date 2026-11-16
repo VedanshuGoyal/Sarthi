@@ -43,9 +43,17 @@ API_BASE_URL="https://$DOMAIN"
 
 cd "$REPO_ROOT/apps/user_app"
 
+# The build number (the +N of pubspec's version) rides on every request as
+# X-Build, for the server's minimum-build gate (server/README.md, "App builds").
+APP_BUILD="$(sed -nE 's/^version:[[:space:]]*[^+[:space:]]+\+([0-9]+)[[:space:]]*$/\1/p' pubspec.yaml)"
+if [ -z "$APP_BUILD" ]; then
+  echo "❌ Couldn't read the +N build number from apps/user_app/pubspec.yaml's version." >&2
+  exit 1
+fi
+
 # Feed .env (Google Maps SDK key etc.) into the build's compile-time defines when
 # present, same as run-user-app.sh — independent of which backend it talks to.
-DART_DEFINES=(--dart-define="API_BASE_URL=${API_BASE_URL}")
+DART_DEFINES=(--dart-define="API_BASE_URL=${API_BASE_URL}" --dart-define="APP_BUILD=${APP_BUILD}")
 if [ -f .env ]; then
   DART_DEFINES+=(--dart-define-from-file=.env)
   echo "🔑 Loading build settings from apps/user_app/.env"
@@ -62,7 +70,7 @@ else
   echo "   Copy .env.example to .env and add your MAPS_API_KEY (Google Maps SDK)."
 fi
 
-echo "🌐 Pointing APK at ${API_BASE_URL}"
+echo "🌐 Pointing APK at ${API_BASE_URL} (build ${APP_BUILD})"
 
 echo "📦 Resolving dependencies..."
 flutter pub get
