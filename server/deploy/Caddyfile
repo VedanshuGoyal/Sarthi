@@ -10,6 +10,10 @@
 # Caddy handles HTTP->HTTPS redirect, Let's Encrypt issuance/renewal, and
 # WebSocket upgrades automatically — none of that needs configuring.
 {$DOMAIN} {
+	# KYC uploads are the largest bodies (12 MiB limit in the server).
+	request_body {
+		max_size 13MB
+	}
 	reverse_proxy localhost:8080
 
 	# Access log, so requests are inspectable:

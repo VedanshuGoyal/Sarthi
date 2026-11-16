@@ -260,8 +260,14 @@ func run() error {
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins),
+			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping),
+		// Bound every phase of a connection: a 12 MB KYC upload on a slow
+		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the
+		// per-request deadline (60 s) so handlers can always answer.
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      75 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Serve in the background; surface listen errors through a channel.
@@ -278,9 +284,16 @@ func run() error {
 		return err
 	case <-ctx.Done():
 		slog.Info("shutting down")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Long enough for the slowest upstream call (Surepass, 45 s) to finish,
+		// so a deploy doesn't cut off a paid check; then force-close. systemd's
+		// TimeoutStopSec (75 s) is longer still.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			srv.Close()
+			return err
+		}
+		return nil
 	}
 }
 

@@ -207,3 +207,18 @@ sudo -u postgres dropdb sarthi_restore_test
 Real restore (outage): stop `sarthi`, take a fresh dump of whatever is there,
 recreate `sarthi` owned by the `sarthi` user, load the dump as `sarthi`, start
 the service, check `/healthz`.
+
+## Watchdog (Telegram alerts)
+
+`sarthi-watchdog.timer` runs `/opt/sarthi/deploy/watchdog.sh` every 2 minutes and messages the
+owner when `/readyz` fails (and when it recovers), when the server logs an `ERROR`, when the
+nightly backup failed, or when the disk is over 90% full. Each kind repeats at most every 30 min.
+
+```bash
+install -m 600 /dev/null /etc/sarthi/alerts.env   # then add TELEGRAM_BOT_TOKEN= and TELEGRAM_CHAT_ID=
+cp server/deploy/sarthi-watchdog.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now sarthi-watchdog.timer
+```
+
+The box can't report its own outage: also point an external uptime monitor at
+`https://api.mojud.life/readyz`.

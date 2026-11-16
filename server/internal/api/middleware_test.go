@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -146,5 +148,40 @@ func TestLogRequestsTagsResponses(t *testing.T) {
 	}
 	if len(rec.Header().Get("X-Request-ID")) != 16 {
 		t.Fatalf("missing request id: %q", rec.Header().Get("X-Request-ID"))
+	}
+}
+
+func TestReadyzReflectsTheDatabase(t *testing.T) {
+	for _, tc := range []struct {
+		ready error
+		want  int
+	}{
+		{nil, http.StatusOK},
+		{errors.New("db down"), http.StatusServiceUnavailable},
+	} {
+		h := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil,
+			func(context.Context) error { return tc.ready })
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		if rec.Code != tc.want {
+			t.Errorf("ready=%v: got %d, want %d", tc.ready, rec.Code, tc.want)
+		}
+	}
+}
+
+func TestSecurityHeadersAndDeadline(t *testing.T) {
+	var hasDeadline bool
+	h := securityHeaders(withDeadline(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hasDeadline = r.Context().Deadline()
+	})))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	if !hasDeadline {
+		t.Error("requests should carry a deadline")
+	}
+	for _, k := range []string{"Strict-Transport-Security", "X-Content-Type-Options", "X-Frame-Options"} {
+		if rec.Header().Get(k) == "" {
+			t.Errorf("missing %s", k)
+		}
 	}
 }

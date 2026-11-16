@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -28,6 +30,7 @@ func NewRouter(
 	webhook WebhookVerifier,
 	adminToken string,
 	corsOrigins []string,
+	ready func(context.Context) error,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -44,6 +47,20 @@ func NewRouter(
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	// Readiness: the process is up AND can reach Postgres. redeploy.sh and
+	// the watchdog gate on this; /healthz stays a plain liveness probe.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if ready != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := ready(ctx); err != nil {
+				slog.Error("readyz: not ready", "error", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 
 	// Public onboarding endpoints.
@@ -153,9 +170,11 @@ func NewRouter(
 	// its status, admin callers are audited and throttled, public login routes
 	// are rate-limited, and bodies are size-capped before any handler reads.
 	var handler http.Handler = mux
+	handler = withDeadline(handler)
 	handler = limitBodies(handler, isUpload)
 	handler = rateLimit(handler, authRateLimits())
 	handler = guardAdmin(handler, newWindowLimiter(10, 15*time.Minute))
 	handler = logRequests(handler)
+	handler = securityHeaders(handler)
 	return withCORS(handler, corsOrigins)
 }

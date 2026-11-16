@@ -153,7 +153,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 // Logout handles POST /auth/logout — revoke the caller's session token.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := h.sessions.Revoke(r.Context(), tokenFrom(r.Context())); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not log out")
+		serverError(w, "could not log out", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nil)
@@ -163,7 +163,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.auth.ListUsers(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list users")
+		serverError(w, "could not list users", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, users)

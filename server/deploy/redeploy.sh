@@ -42,6 +42,7 @@ trap 'rm -f "$TMP_BINARY"' EXIT
 if ( cd "$SERVER_DIR" && "$GO" build -o /opt/sarthi/bin/sarthi-backup-upload.new ./cmd/backup-upload ); then
 	mv /opt/sarthi/bin/sarthi-backup-upload.new /opt/sarthi/bin/sarthi-backup-upload
 	install -D -m 750 "$DEPLOY_DIR/backup.sh" /opt/sarthi/deploy/backup.sh
+	install -D -m 750 "$DEPLOY_DIR/watchdog.sh" /opt/sarthi/deploy/watchdog.sh
 else
 	printf 'warning: backup uploader did not build; nightly off-box copies will fail\n' >&2
 fi
@@ -50,18 +51,30 @@ log "Swapping in the new binary"
 [[ -f "$BINARY" ]] && cp -a "$BINARY" "$BINARY.prev"
 install -m 755 "$TMP_BINARY" "$BINARY"
 
+# wait_for <path> <seconds> — poll until the endpoint answers 2xx.
+wait_for() {
+	local path=$1 deadline=$((SECONDS + $2))
+	while ((SECONDS < deadline)); do
+		curl -fsS --max-time 5 "localhost:8080$path" >/dev/null 2>&1 && return 0
+		sleep 1
+	done
+	return 1
+}
+
 log "Restarting sarthi"
 systemctl restart sarthi.service
-sleep 2
 
-if ! curl -fsS --max-time 10 localhost:8080/healthz >/dev/null 2>&1; then
-	printf '\033[1;33m    health check failed — rolling back\033[0m\n' >&2
+# /readyz = up and reaching Postgres. The previous binary may predate
+# /readyz, so after a rollback only /healthz is checked.
+if ! wait_for /readyz 30; then
+	printf '\033[1;33m    readiness check failed — rolling back\033[0m\n' >&2
 	if [[ -f "$BINARY.prev" ]]; then
 		install -m 755 "$BINARY.prev" "$BINARY"
 		systemctl restart sarthi.service
+		wait_for /healthz 30 || die "rollback did not come up either. Logs: journalctl -u sarthi -n 50"
 		die "rolled back to the previous binary. Logs: journalctl -u sarthi -n 50"
 	fi
 	die "no previous binary to roll back to. Logs: journalctl -u sarthi -n 50"
 fi
 
-log "Deployed. $(curl -s localhost:8080/healthz)"
+log "Deployed. $(curl -s localhost:8080/readyz)"

@@ -22,6 +22,15 @@ ExecStart=/opt/sarthi/bin/sarthi-server
 
 Restart=on-failure
 RestartSec=5s
+# Graceful shutdown waits up to 50 s for in-flight calls (see main.go).
+TimeoutStopSec=75
+
+# The box is shared (other sites, a trading controller), so cap our memory:
+# the Go GC works to stay under GOMEMLIMIT, the kernel throttles at
+# MemoryHigh and kills only this service at MemoryMax.
+Environment=GOMEMLIMIT=250MiB
+MemoryHigh=300M
+MemoryMax=400M
 
 # Hardening. The server only needs to listen on a TCP port and reach Postgres —
 # it writes nothing to disk, so the filesystem can stay read-only throughout.

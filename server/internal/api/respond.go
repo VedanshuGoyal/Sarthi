@@ -35,6 +35,13 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
 }
 
+// serverError logs err and sends a 500 with a generic message, so an
+// unexpected failure is never invisible in the logs.
+func serverError(w http.ResponseWriter, message string, err error) {
+	slog.Error(message, "error", err)
+	writeError(w, http.StatusInternalServerError, message)
+}
+
 // writeErrorCode sends a JSON error carrying a machine-readable code. A
 // positive retryAfter (seconds) is also surfaced as a Retry-After header.
 func writeErrorCode(w http.ResponseWriter, status int, code, message string, retryAfter int) {

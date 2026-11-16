@@ -42,7 +42,7 @@ type addCarResponse struct {
 func (h *CarHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.List(r.Context(), userIDFrom(r.Context()))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load cars")
+		serverError(w, "could not load cars", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, carsResponse{Cars: items})
@@ -70,7 +70,7 @@ func (h *CarHandler) Add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not save car")
+		serverError(w, "could not save car", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, addCarResponse{Car: car, Cars: cars})
@@ -84,7 +84,7 @@ func (h *CarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not remove car")
+		serverError(w, "could not remove car", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, carsResponse{Cars: cars})
