@@ -13,6 +13,7 @@ import '../../notifications/notification_providers.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/ride_format.dart';
 import '../../rides/view/widgets/ride_widgets.dart';
+import 'delete_account_button.dart';
 
 /// The Account tab: who the driver is, where their verification stands,
 /// what they drive, where they're paid, and logging out.
@@ -220,6 +221,8 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
                     icon: const Icon(Icons.logout_rounded),
                     label: const Text('Log out'),
                   ),
+                  const SizedBox(height: Skyline.s8),
+                  const DeleteAccountButton(),
                 ],
               ),
             ),

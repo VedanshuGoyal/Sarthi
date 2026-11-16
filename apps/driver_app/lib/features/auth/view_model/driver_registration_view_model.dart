@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/config/legal.dart';
 import '../data/driver_auth_repository.dart';
 import '../domain/auth_validators.dart';
 import '../domain/driver.dart';
@@ -243,15 +244,34 @@ class DriverRegistrationViewModel extends ChangeNotifier {
 
   // --- Step 3: name ------------------------------------------------------
 
-  /// Validates the name, registers the account, and finishes the flow.
+  /// Shown when the driver tries to register without agreeing.
+  static const String consentRequired =
+      'Agree to the Terms and Privacy Policy to create your account.';
+
+  /// Whether the driver ticked "I agree to the Terms and Privacy Policy".
+  /// Registration is refused until they have.
+  bool _hasConsented = false;
+  bool get hasConsented => _hasConsented;
+
+  void setConsent(bool value) {
+    if (value == _hasConsented) return;
+    _hasConsented = value;
+    if (value && _errorText == consentRequired) _errorText = null;
+    notifyListeners();
+  }
+
+  /// Validates the name and consent, registers the account (recording the
+  /// [Legal.consentVersion] agreed to), and finishes the flow.
   Future<void> submitName(String name) async {
     final error = AuthValidators.name(name);
     if (error != null) return _fail(error);
+    if (!_hasConsented) return _fail(consentRequired);
 
     await _run(() async {
       final session = await _repository.register(
         phoneE164: phoneE164,
         name: name,
+        consentVersion: Legal.consentVersion,
       );
       await _completeSignIn(session);
     });
