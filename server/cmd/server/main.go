@@ -49,8 +49,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := newPool(ctx, cfg.DatabaseURL)
-	if err != nil {
+	// Postgres may be restarting (unattended upgrades restart it, and systemd
+	// can start us in the same moment), so wait for it instead of exiting.
+	var pool *pgxpool.Pool
+	if err := retryStartup(ctx, "connecting to postgres", func() error {
+		var err error
+		pool, err = newPool(ctx, cfg.DatabaseURL)
+		return err
+	}); err != nil {
 		return err
 	}
 	defer pool.Close()
@@ -62,10 +68,14 @@ func run() error {
 		repository.NewSessionRepository(pool),
 		memstore.NewSessionCache(),
 	)
-	if n, err := sessions.Warm(ctx); err != nil {
+	if err := retryStartup(ctx, "warming sessions", func() error {
+		n, err := sessions.Warm(ctx)
+		if err == nil {
+			slog.Info("sessions: warmed cache from DB", "count", n)
+		}
 		return err
-	} else {
-		slog.Info("sessions: warmed cache from DB", "count", n)
+	}); err != nil {
+		return err
 	}
 
 	// OTP abuse limits (resend cap, failed-verification cap, 30-min lockout) are
@@ -91,10 +101,14 @@ func run() error {
 		repository.NewDriverSessionRepository(pool),
 		memstore.NewSessionCache(),
 	)
-	if n, err := driverSessions.Warm(ctx); err != nil {
+	if err := retryStartup(ctx, "warming driver sessions", func() error {
+		n, err := driverSessions.Warm(ctx)
+		if err == nil {
+			slog.Info("driver sessions: warmed cache from DB", "count", n)
+		}
 		return err
-	} else {
-		slog.Info("driver sessions: warmed cache from DB", "count", n)
+	}); err != nil {
+		return err
 	}
 	driverAuthOpts := []service.DriverOption{
 		service.WithDriverTokenIssuer(driverSessions),
@@ -319,6 +333,34 @@ func newBlobStore(cfg config.StorageConfig) (storage.Blob, error) {
 		return storage.NewLocal(cfg.LocalDir)
 	default:
 		return nil, fmt.Errorf("unknown storage backend %q", cfg.Backend)
+	}
+}
+
+// startupRetryFor is how long boot-time database steps keep retrying before
+// the process gives up and leaves the restart to systemd.
+const startupRetryFor = 90 * time.Second
+
+// retryStartup runs fn until it succeeds, backing off from 1s to 10s, for up
+// to startupRetryFor. On 15 Nov 2026 a Postgres restart during our own start
+// made the session warm-up fail and the process exit; this rides that out.
+func retryStartup(ctx context.Context, what string, fn func() error) error {
+	deadline := time.Now().Add(startupRetryFor)
+	wait := time.Second
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		slog.Warn("startup: retrying", "step", what, "in", wait.String(), "error", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, 10*time.Second)
 	}
 }
 

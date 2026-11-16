@@ -6,6 +6,9 @@ After=network-online.target postgresql.service
 # always reports success, so Requires buys nothing but can cascade failures.
 # Restart=on-failure below covers the case where Postgres is not ready yet.
 Wants=network-online.target postgresql.service
+# Never stop retrying. The default (5 starts in 10s) would leave the API dead
+# for good after a Postgres outage longer than a few seconds.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -18,7 +21,7 @@ EnvironmentFile=/etc/sarthi/sarthi.env
 ExecStart=/opt/sarthi/bin/sarthi-server
 
 Restart=on-failure
-RestartSec=2s
+RestartSec=5s
 
 # Hardening. The server only needs to listen on a TCP port and reach Postgres —
 # it writes nothing to disk, so the filesystem can stay read-only throughout.
