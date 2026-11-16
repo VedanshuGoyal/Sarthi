@@ -132,12 +132,16 @@ class BookingRepository {
         'Loading your rides failed (${response.statusCode}).',
       );
     }
-    final decoded = jsonDecode(response.body);
-    final list = decoded is Map<String, dynamic> ? decoded['bookings'] : null;
-    return [
-      for (final item in list as List<dynamic>? ?? const [])
-        ?MyBooking.tryParse(item),
-    ];
+    // Not a list of bookings (a proxy's page, say): a load failure the
+    // Activity tab can show, not a raw parse error.
+    final decoded = _decode(response.body);
+    final list = decoded?['bookings'];
+    if (decoded == null || list is! List<dynamic>?) {
+      throw const BookingSubmitException(
+        'The server sent an unexpected reply.',
+      );
+    }
+    return [for (final item in list ?? const []) ?MyBooking.tryParse(item)];
   }
 
   /// Cancels a ride that hasn't started (`POST /me/bookings/{id}/cancel`),
@@ -243,8 +247,7 @@ class BookingRepository {
       final error = decoded?['error'];
       throw BookingActionException(
         error is String && error.isNotEmpty
-            ? '${error[0].toUpperCase()}${error.substring(1)}'
-                  '${error.endsWith('.') ? '' : '.'}'
+            ? _sentence(error)
             : 'Something went wrong (${response.statusCode}).',
         code: BookingErrorCode.fromWire(decoded?['code']),
         statusCode: response.statusCode,
@@ -282,11 +285,21 @@ class BookingRepository {
       throw const BookingSubmitException("Can't reach the server.");
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      // The server says what was wrong ("pick a start time at least 45
+      // minutes from now"); that's what the customer needs to fix it.
+      final error = _decode(response.body)?['error'];
       throw BookingSubmitException(
-        'Booking request failed (${response.statusCode}).',
+        error is String && error.isNotEmpty
+            ? _sentence(error)
+            : 'Booking request failed (${response.statusCode}).',
       );
     }
   }
+
+  /// The server's lower-case error fragment as a sentence.
+  static String _sentence(String error) =>
+      '${error[0].toUpperCase()}${error.substring(1)}'
+      '${error.endsWith('.') ? '' : '.'}';
 
   Map<String, String> _headers() {
     final token = _tokenGetter();

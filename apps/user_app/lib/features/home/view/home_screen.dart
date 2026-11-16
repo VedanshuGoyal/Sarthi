@@ -36,25 +36,45 @@ class HomeScreen extends ConsumerWidget {
   /// Account tab. When null the avatar is display-only.
   final VoidCallback? onOpenAccount;
 
-  /// Sends the confirmed booking to the backend right away so the server has
-  /// its details on record. Returns whether the server acknowledged it; a
-  /// failure only annotates the confirmation, it never blocks it.
-  Future<bool> _sendToServer(
-    WidgetRef ref,
-    Future<void> Function(BookingRepository repo) send,
-  ) async {
+  /// Sends the confirmed booking to the backend, then says how it went: the
+  /// confirmation once the server has it; otherwise that nothing was booked,
+  /// the server's reason, and a retry. A booking the server never took is
+  /// no booking — no driver will see it — so it must never read as booked.
+  Future<void> _book(
+    BuildContext context,
+    WidgetRef ref, {
+    required String trip,
+    required String booked,
+    required Future<void> Function(BookingRepository repo) send,
+  }) async {
+    String? failure;
     try {
       await send(ref.read(bookingRepositoryProvider));
       // Show the new booking in Activity straight away.
       ref.read(myBookingsViewModelProvider).load();
-      return true;
-    } on BookingSubmitException {
-      return false;
+    } on BookingSubmitException catch (e) {
+      failure = e.message;
     }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            failure == null ? booked : "Your $trip wasn't booked. $failure",
+          ),
+          action: failure == null
+              ? null
+              : SnackBarAction(
+                  label: 'Retry',
+                  onPressed: () {
+                    if (!context.mounted) return;
+                    _book(context, ref, trip: trip, booked: booked, send: send);
+                  },
+                ),
+        ),
+      );
   }
-
-  /// The snackbar tail noting a booking that didn't reach the backend.
-  static const String _notSentNote = " We couldn't reach the server.";
 
   /// Routes the tapped trip choice to its next step. Round Trip opens the
   /// booking page (pickup pre-filled from GPS); Multi-Stop to the
@@ -73,23 +93,16 @@ class HomeScreen extends ConsumerWidget {
           MaterialPageRoute(builder: (_) => const BookingDetailsScreen()),
         );
         if (booking != null && context.mounted) {
-          final sent = await _sendToServer(
-            ref,
-            (repo) => repo.submitRoundTrip(booking),
-          );
-          if (!context.mounted) return;
           final hours = booking.hours;
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Round Trip booked: $hours ${hours == 1 ? 'hour' : 'hours'}, '
-                  'in your ${booking.car.registration}.'
-                  '${sent ? '' : _notSentNote}',
-                ),
-              ),
-            );
+          await _book(
+            context,
+            ref,
+            trip: 'Round Trip',
+            booked:
+                'Round Trip booked: $hours ${hours == 1 ? 'hour' : 'hours'}, '
+                'in your ${booking.car.registration}.',
+            send: (repo) => repo.submitRoundTrip(booking),
+          );
         }
       case TripType.multiStop:
         final start = await Navigator.of(context).push<PickupLocation>(
@@ -107,23 +120,16 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
         if (trip != null && context.mounted) {
-          final sent = await _sendToServer(
-            ref,
-            (repo) => repo.submitMultiStop(trip),
-          );
-          if (!context.mounted) return;
           final count = trip.stops.length;
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Multi-Stop trip booked: $count '
-                  '${count == 1 ? 'stop' : 'stops'} planned.'
-                  '${sent ? '' : _notSentNote}',
-                ),
-              ),
-            );
+          await _book(
+            context,
+            ref,
+            trip: 'Multi-Stop trip',
+            booked:
+                'Multi-Stop trip booked: $count '
+                '${count == 1 ? 'stop' : 'stops'} planned.',
+            send: (repo) => repo.submitMultiStop(trip),
+          );
         }
       case TripType.oneWay:
         // One page for both ends: the start is pre-filled from GPS, so the
@@ -141,23 +147,16 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
         if (trip != null && context.mounted) {
-          final sent = await _sendToServer(
+          await _book(
+            context,
             ref,
-            (repo) => repo.submitOneWay(trip),
+            trip: 'One-Way Trip',
+            booked:
+                'One-Way Trip booked: ~${trip.estimatedTravelTime.inMinutes}'
+                ' min, in your ${trip.car.registration} '
+                'to ${trip.destination.address}.',
+            send: (repo) => repo.submitOneWay(trip),
           );
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(
-                  'One-Way Trip booked: ~${trip.estimatedTravelTime.inMinutes}'
-                  ' min, in your ${trip.car.registration} '
-                  'to ${trip.destination.address}.'
-                  '${sent ? '' : _notSentNote}',
-                ),
-              ),
-            );
         }
     }
   }

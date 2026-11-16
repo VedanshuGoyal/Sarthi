@@ -133,6 +133,29 @@ void main() {
     ).throws<BookingSubmitException>();
   });
 
+  test("a refused booking carries the server's reason", () async {
+    final repo = _repo(
+      (_) => http.Response(
+        jsonEncode({'error': 'pick a start time at least 45 minutes from now'}),
+        400,
+      ),
+    );
+    await check(repo.submitRoundTrip(_booking)).throws<BookingSubmitException>(
+      (e) => e
+          .has((e) => e.message, 'message')
+          .equals('Pick a start time at least 45 minutes from now.'),
+    );
+  });
+
+  test('an unreadable bookings list is a load failure', () async {
+    for (final body in ['<html>ok</html>', '{"bookings": "nope"}', '[]']) {
+      final repo = _repo((_) => http.Response(body, 200));
+      await check(repo.myBookings()).throws<BookingSubmitException>();
+    }
+    final empty = _repo((_) => http.Response('{}', 200));
+    check(await empty.myBookings()).isEmpty();
+  });
+
   group('booking actions', () {
     test('cancel posts the reason and returns the cancelled booking', () async {
       final server = FakeBookingServer([bookingJson(otp: '4821')]);
