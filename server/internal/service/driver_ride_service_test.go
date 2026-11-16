@@ -240,8 +240,23 @@ func TestRequests_filtersAndHidesCustomer(t *testing.T) {
 	if got[0].Customer != nil {
 		t.Error("an open request must not reveal the customer")
 	}
+	// Roughly where, not exactly: the area, rounded coordinates, no plate —
+	// but still the gearbox, so the driver can decide.
+	if r := got[0]; !r.Approximate || r.Pickup.Lat != 28.61 || r.Pickup.Lng != 77.23 ||
+		r.Car.Registration != "" || r.Car.Transmission != "automatic" {
+		t.Errorf("request = %+v, want approximate", r)
+	}
 	if got[0].DistanceM == nil || *got[0].DistanceM > 5000 {
 		t.Errorf("distance = %v, want a few km", got[0].DistanceM)
+	}
+
+	// Once taken, the driver gets everything.
+	ride, err := svc.Accept(context.Background(), "auto", "auto-car")
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if ride.Approximate || ride.Pickup.Lat != 28.611 || ride.Car.Registration != "DL01" || ride.Customer == nil {
+		t.Errorf("accepted ride = %+v, want the exact details", ride)
 	}
 
 	// Far away: outside the request radius.

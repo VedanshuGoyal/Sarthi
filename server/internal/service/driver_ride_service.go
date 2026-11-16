@@ -180,7 +180,10 @@ func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, p
 // Requests returns the open rides driverID can take, soonest first — those
 // starting more than acceptCutoff from now. With a
 // location, rides further than requestRadiusM are left out and each carries
-// its distance. The customer's details stay hidden until a ride is accepted.
+// its distance. Until a ride is accepted it is approximate (see
+// coarseRide): localities instead of addresses, no plate, no customer — and
+// the distance is to the rounded pickup, so asking from three places
+// doesn't pin down the house.
 func (s *DriverRideService) Requests(ctx context.Context, driverID string, at *LatLng) ([]domain.DriverRide, error) {
 	profile, err := s.clearedProfile(ctx, driverID)
 	if err != nil {
@@ -573,10 +576,12 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 	if b.PaidAt != nil {
 		ride.SharePaise = b.PaidPaise - b.CommissionPaise
 	}
-	if withCustomer {
-		c := rb.Customer
-		ride.Customer = &c
+	if !withCustomer {
+		// Not the driver's ride (yet): where, roughly, and no one to call.
+		return coarseRide(ride), plan, true
 	}
+	c := rb.Customer
+	ride.Customer = &c
 	return ride, plan, true
 }
 

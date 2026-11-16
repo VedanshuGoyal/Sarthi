@@ -5,6 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'fakes.dart';
 
 void main() {
+  group('Ride.tryParse — approximate requests', () {
+    test('reads the approximate flag of an open request', () {
+      final parsed = Ride.tryParse(rideJson(approximate: true))!;
+      check(parsed.approximate).isTrue();
+      check(parsed.pickup.address).equals('Saket, New Delhi');
+      check(parsed.car!.registration).isEmpty();
+    });
+
+    test('is exact unless the backend says otherwise', () {
+      check(Ride.tryParse(rideJson(status: 'accepted'))!.approximate).isFalse();
+    });
+
+    test('a merged update keeps the newer exactness', () {
+      final request = Ride.tryParse(rideJson(approximate: true))!;
+      final accepted = Ride.tryParse(
+        rideJson(status: 'accepted', withCustomer: true),
+      )!;
+      check(request.mergedWith(accepted).approximate).isFalse();
+    });
+  });
+
   group('Ride.tryParse — cancellation', () {
     test('reads cancelledAt, cancelledBy and cancelReason', () {
       final parsed = Ride.tryParse(

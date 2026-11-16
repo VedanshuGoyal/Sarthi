@@ -14,7 +14,11 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'fakes.dart';
 
-const _driver = Driver(id: 'd1', phoneE164: '+919800000001', name: 'Ravi Kumar');
+const _driver = Driver(
+  id: 'd1',
+  phoneE164: '+919800000001',
+  name: 'Ravi Kumar',
+);
 
 void main() {
   late FakeRidesRepository repo;
@@ -46,6 +50,21 @@ void main() {
   setUp(() {
     repo = FakeRidesRepository();
   });
+
+  testWidgets(
+    'an open request shows only the area, and no plate, until accepted',
+    (tester) async {
+      final request = ride(id: 'r', approximate: true);
+      repo.openRides = [request];
+
+      await pump(tester, request);
+
+      check(find.text('Saket, New Delhi').evaluate()).isNotEmpty();
+      check(find.text('DL01AB1234').evaluate()).isEmpty();
+      check(find.textContaining('The exact address').evaluate()).isNotEmpty();
+      check(find.text('Accept ride').evaluate()).isNotEmpty();
+    },
+  );
 
   testWidgets('a cancelled ride shows the notice and no action bar', (
     tester,

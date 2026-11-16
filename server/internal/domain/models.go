@@ -448,8 +448,14 @@ type RideCar struct {
 // details parsed into typed places, times and the car, plus the lifecycle
 // timestamps. Customer is set only for the driver the ride is assigned to;
 // DistanceM only on the open-requests feed, when the driver shared a location.
+//
+// Approximate marks an open request as drivers see it before accepting:
+// each place is its locality with coordinates rounded to about a kilometre,
+// stops carry no errand and the car no registration. The exact addresses,
+// plate and customer come with the accepted ride.
 type DriverRide struct {
 	ID               string        `json:"id"`
+	Approximate      bool          `json:"approximate,omitempty"`
 	TripType         string        `json:"tripType"`
 	Status           RideStatus    `json:"status"`
 	ScheduledAt      time.Time     `json:"scheduledAt"`

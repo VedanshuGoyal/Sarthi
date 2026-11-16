@@ -90,7 +90,12 @@ class RideDetailScreen extends ConsumerWidget {
               if (isRequest) ...[
                 const SizedBox(height: Skyline.s16),
                 Text(
-                  "The customer's name and number appear once you accept.",
+                  current.approximate
+                      ? 'Places show their area for now. The exact address, '
+                            "the car's number plate and the customer's name "
+                            'and number appear once you accept.'
+                      : "The customer's name and number appear once you "
+                            'accept.',
                   style: t.body(size: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -497,17 +502,19 @@ class _CarCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              border: Border.all(color: t.outline),
-              borderRadius: BorderRadius.circular(8),
+          // A request's car has no plate until the ride is accepted.
+          if (car.registration.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                border: Border.all(color: t.outline),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                car.registration,
+                style: t.figure(14, weight: FontWeight.w700),
+              ),
             ),
-            child: Text(
-              car.registration,
-              style: t.figure(14, weight: FontWeight.w700),
-            ),
-          ),
         ],
       ),
     );

@@ -209,6 +209,7 @@ class Ride {
     required this.endsAt,
     required this.farePaise,
     required this.pickup,
+    this.approximate = false,
     this.fareEstimated = false,
     this.destination,
     this.stops = const [],
@@ -233,6 +234,12 @@ class Ride {
   final String id;
   final TripKind kind;
   final RideStatus status;
+
+  /// An open request as drivers see it before accepting: each place is its
+  /// locality (e.g. "Saket, New Delhi") with coordinates rounded to about a
+  /// kilometre, stops carry no errand and the car no number plate. The
+  /// exact addresses, plate and customer come with the accepted ride.
+  final bool approximate;
 
   /// When the driver should be at the pickup.
   final DateTime scheduledAt;
@@ -318,6 +325,7 @@ class Ride {
     id: id,
     kind: kind,
     status: status,
+    approximate: approximate,
     scheduledAt: scheduledAt,
     endsAt: endsAt,
     farePaise: farePaise,
@@ -362,6 +370,7 @@ class Ride {
       id: id,
       kind: TripKind.fromWire(json['tripType'] as String?),
       status: RideStatus.fromWire(json['status'] as String?),
+      approximate: json['approximate'] == true,
       scheduledAt: scheduledAt,
       endsAt:
           _time(json['endsAt']) ?? scheduledAt.add(const Duration(hours: 1)),

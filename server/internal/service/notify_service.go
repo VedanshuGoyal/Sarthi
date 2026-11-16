@@ -192,7 +192,10 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	// Only fresh positions, and no cap until eligibility is known: the cap
 	// counts drivers who could take the ride, so nearer stale or ineligible
 	// ones can't crowd them out.
-	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM,
+	// Lock screens show this to every driver near the ride, before anyone
+	// has taken it: the area, not the address (see coarseRide).
+	pickup := coarsePlace(plan.Pickup)
+	nearby, err := s.drivers.FindNearbyDrivers(pickup.Lat, pickup.Lng, requestRadiusM,
 		s.now().Add(-presenceFresh), 0)
 	if err != nil {
 		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
@@ -233,8 +236,8 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	for driverID, tokens := range byDriver {
 		body := fmt.Sprintf("%s · %s · %s away", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan),
 			formatDistance(distance[driverID]))
-		if plan.Pickup.Address != "" {
-			body += "\nPickup: " + plan.Pickup.Address
+		if pickup.Address != "" {
+			body += "\nPickup area: " + pickup.Address
 		}
 		for _, token := range tokens {
 			if s.send(ctx, push.Message{

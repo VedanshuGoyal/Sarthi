@@ -135,6 +135,7 @@ func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	sender.gone["tok-both-2"] = true
 
 	rb := openRide("ride-1", testNow.Add(3*time.Hour), 4, "automatic")
+	rb.Booking.Details["pickup"] = place("12, Rajpath, India Gate, New Delhi, Delhi 110001, India", gateLat, gateLng)
 	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
 	plan.ScheduledAt = *rb.Booking.ScheduledAt
 	svc.RideRequested(context.Background(), rb.Booking, plan)
@@ -151,8 +152,11 @@ func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	if !strings.HasPrefix(m.Title, "New ride request · ₹") {
 		t.Errorf("title = %q", m.Title)
 	}
-	if !strings.Contains(m.Body, "Round trip, 4 h") || !strings.Contains(m.Body, "2.0 km away") ||
-		!strings.Contains(m.Body, "12:00 PM") {
+	// The distance is to the rounded pickup (28.61, 77.23), and the lock
+	// screen shows the area, never the house.
+	if !strings.Contains(m.Body, "Round trip, 4 h") || !strings.Contains(m.Body, "2.2 km away") ||
+		!strings.Contains(m.Body, "12:00 PM") || !strings.HasSuffix(m.Body, "\nPickup area: India Gate, New Delhi") ||
+		strings.Contains(m.Body, "Rajpath") {
 		t.Errorf("body = %q", m.Body)
 	}
 	// Worth delivering only until the ride closes to drivers.

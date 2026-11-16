@@ -187,7 +187,7 @@ class RouteTimeline extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          compact ? row.place.shortName : row.place.address,
+                          _name(row.place),
                           style: t.title(compact ? 14 : 15),
                           maxLines: compact ? 1 : 3,
                           overflow: TextOverflow.ellipsis,
@@ -203,6 +203,18 @@ class RouteTimeline extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  /// A request's places are already just their area ("Saket, New Delhi"),
+  /// shown whole; an accepted ride's full address is cut to its first part
+  /// on compact cards.
+  String _name(RidePlace place) {
+    if (ride.approximate) {
+      return place.address.isEmpty
+          ? 'Exact place after you accept'
+          : place.address;
+    }
+    return compact ? place.shortName : place.address;
   }
 
   static String _by(DateTime? departBy) =>
@@ -336,6 +348,11 @@ class RideCard extends StatelessWidget {
                 RideFact(
                   icon: Icons.near_me_rounded,
                   text: '${RideFormat.distance(distance)} away',
+                ),
+              if (ride.approximate)
+                const RideFact(
+                  icon: Icons.lock_outline_rounded,
+                  text: 'Exact address after you accept',
                 ),
             ],
           ),
