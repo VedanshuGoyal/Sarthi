@@ -32,18 +32,24 @@ var (
 	// ErrOTPInvalidated means too many wrong codes were entered; the current OTP
 	// is dead and the user must request a new one (restart the flow).
 	ErrOTPInvalidated = errors.New("too many incorrect attempts; request a new code")
+	// ErrOTPNotVerified means Register was called without a recently verified
+	// code for that number: the pass expired, was used, or never existed.
+	ErrOTPNotVerified = errors.New("your verification expired; verify your number again")
 )
 
-// OTPLockedError reports that OTP resends are temporarily blocked after the
-// resend cap was hit. RetryAfter is how long until they're allowed again; the
-// user can also restart the flow to get a fresh code immediately.
+// OTPLockedError reports that sending codes to a number is temporarily
+// blocked: the resend cap or the hourly SMS cap was hit. RetryAfter is how long
+// until another code may be sent.
 type OTPLockedError struct {
 	RetryAfter time.Duration
 }
 
 func (e *OTPLockedError) Error() string {
 	mins := int(e.RetryAfter.Minutes() + 0.5)
-	return fmt.Sprintf("too many code requests; try again in %d minutes or restart", mins)
+	if mins < 1 {
+		mins = 1
+	}
+	return fmt.Sprintf("too many code requests; try again in %d minutes", mins)
 }
 
 var (
@@ -86,16 +92,19 @@ type OTPSender interface {
 // memstore.OTPGuard. Phone numbers are passed in full E.164 form. When no
 // limiter is wired the caps are simply not enforced.
 type OTPLimiter interface {
-	// Begin starts (or restarts) a session, clearing all counters and locks.
-	Begin(phoneE164 string)
+	// BeginSend starts (or restarts) a session for a fresh code; ok=false (with
+	// retryAfter) means the number has used its SMS allowance.
+	BeginSend(phoneE164 string) (ok bool, retryAfter time.Duration)
 	// Resend counts a resend; ok=false (with retryAfter) means it's locked.
 	Resend(phoneE164 string) (ok bool, retryAfter time.Duration)
 	// CheckVerify reports whether a verification may proceed (OTP not yet dead).
 	CheckVerify(phoneE164 string) bool
 	// RecordFailure counts a wrong code; invalidated=true kills the OTP.
 	RecordFailure(phoneE164 string) (invalidated bool)
-	// Succeed clears a session after a correct code.
+	// Succeed records a correct code and grants a short registration pass.
 	Succeed(phoneE164 string)
+	// ConsumeVerified uses up that pass; false means no recent correct code.
+	ConsumeVerified(phoneE164 string) bool
 }
 
 // AuthService implements phone-number registration and login: request OTP,
@@ -163,9 +172,11 @@ func (s *AuthService) RequestOTP(ctx context.Context, phoneE164 string) error {
 		return ErrInvalidPhone
 	}
 	// A fresh code starts a fresh session — this is also how a user "restarts"
-	// out of a lockout or an invalidated OTP.
+	// out of a lockout or an invalidated OTP, within the hourly SMS cap.
 	if s.limiter != nil {
-		s.limiter.Begin(phoneE164)
+		if ok, retryAfter := s.limiter.BeginSend(phoneE164); !ok {
+			return &OTPLockedError{RetryAfter: retryAfter}
+		}
 	}
 	if s.otp == nil {
 		return nil
@@ -291,8 +302,10 @@ type RegisterParams struct {
 }
 
 // Register validates the profile, persists a new account, and logs it in
-// (issuing a session token). A duplicate phone number surfaces as
-// [repository.ErrPhoneTaken].
+// (issuing a session token). The number must have verified a code within
+// memstore.OTPVerifiedTTL, else [ErrOTPNotVerified]; without that check anyone
+// could open an account on someone else's number. A duplicate phone number
+// surfaces as [repository.ErrPhoneTaken].
 func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResult, error) {
 	name := strings.TrimSpace(p.Name)
 	email := strings.TrimSpace(p.Email)
@@ -306,6 +319,10 @@ func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResul
 		return AuthResult{}, ErrInvalidEmail
 	case !isAdult(p.DateOfBirth):
 		return AuthResult{}, ErrInvalidDOB
+	}
+	// Checked after validation so a typo doesn't burn the pass.
+	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
+		return AuthResult{}, ErrOTPNotVerified
 	}
 
 	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{

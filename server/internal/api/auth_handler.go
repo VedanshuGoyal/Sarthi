@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -179,6 +180,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeErrorCode(w, http.StatusTooManyRequests, "otp_invalidated", err.Error(), 0)
 	case errors.Is(err, service.ErrInvalidOTP):
 		writeErrorCode(w, http.StatusUnauthorized, "otp_incorrect", err.Error(), 0)
+	case errors.Is(err, service.ErrOTPNotVerified):
+		writeErrorCode(w, http.StatusUnauthorized, "otp_not_verified", err.Error(), 0)
 	case errors.Is(err, repository.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, "account not found")
 	case errors.Is(err, repository.ErrPhoneTaken):
@@ -189,6 +192,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidDOB):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
+		slog.Error("auth: unexpected error", "error", err)
 		writeError(w, http.StatusInternalServerError, "something went wrong")
 	}
 }

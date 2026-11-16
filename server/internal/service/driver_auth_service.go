@@ -86,7 +86,9 @@ func (s *DriverAuthService) RequestOTP(ctx context.Context, phoneE164 string) er
 		return ErrInvalidPhone
 	}
 	if s.limiter != nil {
-		s.limiter.Begin(phoneE164)
+		if ok, retryAfter := s.limiter.BeginSend(phoneE164); !ok {
+			return &OTPLockedError{RetryAfter: retryAfter}
+		}
 	}
 	if s.otp == nil {
 		return nil
@@ -200,8 +202,9 @@ type DriverRegisterParams struct {
 }
 
 // Register validates the name, persists a new driver account, and logs it in
-// (issuing a session token). A duplicate phone number surfaces as
-// [repository.ErrDriverPhoneTaken].
+// (issuing a session token). Like [AuthService.Register] it needs a recently
+// verified code for the number, else [ErrOTPNotVerified]. A duplicate phone
+// number surfaces as [repository.ErrDriverPhoneTaken].
 func (s *DriverAuthService) Register(ctx context.Context, p DriverRegisterParams) (DriverAuthResult, error) {
 	name := strings.TrimSpace(p.Name)
 
@@ -210,6 +213,9 @@ func (s *DriverAuthService) Register(ctx context.Context, p DriverRegisterParams
 		return DriverAuthResult{}, ErrInvalidPhone
 	case len(name) < 2:
 		return DriverAuthResult{}, ErrInvalidName
+	}
+	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
+		return DriverAuthResult{}, ErrOTPNotVerified
 	}
 
 	driver, err := s.drivers.CreateDriver(ctx, repository.CreateDriverParams{

@@ -107,13 +107,21 @@ type fakeLimiter struct {
 	verifyOK  bool          // CheckVerify result
 	invalidat bool          // RecordFailure result
 	failures  int           // RecordFailure call count
+	// beginLocked makes Begin refuse (SMS cap hit); verified is the
+	// ConsumeVerified result (a registration pass exists).
+	beginLocked bool
+	verified    bool
 }
 
-func (f *fakeLimiter) Begin(p string)                      { f.begun = append(f.begun, p) }
+func (f *fakeLimiter) BeginSend(p string) (bool, time.Duration) {
+	f.begun = append(f.begun, p)
+	return !f.beginLocked, f.retry
+}
 func (f *fakeLimiter) Resend(string) (bool, time.Duration) { return f.resendOK, f.retry }
 func (f *fakeLimiter) CheckVerify(string) bool             { return f.verifyOK }
 func (f *fakeLimiter) RecordFailure(string) bool           { f.failures++; return f.invalidat }
 func (f *fakeLimiter) Succeed(p string)                    { f.succeeded = append(f.succeeded, p) }
+func (f *fakeLimiter) ConsumeVerified(string) bool         { return f.verified }
 
 func adultDOB() time.Time { return time.Now().AddDate(-25, 0, 0) }
 
@@ -384,5 +392,45 @@ func TestCurrentUser(t *testing.T) {
 	}
 	if _, err := s.CurrentUser(context.Background(), "nope"); !errors.Is(err, repository.ErrUserNotFound) {
 		t.Fatalf("unknown id should be ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestRegisterRequiresVerifiedOTP(t *testing.T) {
+	adult := time.Now().AddDate(-30, 0, 0)
+	params := RegisterParams{
+		PhoneE164: "+919876543210", Name: "Asha", Email: "asha@example.com", DateOfBirth: adult,
+	}
+
+	t.Run("without a pass the account is not created", func(t *testing.T) {
+		store := &fakeUserStore{}
+		s := NewAuthService(store, WithOTPLimiter(&fakeLimiter{verified: false}))
+		_, err := s.Register(context.Background(), params)
+		if !errors.Is(err, ErrOTPNotVerified) {
+			t.Fatalf("want ErrOTPNotVerified, got %v", err)
+		}
+		if store.created != nil {
+			t.Fatal("no account may be created without a verified code")
+		}
+	})
+
+	t.Run("with a pass the account is created", func(t *testing.T) {
+		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(&fakeLimiter{verified: true}))
+		if _, err := s.Register(context.Background(), params); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+	})
+}
+
+func TestRequestOTPRefusedPastSendCap(t *testing.T) {
+	sender := &fakeOTPSender{}
+	lim := &fakeLimiter{beginLocked: true, retry: 20 * time.Minute}
+	s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(sender))
+	err := s.RequestOTP(context.Background(), "+919876543210")
+	var locked *OTPLockedError
+	if !errors.As(err, &locked) || locked.RetryAfter != 20*time.Minute {
+		t.Fatalf("want *OTPLockedError with retryAfter, got %v", err)
+	}
+	if len(sender.sent) != 0 {
+		t.Fatal("no SMS may be sent past the cap")
 	}
 }

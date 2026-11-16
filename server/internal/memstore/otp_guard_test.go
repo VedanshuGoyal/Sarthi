@@ -62,8 +62,9 @@ func TestOTPGuard_LockClearsAfterWaiting(t *testing.T) {
 func TestOTPGuard_BeginResetsLockout(t *testing.T) {
 	clk := time.Now()
 	g := newTestGuard(&clk)
+	g.maxSends = 100 // isolate the resend lock from the SMS cap
 	const phone = "+919876543210"
-	g.Begin(phone)
+	g.BeginSend(phone)
 	for range MaxOTPResends {
 		g.Resend(phone)
 	}
@@ -71,8 +72,9 @@ func TestOTPGuard_BeginResetsLockout(t *testing.T) {
 		t.Fatal("expected lockout after the cap")
 	}
 
-	// Restarting the flow (a fresh code) clears the lock right away.
-	g.Begin(phone)
+	// Restarting the flow (a fresh code) clears the resend lock right away,
+	// within the SMS cap (see TestOTPGuard_SendCapBindsAcrossRestarts).
+	g.BeginSend(phone)
 	if ok, _ := g.Resend(phone); !ok {
 		t.Fatal("Begin should reset the resend allowance")
 	}
@@ -126,5 +128,103 @@ func TestOTPGuard_SucceedClearsSession(t *testing.T) {
 	// After success the session is gone; a later verify is treated as fresh.
 	if !g.CheckVerify(phone) {
 		t.Fatal("a cleared session should allow verification")
+	}
+}
+
+func TestOTPGuard_SendCapBindsAcrossRestarts(t *testing.T) {
+	clk := time.Now()
+	g := newTestGuard(&clk)
+	const phone = "+919876543210"
+
+	// Restarting the flow used to reset every limit; now each fresh code
+	// counts against the number's SMS allowance.
+	for i := 1; i <= MaxOTPSends; i++ {
+		if ok, _ := g.BeginSend(phone); !ok {
+			t.Fatalf("send %d should be allowed", i)
+		}
+	}
+	ok, retry := g.BeginSend(phone)
+	if ok {
+		t.Fatal("a send past the cap should be refused")
+	}
+	if retry <= 0 || retry > OTPSendWindow {
+		t.Fatalf("retryAfter should be within the send window, got %v", retry)
+	}
+
+	// Once the oldest send ages out, one more is allowed.
+	clk = clk.Add(OTPSendWindow + time.Second)
+	if ok, _ := g.BeginSend(phone); !ok {
+		t.Fatal("a send should be allowed after the window passes")
+	}
+}
+
+func TestOTPGuard_ResendsCountTowardSendCap(t *testing.T) {
+	clk := time.Now()
+	g := newTestGuard(&clk)
+	const phone = "+919876543210"
+	g.BeginSend(phone)
+	for range MaxOTPResends {
+		g.Resend(phone)
+	}
+	// 1 fresh + 3 resends = 4 SMS; one fresh code is left this hour.
+	if ok, _ := g.BeginSend(phone); !ok {
+		t.Fatal("the fifth SMS should be allowed")
+	}
+	if ok, _ := g.Resend(phone); ok {
+		t.Fatal("a resend past the SMS cap should be refused")
+	}
+}
+
+func TestOTPGuard_RegistrationPass(t *testing.T) {
+	clk := time.Now()
+	g := newTestGuard(&clk)
+	const phone = "+919876543210"
+
+	if g.ConsumeVerified(phone) {
+		t.Fatal("no pass without a verified code")
+	}
+	g.BeginSend(phone)
+	if g.ConsumeVerified(phone) {
+		t.Fatal("sending a code is not verifying it")
+	}
+
+	g.Succeed(phone)
+	if !g.ConsumeVerified(phone) {
+		t.Fatal("a verified code should grant a pass")
+	}
+	if g.ConsumeVerified(phone) {
+		t.Fatal("a pass is single-use")
+	}
+
+	g.Succeed(phone)
+	clk = clk.Add(OTPVerifiedTTL + time.Second)
+	if g.ConsumeVerified(phone) {
+		t.Fatal("a pass expires after OTPVerifiedTTL")
+	}
+
+	g.Succeed(phone)
+	g.BeginSend(phone)
+	if g.ConsumeVerified(phone) {
+		t.Fatal("requesting a new code drops an unused pass")
+	}
+}
+
+func TestOTPGuard_SweepKeepsLiveSessions(t *testing.T) {
+	clk := time.Now()
+	g := newTestGuard(&clk)
+	g.BeginSend("+919876543210")
+	g.Succeed("+919876543211")
+	g.sessions["+919876543212"] = &otpSession{}
+
+	g.mu.Lock()
+	g.sweep(clk)
+	g.mu.Unlock()
+	if _, ok := g.sessions["+919876543212"]; ok {
+		t.Fatal("an idle session should be swept")
+	}
+	for _, phone := range []string{"+919876543210", "+919876543211"} {
+		if _, ok := g.sessions[phone]; !ok {
+			t.Fatalf("session %s holds a send or a pass and must stay", phone)
+		}
 	}
 }

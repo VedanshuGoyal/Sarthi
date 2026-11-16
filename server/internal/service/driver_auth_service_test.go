@@ -195,3 +195,15 @@ func TestCurrentDriver(t *testing.T) {
 		t.Fatalf("unknown id should be ErrDriverNotFound, got %v", err)
 	}
 }
+
+func TestDriverRegisterRequiresVerifiedOTP(t *testing.T) {
+	params := DriverRegisterParams{PhoneE164: "+919876543210", Name: "Ravi"}
+	s := NewDriverAuthService(&fakeDriverStore{}, WithDriverOTPLimiter(&fakeLimiter{verified: false}))
+	if _, err := s.Register(context.Background(), params); !errors.Is(err, ErrOTPNotVerified) {
+		t.Fatalf("want ErrOTPNotVerified, got %v", err)
+	}
+	s = NewDriverAuthService(&fakeDriverStore{}, WithDriverOTPLimiter(&fakeLimiter{verified: true}))
+	if _, err := s.Register(context.Background(), params); err != nil {
+		t.Fatalf("Register with a pass: %v", err)
+	}
+}
