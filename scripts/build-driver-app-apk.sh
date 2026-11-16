@@ -50,13 +50,22 @@ API_BASE_URL="https://$DOMAIN"
 
 cd "$REPO_ROOT/apps/driver_app"
 
-echo "🌐 Pointing APK at ${API_BASE_URL}"
+# The build number (the +N of pubspec's version) rides on every request as
+# X-Build, for the server's minimum-build gate (server/README.md, "App builds").
+APP_BUILD="$(sed -nE 's/^version:[[:space:]]*[^+[:space:]]+\+([0-9]+)[[:space:]]*$/\1/p' pubspec.yaml)"
+if [ -z "$APP_BUILD" ]; then
+  echo "❌ Couldn't read the +N build number from apps/driver_app/pubspec.yaml's version." >&2
+  exit 1
+fi
+
+echo "🌐 Pointing APK at ${API_BASE_URL} (build ${APP_BUILD})"
 
 echo "📦 Resolving dependencies..."
 flutter pub get
 
 echo "🛠️  Building driver_app APK (${MODE})..."
-flutter build apk --"${MODE}" --dart-define="API_BASE_URL=${API_BASE_URL}"
+flutter build apk --"${MODE}" --dart-define="API_BASE_URL=${API_BASE_URL}" \
+  --dart-define="APP_BUILD=${APP_BUILD}"
 
 BUILT_APK="build/app/outputs/flutter-apk/app-${MODE}.apk"
 if [ ! -f "$BUILT_APK" ]; then
