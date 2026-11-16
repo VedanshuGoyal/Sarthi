@@ -48,6 +48,40 @@ func payoutOf(t *testing.T, ctx context.Context, db DB, bookingID string) string
 	return payout
 }
 
+func TestPaymentRepository_DuePayoutsCarriesTheHoldInputs_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	repo := NewPaymentRepository(tx)
+	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
+	asOf := time.Now()
+	paidRide(t, ctx, tx, user, driver, asOf.Add(-time.Hour), 10000, 1300)
+	if _, err := tx.Exec(ctx, `UPDATE drivers SET kyc_status = 'verified' WHERE id = $1`, driver); err != nil {
+		t.Fatalf("verifying driver: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO driver_bank_accounts
+		    (driver_id, account_holder_name, account_number_encrypted, account_number_last4, ifsc_code,
+		     verified_at, verified_name)
+		VALUES ($1, 'Typed Name', '\x01'::bytea, '7890', 'HDFC0001234', now(), 'BANK NAME')`, driver); err != nil {
+		t.Fatalf("inserting bank account: %v", err)
+	}
+
+	due, err := repo.DuePayouts(ctx, asOf)
+	if err != nil {
+		t.Fatalf("DuePayouts: %v", err)
+	}
+	for _, d := range due {
+		if d.DriverID != driver {
+			continue
+		}
+		if d.KYCStatus != "verified" || d.AccountVerifiedAt == nil || d.VerifiedName != "BANK NAME" ||
+			d.AccountUpdatedAt == nil || d.Rides != 1 || d.AmountPaise != 8700 {
+			t.Errorf("due = %+v", d)
+		}
+		return
+	}
+	t.Fatalf("driver %s not listed in %+v", driver, due)
+}
+
 func TestPaymentRepository_RecordPayout_Integration(t *testing.T) {
 	ctx, tx := rollbackTx(t)
 	repo := NewPaymentRepository(tx)

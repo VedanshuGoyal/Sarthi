@@ -174,18 +174,20 @@ func (r *PaymentRepository) CompleteOrder(ctx context.Context, o domain.PaymentO
 
 // DuePayouts lists, per driver, the share of every ride paid on or before
 // asOf that hasn't been paid out, with their bank details (number still
-// sealed). Largest first.
+// sealed), KYC status and when the bank confirmed the account. Largest
+// first.
 func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]domain.PayoutDue, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.name, d.phone_e164,
 		       count(*), sum(b.paid_paise - coalesce(b.commission_paise, 0)),
 		       coalesce(a.account_holder_name, ''), a.account_number_encrypted,
-		       coalesce(a.ifsc_code, '')
+		       coalesce(a.ifsc_code, ''), coalesce(a.verified_name, ''), a.updated_at,
+		       d.kyc_status, a.verified_at
 		FROM bookings b
 		JOIN drivers d ON d.id = b.driver_id
 		LEFT JOIN driver_bank_accounts a ON a.driver_id = d.id
 		WHERE b.paid_at IS NOT NULL AND b.payout_id IS NULL AND b.paid_at <= $1
-		GROUP BY d.id, d.name, d.phone_e164, a.account_holder_name, a.account_number_encrypted, a.ifsc_code
+		GROUP BY d.id, d.name, d.phone_e164, d.kyc_status, a.driver_id
 		ORDER BY 5 DESC`, asOf)
 	if err != nil {
 		return nil, fmt.Errorf("listing due payouts: %w", err)
@@ -195,7 +197,8 @@ func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]d
 	for rows.Next() {
 		var p domain.PayoutDue
 		if err := rows.Scan(&p.DriverID, &p.DriverName, &p.DriverPhone, &p.Rides, &p.AmountPaise,
-			&p.AccountHolderName, &p.AccountNumberEncrypted, &p.IFSCCode); err != nil {
+			&p.AccountHolderName, &p.AccountNumberEncrypted, &p.IFSCCode, &p.VerifiedName, &p.AccountUpdatedAt,
+			&p.KYCStatus, &p.AccountVerifiedAt); err != nil {
 			return nil, fmt.Errorf("listing due payouts: %w", err)
 		}
 		out = append(out, p)

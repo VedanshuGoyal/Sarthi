@@ -293,6 +293,7 @@ async function loadPayouts() {
     const ref = el("input", { placeholder: "UTR / reference", style: "min-width:150px" });
     const msg = el("div", { class: "msg" });
     const save = el("button", { class: "primary", type: "button" }, "Mark paid");
+    if (d.onHold) { ref.disabled = save.disabled = true; msg.className = "msg bad"; msg.textContent = "On hold: " + d.holdReason; }
     save.addEventListener("click", async () => {
       if (!ref.value.trim()) { msg.className = "msg bad"; msg.textContent = "Enter the UTR."; return; }
       save.disabled = true; msg.className = "msg"; msg.textContent = "Saving…";
@@ -305,8 +306,10 @@ async function loadPayouts() {
       el("td", {}, el("div", { class: "v" }, d.driverName), el("div", { class: "sub" }, d.driverPhone)),
       el("td", {}, d.rides),
       el("td", { class: "v" }, rupees(d.amountPaise)),
-      el("td", {}, d.accountHolderName || el("span", { class: "bad" }, "No bank details"),
-        el("div", { class: "sub mono" }, (d.accountNumber || "") + (d.ifscCode ? " · " + d.ifscCode : ""))),
+      el("td", {}, d.onHold ? el("span", { class: "bad" }, "On hold") : (d.accountHolderName || el("span", { class: "bad" }, "No bank details")),
+        d.verifiedName ? el("div", { class: "sub" }, "Bank says: " + d.verifiedName) : null,
+        el("div", { class: "sub mono" }, (d.accountNumber || "") + (d.ifscCode ? " · " + d.ifscCode : "")),
+        d.accountUpdatedAt ? el("div", { class: "sub" }, "Account changed " + fmtTime(d.accountUpdatedAt)) : null),
       el("td", {}, el("div", { class: "row" }, ref, save), msg));
   });
   list.replaceChildren(head,

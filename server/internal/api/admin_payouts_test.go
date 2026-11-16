@@ -74,6 +74,45 @@ func TestRecordPayout_oldCallerWithoutTotals(t *testing.T) {
 	}
 }
 
+func TestDuePayouts_csvIsSafeAndUncached(t *testing.T) {
+	confirmed := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	store := &fakePayoutStore{due: []domain.PayoutDue{
+		{
+			DriverID: "d1", DriverName: "=HYPERLINK(\"http://x\",\"pay\")", DriverPhone: "+919800000001",
+			Rides: 2, AmountPaise: 13050, AccountHolderName: "@SUM(A1)", AccountNumberEncrypted: []byte("1234567890"),
+			IFSCCode: "HDFC0001234", VerifiedName: "-ASHA", KYCStatus: domain.KYCVerified, AccountVerifiedAt: &confirmed,
+		},
+		{DriverID: "held", DriverName: "Held Driver", KYCStatus: domain.KYCSubmitted, AccountNumberEncrypted: []byte("999")},
+	}}
+	h := adminPayouts(store)
+
+	for _, path := range []string{"/admin/payouts/due", "/admin/payouts/due?format=csv"} {
+		rec := httptest.NewRecorder()
+		h.DuePayouts(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", path, rec.Code, rec.Body)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s: Cache-Control = %q, want no-store", path, got)
+		}
+		body := rec.Body.String()
+		if strings.HasSuffix(path, "csv") {
+			if strings.Contains(body, "held") || strings.Contains(body, "999") {
+				t.Errorf("csv lists a driver on hold:\n%s", body)
+			}
+			for _, want := range []string{`'=HYPERLINK`, `'@SUM(A1)`, `'-ASHA`, `+919800000001`, `1234567890`} {
+				if !strings.Contains(body, want) {
+					t.Errorf("csv lacks %q:\n%s", want, body)
+				}
+			}
+			continue
+		}
+		if !strings.Contains(body, `"onHold":true`) || strings.Contains(body, "999") {
+			t.Errorf("json should list the held driver without the number:\n%s", body)
+		}
+	}
+}
+
 func TestRecordPayout_staleListIsAConflict(t *testing.T) {
 	store := &fakePayoutStore{recordErr: fmt.Errorf("%w (now 3 rides, 19140 paise)", repository.ErrPayoutMismatch)}
 	rec := postPayout(adminPayouts(store), `{"driverId":"d1","reference":"UTR1","amountPaise":13050,"rides":2}`)
