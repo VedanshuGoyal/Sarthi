@@ -189,10 +189,13 @@ func newRideService(store *fakeRideStore) *DriverRideService {
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
 		"review":  {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionBoth},
-	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
+	}, &fakePresence{online: map[string]bool{}}, memstore.NewStartCodeGuard(), memstore.NewLiveLocations(), nil)
 	svc.now = func() time.Time { return testNow }
 	codes := []string{"1111", "2222", "3333"}
+	var mu sync.Mutex // Accept runs in parallel in the race test
 	svc.newCode = func() (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		c := codes[0]
 		codes = append(codes[1:], c)
 		return c, nil
@@ -418,7 +421,7 @@ func TestEarnings_istWindows(t *testing.T) {
 	store := &earningsSpy{fakeRideStore: newFakeRideStore(), capture: func(today, week, month time.Time) {
 		gotToday, gotWeek, gotMonth = today, week, month
 	}}
-	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
+	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewStartCodeGuard(), memstore.NewLiveLocations(), nil)
 	// Sunday 25 Oct 2026, 01:00 IST — still Saturday evening in UTC.
 	svc.now = func() time.Time { return time.Date(2026, 10, 24, 19, 30, 0, 0, time.UTC) }
 
@@ -466,7 +469,7 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	}
 
 	// Four wrong codes are just wrong; the fifth replaces the code.
-	for i := range memstore.MaxOTPVerifyFailures - 1 {
+	for i := range memstore.MaxStartCodeFailures - 1 {
 		if _, err := svc.Start(ctx, "auto", "r1", "9999"); !errors.Is(err, ErrStartOTPIncorrect) {
 			t.Fatalf("wrong code %d err = %v, want ErrStartOTPIncorrect", i+1, err)
 		}
@@ -477,7 +480,7 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	if got := store.rides["r1"].Booking.StartOTP; got != "2222" {
 		t.Fatalf("code after reset = %q, want 2222", got)
 	}
-	// The old code is dead; the new one works, with a fresh allowance.
+	// The old code is dead; the new one works.
 	if _, err := svc.Start(ctx, "auto", "r1", "1111"); !errors.Is(err, ErrStartOTPIncorrect) {
 		t.Errorf("old code err = %v, want ErrStartOTPIncorrect", err)
 	}
@@ -487,6 +490,39 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	}
 	if ride.Status != domain.RideStatusInProgress {
 		t.Errorf("status = %s, want in_progress", ride.Status)
+	}
+}
+
+// Guessing can't be scripted: once a ride's codes keep being used up, it
+// refuses every code — even the right one — for a while.
+func TestStart_locksARideAfterRepeatedWrongCodes(t *testing.T) {
+	store := newFakeRideStore(openRide("r1", testNow.Add(time.Hour), 2, "automatic"))
+	svc := newRideService(store)
+	ctx := context.Background()
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if _, err := svc.Arrive(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Arrive: %v", err)
+	}
+
+	misses := memstore.MaxStartCodeFailures * memstore.MaxStartCodeResets
+	var err error
+	for range misses {
+		_, err = svc.Start(ctx, "auto", "r1", "0000")
+	}
+	if !errors.Is(err, ErrStartLocked) {
+		t.Fatalf("after %d wrong codes err = %v, want ErrStartLocked", misses, err)
+	}
+	if locked, ok := errors.AsType[*StartLockedError](err); !ok || locked.RetryAfter != memstore.StartCodeLockDuration {
+		t.Errorf("lock = %+v, want %v", locked, memstore.StartCodeLockDuration)
+	}
+	right := store.rides["r1"].Booking.StartOTP
+	if _, err := svc.Start(ctx, "auto", "r1", right); !errors.Is(err, ErrStartLocked) {
+		t.Errorf("right code while locked: err = %v, want ErrStartLocked", err)
+	}
+	if store.rides["r1"].Booking.Status != domain.RideStatusArrived {
+		t.Errorf("status = %s, want still arrived", store.rides["r1"].Booking.Status)
 	}
 }
 

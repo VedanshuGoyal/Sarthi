@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/big"
 	"time"
 
@@ -48,6 +49,21 @@ var ErrStartOTPIncorrect = errors.New("that code doesn't match — ask the custo
 // ErrStartOTPReset is returned on the wrong attempt that uses up the
 // allowance: the ride gets a new code, which the customer's app now shows.
 var ErrStartOTPReset = errors.New("too many wrong codes — the customer's app now shows a new one")
+
+// ErrStartLocked is matched (errors.Is) by a [*StartLockedError]: the ride
+// has had too many wrong codes and refuses any for a while.
+var ErrStartLocked = errors.New("too many wrong codes for this ride")
+
+// StartLockedError says how long a locked ride refuses start codes.
+type StartLockedError struct{ RetryAfter time.Duration }
+
+func (e *StartLockedError) Error() string {
+	return fmt.Sprintf("too many wrong codes for this ride — try again in %d minutes",
+		int(math.Ceil(e.RetryAfter.Minutes())))
+}
+
+// Is makes errors.Is(err, ErrStartLocked) true.
+func (e *StartLockedError) Is(target error) bool { return target == ErrStartLocked }
 
 const (
 	// requestRadiusM is how far from the driver an open ride may start and
@@ -92,11 +108,12 @@ type DriverPresence interface {
 }
 
 // StartCodeGuard caps wrong start-code attempts per ride
-// (memstore.OTPGuard, keyed by ride id).
+// (memstore.StartCodeGuard, keyed by ride id): after a few wrong codes the
+// code is replaced, and after a few replacements the ride is locked.
 type StartCodeGuard interface {
-	Begin(key string)
-	RecordFailure(key string) (invalidated bool)
-	Succeed(key string)
+	Allow(ride string) (ok bool, retryAfter time.Duration)
+	RecordFailure(ride string) (replace bool, lockedFor time.Duration)
+	Succeed(ride string)
 }
 
 // LiveLocationSink keeps the positions drivers' apps share while on a ride
@@ -253,7 +270,6 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	s.codes.Begin(rideID)
 	slog.InfoContext(ctx, "ride accepted", "driverId", driverID, "rideId", rideID)
 	ride, _, _ := toDriverRide(rb, true)
 	if s.alerts != nil {
@@ -278,7 +294,9 @@ func (s *DriverRideService) Arrive(ctx context.Context, driverID, rideID string)
 //
 // Wrong codes are capped per ride (StartCodeGuard); the attempt that uses up
 // the allowance replaces the code, so guessing never gets easier and the
-// customer simply reads out the new one.
+// customer simply reads out the new one. A ride whose codes keep being used
+// up is locked for a while ([ErrStartLocked]), so 10,000 guesses can't be
+// scripted.
 func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp string) (domain.DriverRide, error) {
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
@@ -297,9 +315,13 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 		return domain.DriverRide{}, repository.ErrRideStateConflict
 	}
 
+	if ok, wait := s.codes.Allow(rideID); !ok {
+		return domain.DriverRide{}, &StartLockedError{RetryAfter: wait}
+	}
 	want := target.Booking.StartOTP
 	if want == "" || subtle.ConstantTimeCompare([]byte(otp), []byte(want)) != 1 {
-		if !s.codes.RecordFailure(rideID) {
+		replace, lockedFor := s.codes.RecordFailure(rideID)
+		if !replace {
 			return domain.DriverRide{}, ErrStartOTPIncorrect
 		}
 		code, err := s.newCode()
@@ -309,7 +331,11 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 		if err := s.store.SetStartOTP(ctx, rideID, driverID, code); err != nil {
 			return domain.DriverRide{}, err
 		}
-		s.codes.Begin(rideID)
+		if lockedFor > 0 {
+			slog.WarnContext(ctx, "ride start locked after repeated wrong codes",
+				"driverId", driverID, "rideId", rideID, "lockedFor", lockedFor)
+			return domain.DriverRide{}, &StartLockedError{RetryAfter: lockedFor}
+		}
 		slog.WarnContext(ctx, "ride start code reset after wrong attempts",
 			"driverId", driverID, "rideId", rideID)
 		return domain.DriverRide{}, ErrStartOTPReset

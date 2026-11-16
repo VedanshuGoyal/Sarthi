@@ -182,8 +182,9 @@ func run() error {
 		repository.NewDriverRideRepository(pool),
 		driverProfiles,
 		presence,
-		// Wrong start-code attempts, keyed by ride id (5 per code).
-		memstore.NewOTPGuard(),
+		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new
+		// code; 3 codes, then the ride is locked for 15 minutes.
+		memstore.NewStartCodeGuard(),
 		liveLocations,
 		notify,
 	)
