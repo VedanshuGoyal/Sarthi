@@ -215,7 +215,7 @@ function driverCard(d) {
     approve.disabled = reject.disabled = true;
     msg.className = "msg"; msg.textContent = "Saving…";
     try {
-      await api("/admin/kyc/" + encodeURIComponent(d.driverId), { method: "POST", body: JSON.stringify({ status, note: note.value.trim() }) });
+      await api("/admin/kyc/" + encodeURIComponent(d.driverId), { method: "POST", body: JSON.stringify({ status, note: note.value.trim(), expectedStatus: p.kycStatus }) });
       msg.className = "msg ok"; msg.textContent = status === "verified" ? "Approved. Driver notified." : "Rejected. Driver notified.";
       setTimeout(() => select(tab), 900);
     } catch (e) {
@@ -237,6 +237,7 @@ function driverCard(d) {
             el("a", { href: "tel:" + d.phone }, d.phone),
             " · ", p.transmission ? ({ manual: "Manual", automatic: "Automatic", both: "Manual + automatic" }[p.transmission] || p.transmission) : "gearbox not set",
             p.kycSubmittedAt ? " · submitted " + fmtTime(p.kycSubmittedAt) : "")),
+        p.kycRejectedAt ? el("div", { class: "sub bad" }, "Rejected by a reviewer " + fmtTime(p.kycRejectedAt) + " — only a reviewer can clear them.") : null,
         p.kycReviewNote ? el("div", { class: "note" + (p.kycStatus === "rejected" ? " bad" : "") }, p.kycReviewNote) : null,
         el("div", { class: "checks" },
           el("div", { class: "check" },

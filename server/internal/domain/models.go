@@ -197,6 +197,9 @@ type DriverProfile struct {
 	// KYCReviewNote says why a submission is waiting on a person, or why it
 	// was rejected.
 	KYCReviewNote string `json:"kycReviewNote,omitempty"`
+	// KYCRejectedAt is when a reviewer last rejected the driver; until a
+	// reviewer verifies them, their own submissions only reach a person.
+	KYCRejectedAt *time.Time `json:"kycRejectedAt,omitempty"`
 }
 
 // DriverBankAccount is where a driver's earnings are paid. The account number

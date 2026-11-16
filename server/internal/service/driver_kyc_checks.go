@@ -309,8 +309,11 @@ func (s *DriverKYCService) ListKYCReviews(ctx context.Context, status domain.KYC
 }
 
 // DecideKYC records a reviewer's decision. A rejection needs a note — it is
-// what the driver is shown.
-func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error {
+// what the driver is shown — and holds the driver for a person until a
+// reviewer verifies them. expected is the status the reviewer saw; when set
+// and the driver has moved on, nothing changes and the error is
+// [repository.ErrKYCChanged].
+func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error {
 	note = strings.TrimSpace(note)
 	switch status {
 	case domain.KYCVerified:
@@ -321,5 +324,5 @@ func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, statu
 	default:
 		return fmt.Errorf("%w: status must be verified or rejected", ErrInvalidProfile)
 	}
-	return s.store.DecideKYC(ctx, driverID, status, note)
+	return s.store.ReviewKYC(ctx, driverID, status, note, expected)
 }

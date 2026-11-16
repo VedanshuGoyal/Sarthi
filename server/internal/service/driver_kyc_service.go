@@ -58,7 +58,8 @@ type DriverKYCStore interface {
 	SetDigiLockerSession(ctx context.Context, driverID, clientID string) error
 	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error
 	SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error
-	DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error
+	DecideSubmission(ctx context.Context, driverID string, decide func(domain.DriverKYC) (domain.KYCStatus, string, error)) error
+	ReviewKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error
 	RecordCheck(ctx context.Context, driverID string, kind domain.KYCCheckKind, ref string, outcome domain.KYCCheckOutcome, detail string) error
 	CountChecks(ctx context.Context, driverID string, kind domain.KYCCheckKind, since time.Time) (int, error)
 	ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error)
@@ -467,24 +468,29 @@ func (s *DriverKYCService) SetBankAccount(
 // convenience, not the authority — then clears the driver to drive when the
 // Aadhaar, licence and bank account all name the same person, or leaves them
 // submitted for a person to look at, with the reason in the review note.
+//
+// The decision is made with the driver's row locked, so an edit can't slip
+// in between what was checked and what is written.
 func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.DriverKYC, error) {
-	kyc, err := s.Load(ctx, driverID)
-	if err != nil {
-		return domain.DriverKYC{}, err
-	}
-	if missing := missingSteps(kyc); len(missing) > 0 {
-		return domain.DriverKYC{}, fmt.Errorf("%w: %s", ErrKYCIncomplete, strings.Join(missing, ", "))
-	}
-
-	status := domain.KYCVerified
-	issues := reviewIssues(kyc)
-	if len(issues) > 0 {
-		status = domain.KYCSubmitted
-	}
-	if err := s.store.DecideKYC(ctx, driverID, status, strings.Join(issues, "; ")); err != nil {
+	if err := s.store.DecideSubmission(ctx, driverID, decideSubmission); err != nil {
 		return domain.DriverKYC{}, err
 	}
 	return s.Load(ctx, driverID)
+}
+
+// decideSubmission is Submit's rule. A driver a reviewer rejected only ever
+// goes back to a person, with the reviewer's note kept for them to read.
+func decideSubmission(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+	if missing := missingSteps(kyc); len(missing) > 0 {
+		return "", "", fmt.Errorf("%w: %s", ErrKYCIncomplete, strings.Join(missing, ", "))
+	}
+	if kyc.Profile.KYCRejectedAt != nil {
+		return domain.KYCSubmitted, kyc.Profile.KYCReviewNote, nil
+	}
+	if issues := reviewIssues(kyc); len(issues) > 0 {
+		return domain.KYCSubmitted, strings.Join(issues, "; "), nil
+	}
+	return domain.KYCVerified, "", nil
 }
 
 // changesIdentity reports whether u would change an Aadhaar-verified field.

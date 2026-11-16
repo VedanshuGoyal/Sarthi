@@ -111,18 +111,22 @@ func (h *AdminHandler) KYCReviews(w http.ResponseWriter, r *http.Request) {
 }
 
 // DecideKYC handles POST /admin/kyc/{driverId} {"status": "verified"|"rejected",
-// "note": "..."}. The note is shown to the driver; a rejection needs one.
+// "note": "...", "expectedStatus": "submitted"}. The note is shown to the
+// driver; a rejection needs one. expectedStatus (optional) is the status the
+// reviewer saw: if the driver has moved on since, the answer is 409
+// kyc_changed and nothing is saved.
 func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
+		Status         string `json:"status"`
+		Note           string `json:"note"`
+		ExpectedStatus string `json:"expectedStatus"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	driverID, status := r.PathValue("driverId"), domain.KYCStatus(req.Status)
-	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note)
+	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note, domain.KYCStatus(req.ExpectedStatus))
 	switch {
 	case err == nil:
 		if h.notify != nil {
@@ -133,6 +137,8 @@ func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, repository.ErrDriverNotFound):
 		writeError(w, http.StatusNotFound, "driver not found")
+	case errors.Is(err, repository.ErrKYCChanged):
+		writeErrorCode(w, http.StatusConflict, "kyc_changed", err.Error(), 0)
 	default:
 		slog.Error("admin: deciding kyc", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not save the decision")

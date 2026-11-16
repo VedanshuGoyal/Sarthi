@@ -594,6 +594,80 @@ func TestEditingAfterSubmissionReopensReview(t *testing.T) {
 	}
 }
 
+// A driver a reviewer rejected can't clear themselves: their edits keep them
+// rejected, and their resubmission goes back to a person — with the
+// reviewer's note kept — however good the automated checks look.
+func TestRejectionByAReviewerSticks(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	ctx := t.Context()
+	completeKYC(t, svc, store)
+	if _, err := svc.Submit(ctx, testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCRejected, "Selfie is someone else", domain.KYCVerified); err != nil {
+		t.Fatalf("DecideKYC: %v", err)
+	}
+
+	// Edits keep the rejection showing.
+	if _, err := svc.UploadDocument(ctx, testDriverID, domain.DocumentSelfie, encodeJPEG(t, 90, 90)); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	if store.profile.KYCStatus != domain.KYCRejected {
+		t.Fatalf("status after an edit = %q, want still rejected", store.profile.KYCStatus)
+	}
+
+	// Submitting, again and again, only reaches a person.
+	for i := range 2 {
+		kyc, err := svc.Submit(ctx, testDriverID)
+		if err != nil {
+			t.Fatalf("Submit #%d: %v", i+1, err)
+		}
+		if kyc.Profile.KYCStatus != domain.KYCSubmitted {
+			t.Fatalf("Submit #%d: status = %q, want submitted", i+1, kyc.Profile.KYCStatus)
+		}
+		if kyc.Profile.KYCReviewNote != "Selfie is someone else" {
+			t.Errorf("Submit #%d: note = %q, want the reviewer's", i+1, kyc.Profile.KYCReviewNote)
+		}
+		// An edit while waiting reopens them; it mustn't lift the hold.
+		if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{
+			Transmission: ptr(string(domain.DriverTransmissionManual)),
+		}); err != nil {
+			t.Fatalf("UpdateProfile: %v", err)
+		}
+	}
+
+	// Only a reviewer clears them, and that lifts the hold.
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCVerified, "", ""); err != nil {
+		t.Fatalf("DecideKYC(verified): %v", err)
+	}
+	if store.profile.KYCStatus != domain.KYCVerified || store.profile.KYCRejectedAt != nil {
+		t.Errorf("after a reviewer's approval: status %q, hold %v", store.profile.KYCStatus, store.profile.KYCRejectedAt)
+	}
+}
+
+// A reviewer's decision lands only on the state they looked at.
+func TestReviewerDecisionNeedsTheStatusTheySaw(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	completeKYC(t, svc, store)
+	store.bankAccount.VerifiedName = "RAVI SHARMA"
+	if _, err := svc.Submit(t.Context(), testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	// The driver edits while the reviewer has the card open.
+	if err := svc.UpdateProfile(t.Context(), testDriverID, ProfileUpdate{
+		Transmission: ptr(string(domain.DriverTransmissionManual)),
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCVerified, "", domain.KYCSubmitted)
+	if !errors.Is(err, repository.ErrKYCChanged) {
+		t.Fatalf("err = %v, want ErrKYCChanged", err)
+	}
+	if store.profile.KYCStatus != domain.KYCIncomplete {
+		t.Errorf("status = %q, want the driver's incomplete left alone", store.profile.KYCStatus)
+	}
+}
+
 // Re-saving a step unchanged — or sending nothing — must not take a verified
 // driver off the road.
 func TestUnchangedProfileKeepsAVerifiedDriverVerified(t *testing.T) {
@@ -894,7 +968,7 @@ func (f *fakeKYCStore) FindProfile(context.Context, string) (domain.DriverProfil
 func (f *fakeKYCStore) SetKYCStatus(
 	_ context.Context, _ string, status domain.KYCStatus, recordSubmission bool,
 ) error {
-	f.profile.KYCStatus = status
+	f.reopen(status)
 	// Mirrors the repository: the database stamps the time, once.
 	if recordSubmission && f.submittedAt == nil {
 		now := time.Now()
@@ -943,7 +1017,7 @@ func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec 
 	}
 	f.profile.AadhaarVerifiedAt = &now
 	f.profile.DigiLockerClientID = ""
-	f.profile.KYCStatus = domain.KYCIncomplete
+	f.reopen(domain.KYCIncomplete)
 	return nil
 }
 
@@ -957,17 +1031,51 @@ func (f *fakeKYCStore) SaveLicenseVerification(_ context.Context, _ string, rec 
 		f.profile.LicenseValidUntil = &domain.Date{Time: rec.ValidUntil}
 	}
 	f.profile.LicenseClasses = rec.Classes
-	f.profile.KYCStatus = domain.KYCIncomplete
+	f.reopen(domain.KYCIncomplete)
 	return nil
 }
 
-func (f *fakeKYCStore) DecideKYC(_ context.Context, _ string, status domain.KYCStatus, note string) error {
+// reopen mirrors the repository's edit paths: a rejected driver stays
+// rejected.
+func (f *fakeKYCStore) reopen(status domain.KYCStatus) {
+	if f.profile.KYCStatus != domain.KYCRejected {
+		f.profile.KYCStatus = status
+	}
+}
+
+func (f *fakeKYCStore) DecideSubmission(
+	ctx context.Context, driverID string, decide func(domain.DriverKYC) (domain.KYCStatus, string, error),
+) error {
+	docs, _ := f.ListDocuments(ctx, driverID)
+	status, note, err := decide(domain.DriverKYC{Profile: f.profile, Documents: docs, BankAccount: f.bankAccount})
+	if err != nil {
+		return err
+	}
+	f.decide(status, note)
+	return nil
+}
+
+func (f *fakeKYCStore) ReviewKYC(
+	_ context.Context, _ string, status domain.KYCStatus, note string, expected domain.KYCStatus,
+) error {
+	if expected != "" && f.profile.KYCStatus != expected {
+		return repository.ErrKYCChanged
+	}
+	f.decide(status, note)
+	f.profile.KYCRejectedAt = nil
+	if status == domain.KYCRejected {
+		now := time.Now()
+		f.profile.KYCRejectedAt = &now
+	}
+	return nil
+}
+
+func (f *fakeKYCStore) decide(status domain.KYCStatus, note string) {
 	f.profile.KYCStatus, f.profile.KYCReviewNote = status, note
-	if status != domain.KYCIncomplete && f.submittedAt == nil {
+	if f.submittedAt == nil {
 		now := time.Now()
 		f.submittedAt, f.profile.KYCSubmittedAt = &now, &now
 	}
-	return nil
 }
 
 func (f *fakeKYCStore) RecordCheck(
