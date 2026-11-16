@@ -241,7 +241,7 @@ class RegistrationViewModel extends ChangeNotifier {
           _resendCount = 0;
         }
       }
-      notifyListeners();
+      _notify();
     });
   }
 
@@ -308,8 +308,11 @@ class RegistrationViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _resendTimer?.cancel();
     super.dispose();
   }
@@ -318,7 +321,14 @@ class RegistrationViewModel extends ChangeNotifier {
 
   /// Runs [action] with the loading flag set, mapping [AuthException]s to
   /// [errorText] and unexpected errors to a generic message.
+  ///
+  /// Ignored while another request is in flight: the keyboard's "done" key
+  /// stays live under the disabled button, and a second verify or register
+  /// would race the first. Signing in swaps this flow's screen out (and so
+  /// disposes this view model) before the request settles, so nothing is
+  /// notified after that.
   Future<void> _run(Future<void> Function() action) async {
+    if (_isLoading) return;
     _isLoading = true;
     _errorText = null;
     notifyListeners();
@@ -330,12 +340,16 @@ class RegistrationViewModel extends ChangeNotifier {
       _errorText = 'Something went wrong. Please try again.';
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
   void _fail(String message) {
     _errorText = message;
     notifyListeners();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 }
