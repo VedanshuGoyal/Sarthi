@@ -259,7 +259,8 @@ const profileColumns = `d.name, d.date_of_birth, coalesce(d.gender, ''), d.trans
 	d.aadhaar_verified_at, coalesce(d.digilocker_client_id, ''),
 	d.license_verified_at, coalesce(d.license_name, ''), d.license_valid_until,
 	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, ''),
-	coalesce(d.aadhaar_fingerprint, ''), d.kyc_rejected_at`
+	coalesce(d.aadhaar_fingerprint, ''), d.kyc_rejected_at,
+	coalesce(d.kyc_cleared_selfie_sha256, '')`
 
 // profileScan returns the Scan targets for profileColumns, and a func that
 // finishes p once the row has been read.
@@ -272,6 +273,7 @@ func profileScan(p *domain.DriverProfile) ([]any, func()) {
 		&p.LicenseVerifiedAt, &p.LicenseName, &validUntil,
 		&p.LicenseClasses, &p.KYCReviewNote,
 		&p.AadhaarFingerprint, &p.KYCRejectedAt,
+		&p.ClearedSelfieSHA256,
 	}
 	return dest, func() {
 		if validUntil != nil {
@@ -404,7 +406,8 @@ func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, drive
 // driver's row, so none can land between the read and the write: one that
 // arrives meanwhile waits, then reopens the driver as usual. An error from
 // decide is returned as is and nothing is written. kyc_submitted_at is
-// stamped the first time.
+// stamped the first time; clearing the driver records the selfie that was
+// decided on as the one cleared.
 func (r *DriverKYCRepository) DecideSubmission(
 	ctx context.Context, driverID string,
 	decide func(domain.DriverKYC) (domain.KYCStatus, string, error),
@@ -431,12 +434,21 @@ func (r *DriverKYCRepository) DecideSubmission(
 	if err != nil {
 		return err
 	}
+	var clearedSelfie string
+	if status == domain.KYCVerified {
+		for _, d := range kyc.Documents {
+			if d.Kind == domain.DocumentSelfie {
+				clearedSelfie = d.SHA256
+			}
+		}
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE drivers
 		SET kyc_status       = $2,
 		    kyc_review_note  = NULLIF($3, ''),
-		    kyc_submitted_at = coalesce(kyc_submitted_at, now())
-		WHERE id = $1`, driverID, status, note); err != nil {
+		    kyc_submitted_at = coalesce(kyc_submitted_at, now()),
+		    kyc_cleared_selfie_sha256 = coalesce(NULLIF($4, ''), kyc_cleared_selfie_sha256)
+		WHERE id = $1`, driverID, status, note, clearedSelfie); err != nil {
 		return fmt.Errorf("deciding kyc: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -468,9 +480,10 @@ func (r *DriverKYCRepository) loadKYC(ctx context.Context, driverID string) (dom
 
 // ReviewKYC records a reviewer's decision, verified or rejected, with the
 // note the driver is shown. A rejection holds the driver for a person
-// (kyc_rejected_at) until a reviewer verifies them. With expected set, the
-// decision only lands while the driver is still in that status — what the
-// reviewer was looking at — and is otherwise [ErrKYCChanged].
+// (kyc_rejected_at) until a reviewer verifies them; a verification records
+// the selfie on file as the one cleared. With expected set, the decision
+// only lands while the driver is still in that status — what the reviewer
+// was looking at — and is otherwise [ErrKYCChanged].
 func (r *DriverKYCRepository) ReviewKYC(
 	ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus,
 ) error {
@@ -479,7 +492,11 @@ func (r *DriverKYCRepository) ReviewKYC(
 		SET kyc_status       = $2::text,
 		    kyc_review_note  = NULLIF($3, ''),
 		    kyc_submitted_at = coalesce(kyc_submitted_at, now()),
-		    kyc_rejected_at  = CASE WHEN $2::text = 'rejected' THEN now() END
+		    kyc_rejected_at  = CASE WHEN $2::text = 'rejected' THEN now() END,
+		    kyc_cleared_selfie_sha256 = CASE WHEN $2::text = 'verified'
+		        THEN coalesce((SELECT sha256 FROM driver_documents WHERE driver_id = $1 AND kind = 'selfie'),
+		                      kyc_cleared_selfie_sha256)
+		        ELSE kyc_cleared_selfie_sha256 END
 		WHERE id = $1 AND ($4::text = '' OR kyc_status = $4::text)`
 
 	tag, err := r.db.Exec(ctx, q, driverID, status, note, expected)

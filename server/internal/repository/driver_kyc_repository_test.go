@@ -175,6 +175,51 @@ func TestDriverKYCRepository_OneAadhaarIdentityOneDriver_Integration(t *testing.
 	}
 }
 
+func TestDriverKYCRepository_ClearingRecordsTheSelfie_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	repo := NewDriverKYCRepository(tx)
+	id := newTestDriver(t, ctx, tx)
+	selfie := func(sha string) {
+		t.Helper()
+		if _, _, err := repo.UpsertDocument(ctx, id, UpsertDocumentParams{
+			Kind: domain.DocumentSelfie, ObjectKey: "k-" + sha, ContentType: "image/jpeg", ByteSize: 1, SHA256: sha,
+		}); err != nil {
+			t.Fatalf("UpsertDocument: %v", err)
+		}
+	}
+	cleared := func() string {
+		t.Helper()
+		p, err := repo.FindProfile(ctx, id)
+		if err != nil {
+			t.Fatalf("FindProfile: %v", err)
+		}
+		return p.ClearedSelfieSHA256
+	}
+	verify := func(domain.DriverKYC) (domain.KYCStatus, string, error) { return domain.KYCVerified, "", nil }
+	review := func(domain.DriverKYC) (domain.KYCStatus, string, error) { return domain.KYCSubmitted, "look", nil }
+
+	selfie("aaa")
+	if err := repo.DecideSubmission(ctx, id, review); err != nil {
+		t.Fatal(err)
+	}
+	if got := cleared(); got != "" {
+		t.Fatalf("sent to review, yet cleared selfie = %q", got)
+	}
+	if err := repo.DecideSubmission(ctx, id, verify); err != nil {
+		t.Fatal(err)
+	}
+	if got := cleared(); got != "aaa" {
+		t.Fatalf("after auto-clearance cleared selfie = %q, want aaa", got)
+	}
+	selfie("bbb")
+	if err := repo.ReviewKYC(ctx, id, domain.KYCVerified, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cleared(); got != "bbb" {
+		t.Errorf("after a reviewer's approval cleared selfie = %q, want bbb", got)
+	}
+}
+
 func TestDriverKYCRepository_CountAllChecks_Integration(t *testing.T) {
 	ctx, tx := rollbackTx(t)
 	repo := NewDriverKYCRepository(tx)

@@ -798,6 +798,41 @@ func TestRejectionReleasesTheDriversRides(t *testing.T) {
 	}
 }
 
+// The first clearance is automatic; after that, a new selfie goes to a
+// person to compare with the face customers have been shown.
+func TestNewSelfieAfterClearanceGoesToAPerson(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	ctx := t.Context()
+	completeKYC(t, svc, store)
+	if kyc, err := svc.Submit(ctx, testDriverID); err != nil || kyc.Profile.KYCStatus != domain.KYCVerified {
+		t.Fatalf("first Submit: %v (%+v)", err, kyc.Profile)
+	}
+
+	if _, err := svc.UploadDocument(ctx, testDriverID, domain.DocumentSelfie, encodeJPEG(t, 120, 90)); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	kyc, err := svc.Submit(ctx, testDriverID)
+	if err != nil {
+		t.Fatalf("Submit after a new selfie: %v", err)
+	}
+	if kyc.Profile.KYCStatus != domain.KYCSubmitted || !strings.Contains(kyc.Profile.KYCReviewNote, "photo changed") {
+		t.Fatalf("after a new selfie: status %q, note %q; want submitted for a person", kyc.Profile.KYCStatus, kyc.Profile.KYCReviewNote)
+	}
+
+	// Once a reviewer has looked and cleared it, it's the cleared photo.
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCVerified, "", domain.KYCSubmitted); err != nil {
+		t.Fatalf("DecideKYC: %v", err)
+	}
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{
+		Transmission: ptr(string(domain.DriverTransmissionManual)),
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if kyc, err := svc.Submit(ctx, testDriverID); err != nil || kyc.Profile.KYCStatus != domain.KYCVerified {
+		t.Errorf("an edit after the photo was cleared: %v, status %q; want verified", err, kyc.Profile.KYCStatus)
+	}
+}
+
 // A reviewer's decision lands only on the state they looked at.
 func TestReviewerDecisionNeedsTheStatusTheySaw(t *testing.T) {
 	svc, store, _ := newTestService(t)
@@ -1243,6 +1278,11 @@ func (f *fakeKYCStore) ReviewKYC(
 
 func (f *fakeKYCStore) decide(status domain.KYCStatus, note string) {
 	f.profile.KYCStatus, f.profile.KYCReviewNote = status, note
+	if status == domain.KYCVerified {
+		if selfie, ok := f.documents[domain.DocumentSelfie]; ok {
+			f.profile.ClearedSelfieSHA256 = selfie.SHA256
+		}
+	}
 	if f.submittedAt == nil {
 		now := time.Now()
 		f.submittedAt, f.profile.KYCSubmittedAt = &now, &now

@@ -200,6 +200,9 @@ type DriverProfile struct {
 	// KYCRejectedAt is when a reviewer last rejected the driver; until a
 	// reviewer verifies them, their own submissions only reach a person.
 	KYCRejectedAt *time.Time `json:"kycRejectedAt,omitempty"`
+	// ClearedSelfieSHA256 is the hash of the selfie on file when the driver
+	// was last cleared; empty until the first clearance.
+	ClearedSelfieSHA256 string `json:"-"`
 }
 
 // DriverBankAccount is where a driver's earnings are paid. The account number

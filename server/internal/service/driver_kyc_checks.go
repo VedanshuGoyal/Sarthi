@@ -355,6 +355,15 @@ func reviewIssues(kyc domain.DriverKYC) []string {
 	if len(p.LicenseClasses) == 0 {
 		issues = append(issues, "licence vehicle classes not on record")
 	}
+	// The face customers will see: once a driver has been cleared, a new
+	// photo is for a person to compare, not for the checks to wave through.
+	if p.ClearedSelfieSHA256 != "" {
+		for _, d := range kyc.Documents {
+			if d.Kind == domain.DocumentSelfie && d.SHA256 != p.ClearedSelfieSHA256 {
+				issues = append(issues, "photo changed since the driver was last cleared; check it's the same person")
+			}
+		}
+	}
 	if b := kyc.BankAccount; b != nil {
 		switch {
 		case b.VerifiedName == "":
