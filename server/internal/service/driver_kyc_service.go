@@ -72,6 +72,12 @@ type KYCAlerter interface {
 	BankAccountChanged(ctx context.Context, driverID, last4 string)
 }
 
+// HeldRideReleaser hands back the rides a driver holds once they may no
+// longer drive (DriverRideService).
+type HeldRideReleaser interface {
+	ReleaseHeldRides(ctx context.Context, driverID string) (int, error)
+}
+
 // DriverKYCService runs the driver app's six-step Document View: it validates
 // what each step collects, checks the Aadhaar, licence and bank account at
 // source, stores images in the blob store and their metadata in PostgreSQL,
@@ -89,6 +95,9 @@ type DriverKYCService struct {
 
 	// alerts, when set, is told about bank-account changes.
 	alerts KYCAlerter
+
+	// rides, when set, releases a rejected driver's upcoming rides.
+	rides HeldRideReleaser
 
 	// checkLocks serialises each driver's paid checks of one kind.
 	checkLocks keyedLocks
@@ -118,6 +127,11 @@ func NewDriverKYCService(
 // none). Separate from the constructor because the notifier is built after
 // this service in main.
 func (s *DriverKYCService) SetAlerts(a KYCAlerter) { s.alerts = a }
+
+// SetRideReleaser wires what hands back a rejected driver's upcoming rides
+// (nil releases none). Separate from the constructor because the ride
+// service is built after this one in main.
+func (s *DriverKYCService) SetRideReleaser(r HeldRideReleaser) { s.rides = r }
 
 // Load returns everything the Document View needs to render its six steps.
 func (s *DriverKYCService) Load(ctx context.Context, driverID string) (domain.DriverKYC, error) {

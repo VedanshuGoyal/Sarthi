@@ -470,17 +470,62 @@ func newStartOTP() (string, error) {
 	return fmt.Sprintf("%04d", n.Int64()), nil
 }
 
-// clearedProfile returns driverID's profile if their KYC lets them drive:
-// verified, automatically on submission or by a reviewer.
+// clearedProfile returns driverID's profile if their KYC lets them drive
+// (see clearedToDrive).
 func (s *DriverRideService) clearedProfile(ctx context.Context, driverID string) (domain.DriverProfile, error) {
 	p, err := s.profiles.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverProfile{}, err
 	}
-	if p.KYCStatus != domain.KYCVerified {
-		return domain.DriverProfile{}, ErrDriverNotCleared
+	if err := clearedToDrive(p, s.now()); err != nil {
+		return domain.DriverProfile{}, err
 	}
 	return p, nil
+}
+
+// clearedToDrive says why p may not drive at now, or nil: their KYC must be
+// verified (automatically on submission, or by a reviewer) and their
+// licence, when its expiry is on record, not past it. Licences expire long
+// after the one-off check at verification, so this is asked every time.
+func clearedToDrive(p domain.DriverProfile, now time.Time) error {
+	if p.KYCStatus != domain.KYCVerified {
+		return ErrDriverNotCleared
+	}
+	n := now.In(ist)
+	today := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+	if v := p.LicenseValidUntil; v != nil && v.Before(today) {
+		return fmt.Errorf("%w: your driving licence expired on %s; renew it and verify it again",
+			ErrDriverNotCleared, v.Format("2 Jan 2006"))
+	}
+	return nil
+}
+
+// ReleaseHeldRides hands back every ride driverID has accepted but not
+// started, as if they had released each — the customer is told and other
+// drivers alerted while it's still open. Called when a reviewer takes the
+// driver off the road. A ride already underway is left to finish. It
+// returns how many were released.
+func (s *DriverRideService) ReleaseHeldRides(ctx context.Context, driverID string) (int, error) {
+	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
+	if err != nil {
+		return 0, err
+	}
+	released := 0
+	var errs []error
+	for _, rb := range mine {
+		switch rb.Booking.Status {
+		case domain.RideStatusAccepted, domain.RideStatusArrived:
+			if err := s.Release(ctx, driverID, rb.Booking.ID); err != nil {
+				errs = append(errs, fmt.Errorf("releasing ride %s: %w", rb.Booking.ID, err))
+				continue
+			}
+			released++
+		case domain.RideStatusInProgress:
+			slog.WarnContext(ctx, "ride left with a driver who lost clearance: already underway",
+				"driverId", driverID, "rideId", rb.Booking.ID)
+		}
+	}
+	return released, errors.Join(errs...)
 }
 
 // toDriverRide renders a stored booking for the driver app. ok is false for

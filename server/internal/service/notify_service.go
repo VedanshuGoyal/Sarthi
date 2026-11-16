@@ -205,8 +205,7 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 			continue
 		}
 		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
-		if err != nil || p.KYCStatus != domain.KYCVerified ||
-			!canDrive(p.Transmission, plan.Car) {
+		if err != nil || clearedToDrive(p, s.now()) != nil || !canDrive(p.Transmission, plan.Car) {
 			continue
 		}
 		ids = append(ids, n.Driver.ID)

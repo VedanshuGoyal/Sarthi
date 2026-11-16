@@ -770,6 +770,34 @@ func TestRejectionByAReviewerSticks(t *testing.T) {
 	}
 }
 
+type heldRides struct{ released []string }
+
+func (h *heldRides) ReleaseHeldRides(_ context.Context, driverID string) (int, error) {
+	h.released = append(h.released, driverID)
+	return 1, nil
+}
+
+// A reviewer's rejection hands back the rides the driver holds; an approval
+// doesn't touch them.
+func TestRejectionReleasesTheDriversRides(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	rides := &heldRides{}
+	svc.SetRideReleaser(rides)
+
+	if err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCVerified, "", ""); err != nil {
+		t.Fatalf("DecideKYC(verified): %v", err)
+	}
+	if len(rides.released) != 0 {
+		t.Fatalf("an approval released rides: %v", rides.released)
+	}
+	if err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCRejected, "Licence is fake", ""); err != nil {
+		t.Fatalf("DecideKYC(rejected): %v", err)
+	}
+	if !slices.Equal(rides.released, []string{testDriverID}) {
+		t.Errorf("released = %v, want the rejected driver's rides", rides.released)
+	}
+}
+
 // A reviewer's decision lands only on the state they looked at.
 func TestReviewerDecisionNeedsTheStatusTheySaw(t *testing.T) {
 	svc, store, _ := newTestService(t)

@@ -387,5 +387,20 @@ func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, statu
 	default:
 		return fmt.Errorf("%w: status must be verified or rejected", ErrInvalidProfile)
 	}
-	return s.store.ReviewKYC(ctx, driverID, status, note, expected)
+	if err := s.store.ReviewKYC(ctx, driverID, status, note, expected); err != nil {
+		return err
+	}
+	// Off the road now: the rides they hold go back to other drivers rather
+	// than wait on someone who can't take them. The decision stands either
+	// way, so a failure here is only logged.
+	if status == domain.KYCRejected && s.rides != nil {
+		n, err := s.rides.ReleaseHeldRides(ctx, driverID)
+		if err != nil {
+			slog.ErrorContext(ctx, "kyc: releasing a rejected driver's rides", "driverID", driverID, "error", err)
+		}
+		if n > 0 {
+			slog.InfoContext(ctx, "kyc: released a rejected driver's rides", "driverID", driverID, "rides", n)
+		}
+	}
+	return nil
 }

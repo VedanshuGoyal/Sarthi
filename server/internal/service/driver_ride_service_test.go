@@ -561,6 +561,60 @@ func TestStart_locksARideAfterRepeatedWrongCodes(t *testing.T) {
 	}
 }
 
+// A driver taken off the road gives back the rides they haven't started;
+// one underway is left to finish.
+func TestReleaseHeldRides(t *testing.T) {
+	ride := func(id string, status domain.RideStatus) domain.RideBooking {
+		rb := openRide(id, testNow.Add(3*time.Hour), 1, "automatic")
+		rb.Booking.Status, rb.Booking.DriverID, rb.Booking.UserID = status, "auto", "u-"+id
+		return rb
+	}
+	store := newFakeRideStore(
+		ride("accepted", domain.RideStatusAccepted),
+		ride("arrived", domain.RideStatusArrived),
+		ride("driving", domain.RideStatusInProgress),
+		ride("done", domain.RideStatusCompleted),
+	)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+
+	n, err := svc.ReleaseHeldRides(context.Background(), "auto")
+	if err != nil || n != 2 {
+		t.Fatalf("ReleaseHeldRides = %d, %v; want 2", n, err)
+	}
+	for id, want := range map[string]domain.RideStatus{
+		"accepted": domain.RideStatusRequested, "arrived": domain.RideStatusRequested,
+		"driving": domain.RideStatusInProgress, "done": domain.RideStatusCompleted,
+	} {
+		if got := store.rides[id].Booking.Status; got != want {
+			t.Errorf("%s: status %s, want %s", id, got, want)
+		}
+	}
+	if len(alerts.events) != 2 {
+		t.Errorf("alerts = %v, want the two customers told", alerts.events)
+	}
+}
+
+func TestClearance_needsALicenceInDate(t *testing.T) {
+	expired := fakeProfiles{"auto": {
+		KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionAutomatic,
+		LicenseValidUntil: &domain.Date{Time: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)},
+	}}
+	svc := newRideService(newFakeRideStore(openRide("r1", testNow.Add(3*time.Hour), 1, "automatic")))
+	svc.profiles = expired
+	if _, err := svc.Requests(context.Background(), "auto", nil); !errors.Is(err, ErrDriverNotCleared) {
+		t.Errorf("licence expired yesterday: err = %v, want ErrDriverNotCleared", err)
+	}
+	// Valid through today (25 Oct, IST) still drives.
+	p := expired["auto"]
+	p.LicenseValidUntil = &domain.Date{Time: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)}
+	svc.profiles = fakeProfiles{"auto": p}
+	if _, err := svc.Requests(context.Background(), "auto", nil); err != nil {
+		t.Errorf("licence valid today: err = %v", err)
+	}
+}
+
 func TestNewStartOTP_isFourDigits(t *testing.T) {
 	for range 200 {
 		code, err := newStartOTP()

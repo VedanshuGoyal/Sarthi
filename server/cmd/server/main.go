@@ -188,6 +188,8 @@ func run() error {
 		liveLocations,
 		notify,
 	)
+	// A driver a reviewer rejects hands back the rides they hold.
+	driverKYC.SetRideReleaser(driverRides)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
 	// apps short-lived tokens (GET /maps/token).
