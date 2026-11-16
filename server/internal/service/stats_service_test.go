@@ -24,7 +24,7 @@ func (s *statsSpy) Stats(_ context.Context, q repository.StatsQuery) (domain.Adm
 
 type onDutyCount int
 
-func (n onDutyCount) Count() int { return int(n) }
+func (n onDutyCount) CountSeenSince(time.Time) int { return int(n) }
 
 func TestStats_istWindows(t *testing.T) {
 	store := &statsSpy{}

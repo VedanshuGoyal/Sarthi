@@ -46,7 +46,8 @@ const (
 	// offline.
 	presenceFresh = 10 * time.Minute
 
-	// maxAlertedDrivers caps one request's fan-out, nearest first.
+	// maxAlertedDrivers caps one request's fan-out: the nearest this many
+	// drivers who could take the ride.
 	maxAlertedDrivers = 200
 
 	// pushTimeout bounds one event's sends.
@@ -70,7 +71,7 @@ type PushTokenStore interface {
 // NearbyDriverFinder searches the live presence index
 // (memstore.DriverTracker).
 type NearbyDriverFinder interface {
-	FindNearbyDrivers(lat, lng, radiusMeters float64, limit int) ([]memstore.NearbyDriver, error)
+	FindNearbyDrivers(lat, lng, radiusMeters float64, seenSince time.Time, limit int) ([]memstore.NearbyDriver, error)
 }
 
 // NotifyService sends the apps' push notifications, Uber-style:
@@ -185,7 +186,11 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	if closesIn <= 0 {
 		return
 	}
-	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM, maxAlertedDrivers)
+	// Only fresh positions, and no cap until eligibility is known: the cap
+	// counts drivers who could take the ride, so nearer stale or ineligible
+	// ones can't crowd them out.
+	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM,
+		s.now().Add(-presenceFresh), 0)
 	if err != nil {
 		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
 		return
@@ -193,7 +198,10 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	distance := map[string]float64{}
 	var ids []string
 	for _, n := range nearby {
-		if n.Driver.ID == skip || s.now().Sub(n.Driver.Location.UpdatedAt) > presenceFresh {
+		if len(ids) == maxAlertedDrivers {
+			break
+		}
+		if n.Driver.ID == skip {
 			continue
 		}
 		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)

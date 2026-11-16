@@ -13,8 +13,9 @@ type AdminStats struct {
 
 	Users        StatsUsers `json:"users"`
 	DriversByKYC StatsKYC   `json:"driversByKyc"`
-	// DriversOnDuty counts drivers in the live presence index: online and
-	// not since gone offline. Nil when no index is wired.
+	// DriversOnDuty counts drivers in the live presence index whose app has
+	// reported in within the last 10 minutes: online, and not since gone
+	// offline or quiet. Nil when no index is wired.
 	DriversOnDuty    *int                `json:"driversOnDuty,omitempty"`
 	BookingsByStatus StatsBookings       `json:"bookingsByStatus"`
 	CompletedRides   StatsCompletedRides `json:"completedRides"`
