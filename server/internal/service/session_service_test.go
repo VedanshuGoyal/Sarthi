@@ -13,6 +13,7 @@ import (
 type fakeSessionRepo struct {
 	stored    map[string]domain.Session
 	createErr error
+	deleteErr error
 }
 
 func newFakeSessionRepo() *fakeSessionRepo {
@@ -29,6 +30,18 @@ func (r *fakeSessionRepo) Create(_ context.Context, s domain.Session) error {
 
 func (r *fakeSessionRepo) Delete(_ context.Context, token string) error {
 	delete(r.stored, token)
+	return nil
+}
+
+func (r *fakeSessionRepo) DeleteForUser(_ context.Context, userID string) error {
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	for k, s := range r.stored {
+		if s.UserID == userID {
+			delete(r.stored, k)
+		}
+	}
 	return nil
 }
 
@@ -53,6 +66,16 @@ func (c *fakeSessionCache) Delete(token string)  { delete(c.m, token) }
 func (c *fakeSessionCache) Get(token string) (domain.Session, bool) {
 	s, ok := c.m[token]
 	return s, ok
+}
+func (c *fakeSessionCache) DeleteUser(userID string) int {
+	n := 0
+	for k, s := range c.m {
+		if s.UserID == userID {
+			delete(c.m, k)
+			n++
+		}
+	}
+	return n
 }
 func (c *fakeSessionCache) Load(sessions []domain.Session) {
 	c.m = map[string]domain.Session{}
@@ -147,4 +170,50 @@ func TestSessionService_WarmLoadsCacheFromDB(t *testing.T) {
 	if id, ok := s.Validate("t1"); !ok || id != "u1" {
 		t.Fatal("token issued before restart should validate after warming")
 	}
+}
+
+func TestSessionService_RevokeAllEndsEveryDeviceOfOneUser(t *testing.T) {
+	ctx := context.Background()
+	repo, cache := newFakeSessionRepo(), newFakeSessionCache()
+	s := NewSessionService(repo, cache)
+	phone, tablet := mustIssue(t, s, "u1"), mustIssue(t, s, "u1")
+	other := mustIssue(t, s, "u2")
+
+	if err := s.RevokeAll(ctx, "u1"); err != nil {
+		t.Fatalf("RevokeAll: %v", err)
+	}
+	for _, tok := range []string{phone, tablet} {
+		if _, ok := s.Validate(tok); ok {
+			t.Error("a token of the erased user still validates")
+		}
+		if _, ok := repo.stored[tokenKey(tok)]; ok {
+			t.Error("a session of the erased user is still in the durable store")
+		}
+	}
+	if id, ok := s.Validate(other); !ok || id != "u2" {
+		t.Error("another user's session was revoked too")
+	}
+}
+
+func TestSessionService_RevokeAllClearsTheCacheEvenWhenTheStoreFails(t *testing.T) {
+	repo, cache := newFakeSessionRepo(), newFakeSessionCache()
+	s := NewSessionService(repo, cache)
+	tok := mustIssue(t, s, "u1")
+	repo.deleteErr = errors.New("db down")
+
+	if err := s.RevokeAll(context.Background(), "u1"); err == nil {
+		t.Fatal("RevokeAll hid the store's error")
+	}
+	if _, ok := s.Validate(tok); ok {
+		t.Error("the token still works while the store is down")
+	}
+}
+
+func mustIssue(t *testing.T, s *SessionService, userID string) string {
+	t.Helper()
+	sess, err := s.Issue(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	return sess.Token
 }

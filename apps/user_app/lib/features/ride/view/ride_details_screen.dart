@@ -9,6 +9,7 @@ import '../view_model/ride_details_view_model.dart';
 import 'widgets/booking_status_pill.dart';
 import 'widgets/cancel_ride_sheet.dart';
 import 'widgets/driver_row.dart';
+import 'widgets/help_safety_row.dart';
 import 'widgets/live_ride_map.dart';
 import 'widgets/ride_format.dart';
 import 'widgets/star_rating.dart';
@@ -138,6 +139,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
         _PaymentCard(vm: vm, booking: booking, onPay: () => _pay(vm)),
       if (booking.status == BookingStatus.completed)
         _RatingCard(vm: vm, booking: booking, onSubmit: () => _rate(vm)),
+      RideHelpSafety(booking: booking),
     ];
     final plan = <Widget>[
       _RouteCard(booking: booking),

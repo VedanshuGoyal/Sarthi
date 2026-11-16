@@ -110,6 +110,9 @@ type registerRequest struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
 	DateOfBirth string `json:"dateOfBirth"` // "YYYY-MM-DD"
+	// ConsentVersion is the Terms/Privacy version agreed to, e.g. "2026-11".
+	// Optional: builds before it was added don't send it.
+	ConsentVersion string `json:"consentVersion"`
 }
 
 // Register handles POST /auth/register.
@@ -131,6 +134,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Email:       req.Email,
 		DateOfBirth: dob,
+
+		ConsentVersion: req.ConsentVersion,
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -189,7 +194,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrInvalidPhone),
 		errors.Is(err, service.ErrInvalidName),
 		errors.Is(err, service.ErrInvalidEmail),
-		errors.Is(err, service.ErrInvalidDOB):
+		errors.Is(err, service.ErrInvalidDOB),
+		errors.Is(err, service.ErrInvalidConsent):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		slog.Error("auth: unexpected error", "error", err)

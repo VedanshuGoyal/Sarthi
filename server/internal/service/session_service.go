@@ -23,6 +23,7 @@ const tokenBytes = 32
 type SessionRepo interface {
 	Create(ctx context.Context, s domain.Session) error
 	Delete(ctx context.Context, token string) error
+	DeleteForUser(ctx context.Context, userID string) error
 	ListActive(ctx context.Context) ([]domain.Session, error)
 }
 
@@ -32,6 +33,7 @@ type SessionCache interface {
 	Put(s domain.Session)
 	Get(token string) (domain.Session, bool)
 	Delete(token string)
+	DeleteUser(userID string) int
 	Load(sessions []domain.Session)
 }
 
@@ -94,6 +96,15 @@ func (s *SessionService) Revoke(ctx context.Context, token string) error {
 	}
 	s.cache.Delete(key)
 	return nil
+}
+
+// RevokeAll ends every session of userID, on every device (account
+// erasure). The cache is cleared first and regardless of the store, so the
+// tokens stop working at once; a store error is returned for the caller to
+// retry, since the rows would otherwise come back on the next Warm.
+func (s *SessionService) RevokeAll(ctx context.Context, userID string) error {
+	s.cache.DeleteUser(userID)
+	return s.repo.DeleteForUser(ctx, userID)
 }
 
 // Warm loads every still-valid session from the durable store into the cache.

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../domain/ride.dart';
 import '../rides_providers.dart';
 import 'ride_format.dart';
+import 'widgets/help_safety_row.dart';
 import 'widgets/ride_widgets.dart';
 
 /// Everything about one ride, and the one button that moves it on.
@@ -87,6 +88,7 @@ class RideDetailScreen extends ConsumerWidget {
                     ? _RateCustomerCard(ride: current)
                     : _MyRatingCard(rating: current.myRating!),
               ],
+              RideHelpSafety(ride: current),
               if (isRequest) ...[
                 const SizedBox(height: Skyline.s16),
                 Text(

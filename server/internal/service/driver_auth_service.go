@@ -199,6 +199,9 @@ func (s *DriverAuthService) CurrentDriver(ctx context.Context, driverID string) 
 type DriverRegisterParams struct {
 	PhoneE164 string
 	Name      string
+	// ConsentVersion is the Terms/Privacy version the driver agreed to;
+	// optional, since older builds don't send it.
+	ConsentVersion string
 }
 
 // Register validates the name, persists a new driver account, and logs it in
@@ -213,14 +216,17 @@ func (s *DriverAuthService) Register(ctx context.Context, p DriverRegisterParams
 		return DriverAuthResult{}, ErrInvalidPhone
 	case len(name) < 2:
 		return DriverAuthResult{}, ErrInvalidName
+	case !validConsent(p.ConsentVersion):
+		return DriverAuthResult{}, ErrInvalidConsent
 	}
 	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
 		return DriverAuthResult{}, ErrOTPNotVerified
 	}
 
 	driver, err := s.drivers.CreateDriver(ctx, repository.CreateDriverParams{
-		PhoneE164: p.PhoneE164,
-		Name:      name,
+		PhoneE164:      p.PhoneE164,
+		Name:           name,
+		ConsentVersion: p.ConsentVersion,
 	})
 	if err != nil {
 		return DriverAuthResult{}, err

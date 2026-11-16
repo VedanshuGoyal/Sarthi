@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/services/push_service.dart';
+import '../../account/view/delete_account_button.dart';
 import '../../notifications/notification_providers.dart';
 import '../document_providers.dart';
 import '../domain/document_step.dart';
@@ -175,6 +176,11 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
         if (vm.error != null && !vm.isSaving) ...[
           const SizedBox(height: DeepSignalTokens.s14),
           Text(vm.error!, style: t.body(size: 13, color: Colors.red)),
+        ],
+        // Verified drivers have it on the Account tab.
+        if (status != KycStatus.verified) ...[
+          const SizedBox(height: DeepSignalTokens.s22),
+          const DeleteAccountButton(),
         ],
       ],
       // Nothing to submit until all six are done, and nothing to submit twice;

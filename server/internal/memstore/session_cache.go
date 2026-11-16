@@ -56,6 +56,23 @@ func (c *SessionCache) Delete(token string) {
 	delete(c.byToken, token)
 }
 
+// DeleteUser removes every session of userID and returns how many went
+// (account erasure). It scans the whole map: erasure is rare and the cache
+// holds one entry per signed-in device, so a second index isn't worth
+// keeping in step with Put, Delete and Load.
+func (c *SessionCache) DeleteUser(userID string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for token, s := range c.byToken {
+		if s.UserID == userID {
+			delete(c.byToken, token)
+			n++
+		}
+	}
+	return n
+}
+
 // Load replaces the cache contents with sessions (used to warm from the DB on
 // boot). It is atomic from a reader's perspective.
 func (c *SessionCache) Load(sessions []domain.Session) {

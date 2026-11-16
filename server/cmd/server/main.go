@@ -260,12 +260,15 @@ func run() error {
 	// The ops dashboard's counts (GET /admin/stats): PostgreSQL, plus who is
 	// on duty from the presence index.
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
+	// Account deletion (DPDP), and the daily sweep of data past retention.
+	erasure := service.NewErasureService(repository.NewErasureRepository(pool), sessions, driverSessions, blob, presence)
+	go service.NewRetentionService(repository.NewRetentionRepository(pool), erasure).Run(ctx)
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping),
+			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping, erasure),
 		// Bound every phase of a connection: a 12 MB KYC upload on a slow
 		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the
 		// per-request deadline (60 s) so handlers can always answer.

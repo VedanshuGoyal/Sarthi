@@ -91,6 +91,9 @@ func (h *DriverAuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 type driverRegisterRequest struct {
 	PhoneE164 string `json:"phoneE164"`
 	Name      string `json:"name"`
+	// ConsentVersion is the Terms/Privacy version agreed to, e.g. "2026-11".
+	// Optional: builds before it was added don't send it.
+	ConsentVersion string `json:"consentVersion"`
 }
 
 // Register handles POST /driver/auth/register.
@@ -102,8 +105,9 @@ func (h *DriverAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.auth.Register(r.Context(), service.DriverRegisterParams{
-		PhoneE164: req.PhoneE164,
-		Name:      req.Name,
+		PhoneE164:      req.PhoneE164,
+		Name:           req.Name,
+		ConsentVersion: req.ConsentVersion,
 	})
 	if err != nil {
 		writeDriverServiceError(w, err)

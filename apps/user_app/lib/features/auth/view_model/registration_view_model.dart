@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/config/legal.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_session.dart';
 import '../domain/auth_user.dart';
@@ -256,7 +257,26 @@ class RegistrationViewModel extends ChangeNotifier {
     }
   }
 
-  /// Validates name + email + date of birth, registers the account, and
+  /// Shown when the customer tries to create an account without agreeing to
+  /// the Terms and Privacy Policy.
+  static const String consentRequired =
+      'Please agree to the Terms and Privacy Policy to continue.';
+
+  bool _consented = false;
+
+  /// Whether the customer has ticked "I agree to the Terms and Privacy
+  /// Policy". Required to register.
+  bool get consented => _consented;
+
+  /// Records the consent checkbox, clearing the error it may have raised.
+  void onConsentChanged(bool value) {
+    _consented = value;
+    if (_errorText == consentRequired) _errorText = null;
+    notifyListeners();
+  }
+
+  /// Validates name + email + date of birth and the consent, registers the
+  /// account (recording which version of the documents was agreed to), and
   /// finishes the flow.
   Future<void> submitProfile({
     required String name,
@@ -265,7 +285,8 @@ class RegistrationViewModel extends ChangeNotifier {
     final error =
         AuthValidators.name(name) ??
         AuthValidators.email(email) ??
-        AuthValidators.dateOfBirth(_dateOfBirth);
+        AuthValidators.dateOfBirth(_dateOfBirth) ??
+        (_consented ? null : consentRequired);
     if (error != null) return _fail(error);
 
     await _run(() async {
@@ -274,6 +295,7 @@ class RegistrationViewModel extends ChangeNotifier {
         name: name,
         email: email,
         dateOfBirth: _dateOfBirth!,
+        consentVersion: Legal.consentVersion,
       );
       await _completeSignIn(session);
     });

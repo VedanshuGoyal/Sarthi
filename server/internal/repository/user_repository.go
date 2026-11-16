@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -29,11 +28,11 @@ const uniqueViolation = "23505"
 
 // UserRepository reads and writes customer accounts.
 type UserRepository struct {
-	pool *pgxpool.Pool
+	pool DB
 }
 
-// NewUserRepository wires the repository to a connection pool.
-func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
+// NewUserRepository wires the repository to a pool (or a test's tx).
+func NewUserRepository(pool DB) *UserRepository {
 	return &UserRepository{pool: pool}
 }
 
@@ -43,18 +42,21 @@ type CreateUserParams struct {
 	Name        string
 	Email       string
 	DateOfBirth time.Time
+	// ConsentVersion is the Terms/Privacy version agreed to at sign-up;
+	// "" (old app builds) records no consent.
+	ConsentVersion string
 }
 
 // CreateUser inserts a new account and returns it with the DB-assigned id and
 // timestamp. A duplicate phone number maps to [ErrPhoneTaken].
 func (r *UserRepository) CreateUser(ctx context.Context, p CreateUserParams) (domain.User, error) {
 	const q = `
-		INSERT INTO users (phone_e164, name, email, date_of_birth)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (phone_e164, name, email, date_of_birth, consent_version, consented_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5::text, ''), CASE WHEN $5::text <> '' THEN now() END)
 		RETURNING id, phone_e164, name, email, date_of_birth, created_at`
 
 	var u domain.User
-	err := r.pool.QueryRow(ctx, q, p.PhoneE164, p.Name, p.Email, p.DateOfBirth).
+	err := r.pool.QueryRow(ctx, q, p.PhoneE164, p.Name, p.Email, p.DateOfBirth, p.ConsentVersion).
 		Scan(&u.ID, &u.PhoneE164, &u.Name, &u.Email, &u.DateOfBirth, &u.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError

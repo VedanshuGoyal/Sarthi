@@ -31,6 +31,7 @@ func NewRouter(
 	adminToken string,
 	corsOrigins []string,
 	ready func(context.Context) error,
+	erasure AccountEraser,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -165,6 +166,14 @@ func NewRouter(
 	// This install's push token, for "new ride request" notifications.
 	mux.HandleFunc("PUT /driver/push-token", requireAuth(driverSessions, pt.SaveDriver))
 	mux.HandleFunc("DELETE /driver/push-token", requireAuth(driverSessions, pt.ForgetDriver))
+
+	// privacy: account deletion (DPDP erasure; the Play Store wants it in
+	// the app). Each app deletes its own account, the back office any
+	// account. Accounts are anonymised; rides and payments are kept.
+	pv := NewPrivacyHandler(erasure)
+	mux.HandleFunc("DELETE /me/account", requireAuth(sessions, pv.DeleteCustomer))
+	mux.HandleFunc("DELETE /driver/account", requireAuth(driverSessions, pv.DeleteDriver))
+	mux.HandleFunc("POST /admin/accounts/{kind}/{id}/erase", requireAdmin(adminToken, pv.AdminErase))
 
 	// Outermost first: CORS answers preflights, every request is logged with
 	// its status, admin callers are audited and throttled, public login routes

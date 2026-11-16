@@ -33,6 +33,19 @@ class OtpResendLockedException extends AuthException {
   final Duration retryAfter;
 }
 
+/// Raised when the server won't delete the account yet (`account_busy`): a
+/// ride is under way or a finished one is unpaid. [message] says which.
+class AccountBusyException extends AuthException {
+  const AccountBusyException(super.message);
+}
+
+/// Raised when the server no longer accepts the session (401). The app's
+/// HTTP client has already started signing the customer out.
+class SessionExpiredException extends AuthException {
+  const SessionExpiredException()
+    : super('Your session has expired. Please sign in again.');
+}
+
 /// The single entry point for authentication/registration data access.
 ///
 /// View models talk only to this repository — never to an HTTP client directly.
@@ -87,17 +100,21 @@ class AuthRepository {
   }
 
   /// Creates the account and returns the logged-in [AuthSession] (token + user).
+  /// [consentVersion] is the version of the Terms and Privacy Policy the
+  /// customer agreed to; the server records it with the time.
   Future<AuthSession> register({
     required String phoneE164,
     required String name,
     required String email,
     required DateTime dateOfBirth,
+    String? consentVersion,
   }) async {
     final body = await _post('/auth/register', {
       'phoneE164': phoneE164,
       'name': name.trim(),
       'email': email.trim(),
       'dateOfBirth': _formatDate(dateOfBirth),
+      'consentVersion': ?consentVersion,
     });
     return AuthSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
@@ -106,6 +123,31 @@ class AuthRepository {
   /// cleared by the caller regardless of the outcome.
   Future<void> logout(String token) async {
     await _post('/auth/logout', const {}, token: token);
+  }
+
+  /// Deletes the signed-in customer's account (`DELETE /me/account`). The
+  /// server anonymises it, keeping ride and payment records without the
+  /// customer's details, and revokes every session — so on success the
+  /// caller only has to sign out locally.
+  ///
+  /// Throws [AccountBusyException] while a ride is under way or unpaid,
+  /// [SessionExpiredException] on a 401, and [AuthException] otherwise.
+  Future<void> deleteAccount() async {
+    final bearer = _tokenGetter?.call();
+    final http.Response response;
+    try {
+      response = await _client.delete(
+        Uri.parse('$_baseUrl/me/account'),
+        headers: {if (bearer != null) 'Authorization': 'Bearer $bearer'},
+      );
+    } catch (_) {
+      throw const AuthException(
+        "Can't reach the server. Check your connection and try again.",
+      );
+    }
+    if (response.statusCode >= 200 && response.statusCode < 300) return;
+    if (response.statusCode == 401) throw const SessionExpiredException();
+    throw _exceptionFor(response);
   }
 
   /// POSTs [payload] as JSON to [path]. Returns the response body on 2xx;
@@ -154,6 +196,8 @@ class AuthRepository {
         return OtpIncorrectException(message);
       case 'otp_invalidated':
         return OtpInvalidatedException(message);
+      case 'account_busy':
+        return AccountBusyException(message);
       case 'otp_resend_locked':
         final seconds = body['retryAfterSeconds'];
         return OtpResendLockedException(
