@@ -449,6 +449,9 @@ class RideDetailsViewModel extends ChangeNotifier {
         await _syncPayment(b.id, attempts: 1);
         return true;
       }
+      // The customer backed out while the order was being made: don't throw
+      // a payment page up over wherever they went instead.
+      if (_disposed) return false;
       final outcome = await checkout.open(order, flowId: flowId);
       final latest = await _syncPayment(
         b.id,

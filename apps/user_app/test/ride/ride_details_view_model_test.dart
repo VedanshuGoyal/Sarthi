@@ -162,6 +162,22 @@ void main() {
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
     });
 
+    test(
+      'leaving while the order is being made opens no payment page',
+      () async {
+        final server = FakeBookingServer([due()]);
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, checkout: checkout);
+
+        final paying = vm.pay();
+        // Back out of the screen before the server answers with the order.
+        vm.dispose();
+
+        check(await paying).isFalse();
+        check(checkout.opened).isEmpty();
+      },
+    );
+
     test('payments not set up on the server', () async {
       final server = FakeBookingServer([due()])
         ..paymentError = (503, 'payments_not_configured');
