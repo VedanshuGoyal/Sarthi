@@ -21,6 +21,10 @@ type fakeRideStore struct {
 	mu       sync.Mutex
 	rides    map[string]*domain.RideBooking
 	declined map[string]bool // rideID|driverID
+
+	// afterList, when set, runs after ListForDriver has read — a seam to
+	// widen the window between a check and the write that follows it.
+	afterList func()
 }
 
 func newFakeRideStore(rides ...domain.RideBooking) *fakeRideStore {
@@ -46,12 +50,16 @@ func (f *fakeRideStore) ListOpen(_ context.Context, driverID string, from time.T
 
 func (f *fakeRideStore) ListForDriver(_ context.Context, driverID string, _ int) ([]domain.RideBooking, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	var out []domain.RideBooking
 	for _, rb := range f.rides {
 		if rb.Booking.DriverID == driverID {
 			out = append(out, *rb)
 		}
+	}
+	hook := f.afterList
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
 	return out, nil
 }
@@ -189,10 +197,13 @@ func newRideService(store *fakeRideStore) *DriverRideService {
 		"both":    {KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionBoth},
 		"pending": {KYCStatus: domain.KYCIncomplete, Transmission: domain.DriverTransmissionBoth},
 		"review":  {KYCStatus: domain.KYCSubmitted, Transmission: domain.DriverTransmissionBoth},
-	}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
+	}, &fakePresence{online: map[string]bool{}}, memstore.NewStartCodeGuard(), memstore.NewLiveLocations(), nil)
 	svc.now = func() time.Time { return testNow }
 	codes := []string{"1111", "2222", "3333"}
+	var mu sync.Mutex // Accept runs in parallel in the race test
 	svc.newCode = func() (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		c := codes[0]
 		codes = append(codes[1:], c)
 		return c, nil
@@ -368,6 +379,33 @@ func TestAccept_raceHasOneWinner(t *testing.T) {
 	}
 }
 
+// A double-fired accept on two overlapping rides must not win both: the
+// clash check and the accept run one at a time per driver.
+func TestAccept_sameDriverCantTakeTwoOverlappingRidesAtOnce(t *testing.T) {
+	store := newFakeRideStore(
+		openRide("r1", testNow.Add(time.Hour), 2, "automatic"),
+		openRide("r2", testNow.Add(time.Hour+30*time.Minute), 2, "automatic"),
+	)
+	store.afterList = func() { time.Sleep(20 * time.Millisecond) }
+	svc := newRideService(store)
+
+	var wins atomic.Int32
+	var wg sync.WaitGroup
+	for _, id := range []string{"r1", "r2"} {
+		wg.Go(func() {
+			if _, err := svc.Accept(context.Background(), "both", id); err == nil {
+				wins.Add(1)
+			} else if !errors.Is(err, ErrRideClash) {
+				t.Errorf("Accept %s: err = %v, want ErrRideClash for the loser", id, err)
+			}
+		})
+	}
+	wg.Wait()
+	if wins.Load() != 1 {
+		t.Errorf("the driver won %d overlapping rides, want 1", wins.Load())
+	}
+}
+
 func TestStart_oneRideAtATime(t *testing.T) {
 	store := newFakeRideStore(
 		openRide("a", testNow.Add(time.Hour), 1, "automatic"),
@@ -418,7 +456,7 @@ func TestEarnings_istWindows(t *testing.T) {
 	store := &earningsSpy{fakeRideStore: newFakeRideStore(), capture: func(today, week, month time.Time) {
 		gotToday, gotWeek, gotMonth = today, week, month
 	}}
-	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewOTPGuard(), memstore.NewLiveLocations(), nil)
+	svc := NewDriverRideService(store, fakeProfiles{}, &fakePresence{online: map[string]bool{}}, memstore.NewStartCodeGuard(), memstore.NewLiveLocations(), nil)
 	// Sunday 25 Oct 2026, 01:00 IST — still Saturday evening in UTC.
 	svc.now = func() time.Time { return time.Date(2026, 10, 24, 19, 30, 0, 0, time.UTC) }
 
@@ -466,7 +504,7 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	}
 
 	// Four wrong codes are just wrong; the fifth replaces the code.
-	for i := range memstore.MaxOTPVerifyFailures - 1 {
+	for i := range memstore.MaxStartCodeFailures - 1 {
 		if _, err := svc.Start(ctx, "auto", "r1", "9999"); !errors.Is(err, ErrStartOTPIncorrect) {
 			t.Fatalf("wrong code %d err = %v, want ErrStartOTPIncorrect", i+1, err)
 		}
@@ -477,7 +515,7 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	if got := store.rides["r1"].Booking.StartOTP; got != "2222" {
 		t.Fatalf("code after reset = %q, want 2222", got)
 	}
-	// The old code is dead; the new one works, with a fresh allowance.
+	// The old code is dead; the new one works.
 	if _, err := svc.Start(ctx, "auto", "r1", "1111"); !errors.Is(err, ErrStartOTPIncorrect) {
 		t.Errorf("old code err = %v, want ErrStartOTPIncorrect", err)
 	}
@@ -487,6 +525,93 @@ func TestStart_requiresTheCustomersCode(t *testing.T) {
 	}
 	if ride.Status != domain.RideStatusInProgress {
 		t.Errorf("status = %s, want in_progress", ride.Status)
+	}
+}
+
+// Guessing can't be scripted: once a ride's codes keep being used up, it
+// refuses every code — even the right one — for a while.
+func TestStart_locksARideAfterRepeatedWrongCodes(t *testing.T) {
+	store := newFakeRideStore(openRide("r1", testNow.Add(time.Hour), 2, "automatic"))
+	svc := newRideService(store)
+	ctx := context.Background()
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if _, err := svc.Arrive(ctx, "auto", "r1"); err != nil {
+		t.Fatalf("Arrive: %v", err)
+	}
+
+	misses := memstore.MaxStartCodeFailures * memstore.MaxStartCodeResets
+	var err error
+	for range misses {
+		_, err = svc.Start(ctx, "auto", "r1", "0000")
+	}
+	if !errors.Is(err, ErrStartLocked) {
+		t.Fatalf("after %d wrong codes err = %v, want ErrStartLocked", misses, err)
+	}
+	if locked, ok := errors.AsType[*StartLockedError](err); !ok || locked.RetryAfter != memstore.StartCodeLockDuration {
+		t.Errorf("lock = %+v, want %v", locked, memstore.StartCodeLockDuration)
+	}
+	right := store.rides["r1"].Booking.StartOTP
+	if _, err := svc.Start(ctx, "auto", "r1", right); !errors.Is(err, ErrStartLocked) {
+		t.Errorf("right code while locked: err = %v, want ErrStartLocked", err)
+	}
+	if store.rides["r1"].Booking.Status != domain.RideStatusArrived {
+		t.Errorf("status = %s, want still arrived", store.rides["r1"].Booking.Status)
+	}
+}
+
+// A driver taken off the road gives back the rides they haven't started;
+// one underway is left to finish.
+func TestReleaseHeldRides(t *testing.T) {
+	ride := func(id string, status domain.RideStatus) domain.RideBooking {
+		rb := openRide(id, testNow.Add(3*time.Hour), 1, "automatic")
+		rb.Booking.Status, rb.Booking.DriverID, rb.Booking.UserID = status, "auto", "u-"+id
+		return rb
+	}
+	store := newFakeRideStore(
+		ride("accepted", domain.RideStatusAccepted),
+		ride("arrived", domain.RideStatusArrived),
+		ride("driving", domain.RideStatusInProgress),
+		ride("done", domain.RideStatusCompleted),
+	)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+
+	n, err := svc.ReleaseHeldRides(context.Background(), "auto")
+	if err != nil || n != 2 {
+		t.Fatalf("ReleaseHeldRides = %d, %v; want 2", n, err)
+	}
+	for id, want := range map[string]domain.RideStatus{
+		"accepted": domain.RideStatusRequested, "arrived": domain.RideStatusRequested,
+		"driving": domain.RideStatusInProgress, "done": domain.RideStatusCompleted,
+	} {
+		if got := store.rides[id].Booking.Status; got != want {
+			t.Errorf("%s: status %s, want %s", id, got, want)
+		}
+	}
+	if len(alerts.events) != 2 {
+		t.Errorf("alerts = %v, want the two customers told", alerts.events)
+	}
+}
+
+func TestClearance_needsALicenceInDate(t *testing.T) {
+	expired := fakeProfiles{"auto": {
+		KYCStatus: domain.KYCVerified, Transmission: domain.DriverTransmissionAutomatic,
+		LicenseValidUntil: &domain.Date{Time: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)},
+	}}
+	svc := newRideService(newFakeRideStore(openRide("r1", testNow.Add(3*time.Hour), 1, "automatic")))
+	svc.profiles = expired
+	if _, err := svc.Requests(context.Background(), "auto", nil); !errors.Is(err, ErrDriverNotCleared) {
+		t.Errorf("licence expired yesterday: err = %v, want ErrDriverNotCleared", err)
+	}
+	// Valid through today (25 Oct, IST) still drives.
+	p := expired["auto"]
+	p.LicenseValidUntil = &domain.Date{Time: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)}
+	svc.profiles = fakeProfiles{"auto": p}
+	if _, err := svc.Requests(context.Background(), "auto", nil); err != nil {
+		t.Errorf("licence valid today: err = %v", err)
 	}
 }
 

@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -220,6 +221,12 @@ func writeRideError(w http.ResponseWriter, err error, fallback string) {
 		writeErrorCode(w, http.StatusBadRequest, "invalid_rating", err.Error(), 0)
 	case errors.Is(err, service.ErrStartOTPReset):
 		writeErrorCode(w, http.StatusUnprocessableEntity, "start_otp_reset", err.Error(), 0)
+	case errors.Is(err, service.ErrStartLocked):
+		retry := 0
+		if locked, ok := errors.AsType[*service.StartLockedError](err); ok {
+			retry = int(math.Ceil(locked.RetryAfter.Seconds()))
+		}
+		writeErrorCode(w, http.StatusTooManyRequests, "start_locked", err.Error(), retry)
 	case errors.Is(err, repository.ErrDriverNotFound):
 		writeError(w, http.StatusNotFound, "driver not found")
 	default:

@@ -23,6 +23,18 @@ type fakeBookingStore struct {
 	listed    []domain.UserBooking
 }
 
+// DriverBusyElsewhere looks across every listed booking, whoever's it is.
+func (f *fakeBookingStore) DriverBusyElsewhere(_ context.Context, driverID, bookingID string) (bool, error) {
+	for _, ub := range f.listed {
+		b := ub.Booking
+		if b.DriverID == driverID && b.ID != bookingID &&
+			(b.Status == domain.RideStatusArrived || b.Status == domain.RideStatusInProgress) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeBookingStore) ListForUser(context.Context, string, int) ([]domain.UserBooking, error) {
 	return f.listed, f.err
 }
@@ -157,6 +169,41 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	}
 	if store.insertHit {
 		t.Error("Insert must not be called for an invalid booking")
+	}
+}
+
+// A booking exactly as the current customer app builds it — a luxury car
+// late in the evening, so the quote includes the night surcharge — is
+// accepted at the app's price.
+func TestBookingService_Record_acceptsTheAppsFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["scheduledAt"] = "2026-10-24T21:00:00.000" // 9pm IST for 3h: 2 night hours
+	d["hours"] = 3.0
+	d["car"] = map[string]any{"registration": "DL01AB1234", "carType": "luxury", "transmission": "automatic"}
+	d["fare"] = 538.0 // RoundTripTariff.luxury.fareFor(3) = 440, + 50 + 24×2
+
+	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if store.params.FarePaise != 53800 || store.params.FareEstimated {
+		t.Errorf("fare = %d (estimated %v), want quoted 53800", store.params.FarePaise, store.params.FareEstimated)
+	}
+}
+
+func TestBookingService_Record_rejectsTamperedFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["hours"] = 10.0
+	d["fare"] = 300.0 // the tariff is 1040
+
+	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); !errors.Is(err, ErrFareMismatch) {
+		t.Fatalf("err = %v, want ErrFareMismatch", err)
+	}
+	if store.insertHit {
+		t.Error("a tampered booking must not be stored")
 	}
 }
 
@@ -463,6 +510,36 @@ func TestBookingService_DriverLocation(t *testing.T) {
 	}
 	if _, err := svc.DriverLocation(ctx, "u2", "waiting"); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("other user: err = %v, want ErrBookingNotFound", err)
+	}
+}
+
+// One customer must not follow another's trip: while the driver is at or on
+// someone else's ride, the next customer sees no position; and an accepted
+// ride the driver never started stops sharing once it's well past its end.
+func TestBookingService_DriverLocation_onlyThisRidesDriver(t *testing.T) {
+	start := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC) // roundTripDetails: 4 hours
+	live := memstore.NewLiveLocations()
+	other := customerRide("other", domain.RideStatusInProgress, "d1")
+	other.Booking.UserID = "u2"
+	store := &fakeBookingStore{listed: []domain.UserBooking{customerRide("next", domain.RideStatusAccepted, "d1"), other}}
+	svc := newTestBookingService(store)
+	svc.live = live
+	ctx := context.Background()
+	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
+	live.Put("d1", domain.LiveLocation{Lat: 28.6, Lng: 77.2, UpdatedAt: start.Add(-30 * time.Minute)})
+
+	if loc, err := svc.DriverLocation(ctx, "u1", "next"); err != nil || loc != nil {
+		t.Fatalf("driver on another ride: %+v, %v; want nil, nil", loc, err)
+	}
+	store.listed[1].Booking.Status = domain.RideStatusCompleted
+	if loc, err := svc.DriverLocation(ctx, "u1", "next"); err != nil || loc == nil {
+		t.Fatalf("driver free again: %+v, %v; want their position", loc, err)
+	}
+
+	// Planned to end at 12:00; still accepted (the driver never came).
+	svc.now = func() time.Time { return start.Add(4*time.Hour + trackingGrace) }
+	if _, err := svc.DriverLocation(ctx, "u1", "next"); !errors.Is(err, ErrNotTracking) {
+		t.Errorf("long after the planned end: err = %v, want ErrNotTracking", err)
 	}
 }
 

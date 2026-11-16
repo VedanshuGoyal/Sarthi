@@ -111,18 +111,22 @@ func (h *AdminHandler) KYCReviews(w http.ResponseWriter, r *http.Request) {
 }
 
 // DecideKYC handles POST /admin/kyc/{driverId} {"status": "verified"|"rejected",
-// "note": "..."}. The note is shown to the driver; a rejection needs one.
+// "note": "...", "expectedStatus": "submitted"}. The note is shown to the
+// driver; a rejection needs one. expectedStatus (optional) is the status the
+// reviewer saw: if the driver has moved on since, the answer is 409
+// kyc_changed and nothing is saved.
 func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
+		Status         string `json:"status"`
+		Note           string `json:"note"`
+		ExpectedStatus string `json:"expectedStatus"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	driverID, status := r.PathValue("driverId"), domain.KYCStatus(req.Status)
-	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note)
+	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note, domain.KYCStatus(req.ExpectedStatus))
 	switch {
 	case err == nil:
 		if h.notify != nil {
@@ -133,6 +137,8 @@ func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, repository.ErrDriverNotFound):
 		writeError(w, http.StatusNotFound, "driver not found")
+	case errors.Is(err, repository.ErrKYCChanged):
+		writeErrorCode(w, http.StatusConflict, "kyc_changed", err.Error(), 0)
 	default:
 		slog.Error("admin: deciding kyc", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not save the decision")
@@ -147,7 +153,9 @@ type duePayoutsResponse struct {
 }
 
 // DuePayouts handles GET /admin/payouts/due[?asOf=RFC3339][&format=csv].
-// The CSV has one row per driver for a bank's bulk-transfer upload.
+// The CSV has one row per driver for a bank's bulk-transfer upload; drivers
+// on hold are left out of it. Neither form may be cached: both carry
+// decrypted account numbers.
 func (h *AdminHandler) DuePayouts(w http.ResponseWriter, r *http.Request) {
 	var asOf time.Time
 	if v := r.URL.Query().Get("asOf"); v != "" {
@@ -164,6 +172,7 @@ func (h *AdminHandler) DuePayouts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not list payouts")
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	if r.URL.Query().Get("format") != "csv" {
 		writeJSON(w, http.StatusOK, duePayoutsResponse{AsOf: asOf, Drivers: due})
 		return
@@ -173,20 +182,38 @@ func (h *AdminHandler) DuePayouts(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf(`attachment; filename="mojud-payouts-%s.csv"`, asOf.Format("20060102-1504")))
 	cw := csv.NewWriter(w)
 	_ = cw.Write([]string{"driver_id", "name", "phone", "rides", "amount_rupees",
-		"account_holder", "account_number", "ifsc", "as_of"})
+		"account_holder", "account_number", "ifsc", "as_of", "bank_verified_name"})
 	for _, d := range due {
-		_ = cw.Write([]string{d.DriverID, d.DriverName, d.DriverPhone, strconv.Itoa(d.Rides),
+		if d.OnHold {
+			continue
+		}
+		_ = cw.Write([]string{d.DriverID, spreadsheetText(d.DriverName), d.DriverPhone, strconv.Itoa(d.Rides),
 			fmt.Sprintf("%d.%02d", d.AmountPaise/100, d.AmountPaise%100),
-			d.AccountHolderName, d.AccountNumber, d.IFSCCode, asOf.Format(time.RFC3339Nano)})
+			spreadsheetText(d.AccountHolderName), d.AccountNumber, d.IFSCCode, asOf.Format(time.RFC3339Nano),
+			spreadsheetText(d.VerifiedName)})
 	}
 	cw.Flush()
 }
 
-// payoutRequest records one bank transfer.
+// spreadsheetText makes driver-typed text safe to open in a spreadsheet: a
+// cell starting with = + - @ (or a tab or carriage return) would run as a
+// formula, so it gets a leading apostrophe, which shows it as plain text.
+func spreadsheetText(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
+// payoutRequest records one bank transfer. AmountPaise and Rides are what
+// the payouts list showed for the driver; when sent, a payout that no longer
+// adds up to them is refused (409 payout_mismatch).
 type payoutRequest struct {
-	DriverID  string    `json:"driverId"`
-	Reference string    `json:"reference"`
-	AsOf      time.Time `json:"asOf"`
+	DriverID    string    `json:"driverId"`
+	Reference   string    `json:"reference"`
+	AsOf        time.Time `json:"asOf"`
+	AmountPaise *int64    `json:"amountPaise,omitempty"`
+	Rides       *int      `json:"rides,omitempty"`
 }
 
 // RecordPayout handles POST /admin/payouts.
@@ -196,10 +223,13 @@ func (h *AdminHandler) RecordPayout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `send {"driverId": "…", "reference": "UTR…", "asOf": "…"}`)
 		return
 	}
-	p, err := h.payouts.Record(r.Context(), req.DriverID, req.Reference, req.AsOf)
+	p, err := h.payouts.Record(r.Context(), req.DriverID, req.Reference, req.AsOf,
+		repository.ExpectedPayout{AmountPaise: req.AmountPaise, Rides: req.Rides})
 	switch {
 	case errors.Is(err, service.ErrInvalidPayout):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, repository.ErrPayoutMismatch):
+		writeErrorCode(w, http.StatusConflict, "payout_mismatch", err.Error(), 0)
 	case errors.Is(err, repository.ErrNothingToPayOut), errors.Is(err, repository.ErrRideNotFound):
 		writeErrorCode(w, http.StatusConflict, "nothing_to_pay_out", repository.ErrNothingToPayOut.Error(), 0)
 	case err != nil:

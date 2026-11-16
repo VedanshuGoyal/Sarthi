@@ -7,19 +7,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
 
 // BookingRepository persists confirmed bookings submitted from the customer app.
 type BookingRepository struct {
-	pool *pgxpool.Pool
+	db DB
 }
 
-// NewBookingRepository wires the repository to a connection pool.
-func NewBookingRepository(pool *pgxpool.Pool) *BookingRepository {
-	return &BookingRepository{pool: pool}
+// NewBookingRepository wires the repository to a pool (or a transaction).
+func NewBookingRepository(db DB) *BookingRepository {
+	return &BookingRepository{db: db}
 }
 
 // InsertBookingParams is a new booking: what the customer sent, plus the
@@ -43,12 +42,27 @@ func (r *BookingRepository) Insert(ctx context.Context, p InsertBookingParams) (
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING ` + bookingColumns
 
-	b, err := scanBooking(r.pool.QueryRow(ctx, q,
+	b, err := scanBooking(r.db.QueryRow(ctx, q,
 		p.UserID, p.TripType, p.Details, p.ScheduledAt, p.FarePaise, p.FareEstimated))
 	if err != nil {
 		return domain.Booking{}, fmt.Errorf("inserting booking: %w", err)
 	}
 	return b, nil
+}
+
+// DriverBusyElsewhere reports whether driverID is at the pickup of, or
+// driving, a ride other than bookingID.
+func (r *BookingRepository) DriverBusyElsewhere(ctx context.Context, driverID, bookingID string) (bool, error) {
+	var busy bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM bookings
+		    WHERE driver_id = $1 AND id <> $2 AND status IN ('arrived', 'in_progress'))`,
+		driverID, bookingID).Scan(&busy)
+	if err != nil {
+		return false, fmt.Errorf("checking the driver's other rides: %w", err)
+	}
+	return busy, nil
 }
 
 // ErrBookingNotFound is returned when the customer has no booking with the
@@ -80,7 +94,7 @@ func (r *BookingRepository) ListForUser(ctx context.Context, userID string, limi
 		ORDER BY b.scheduled_at DESC NULLS LAST, b.created_at DESC
 		LIMIT $2`
 
-	rows, err := r.pool.Query(ctx, q, userID, limit)
+	rows, err := r.db.Query(ctx, q, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing bookings: %w", err)
 	}
@@ -107,7 +121,7 @@ func (r *BookingRepository) FindForUser(ctx context.Context, id, userID string) 
 		SELECT ` + userBookingColumns + `
 		FROM bookings b LEFT JOIN drivers d ON d.id = b.driver_id
 		WHERE b.id = $1 AND b.user_id = $2`
-	ub, err := scanUserBooking(r.pool.QueryRow(ctx, q, id, userID))
+	ub, err := scanUserBooking(r.db.QueryRow(ctx, q, id, userID))
 	if err != nil {
 		return domain.UserBooking{}, bookingErr(rideErr(err, ErrBookingNotFound, "finding booking"))
 	}
@@ -126,7 +140,7 @@ func (r *BookingRepository) Cancel(ctx context.Context, id, userID, reason strin
 		    cancel_reason = nullif($5, ''), start_otp = NULL
 		WHERE id = $1 AND user_id = $2 AND status IN ('requested', 'accepted', 'arrived')
 		RETURNING ` + bookingColumns
-	b, err := scanBooking(r.pool.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason))
+	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason))
 	if err != nil {
 		return domain.Booking{}, r.whyUnchanged(ctx, err, id, userID, "cancelling booking")
 	}
@@ -143,7 +157,7 @@ func (r *BookingRepository) RateDriver(ctx context.Context, id, userID string, r
 		  AND driver_id IS NOT NULL AND driver_rating IS NULL
 		RETURNING id`
 	var got string
-	if err := r.pool.QueryRow(ctx, q, id, userID, rating.Stars, rating.Note).Scan(&got); err != nil {
+	if err := r.db.QueryRow(ctx, q, id, userID, rating.Stars, rating.Note).Scan(&got); err != nil {
 		return r.whyUnchanged(ctx, err, id, userID, "rating driver")
 	}
 	return nil
@@ -157,7 +171,7 @@ func (r *BookingRepository) whyUnchanged(ctx context.Context, err error, id, use
 		return bookingErr(rideErr(err, ErrBookingNotFound, doing))
 	}
 	var exists bool
-	if err := r.pool.QueryRow(ctx,
+	if err := r.db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM bookings WHERE id = $1 AND user_id = $2)`,
 		id, userID).Scan(&exists); err != nil {
 		return fmt.Errorf("%s: %w", doing, err)

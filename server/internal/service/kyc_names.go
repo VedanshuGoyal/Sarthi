@@ -16,6 +16,11 @@ var honorifics = map[string]bool{
 // "ASHA SINGH" and "RAVI SINGH" don't. Case, punctuation, word order and
 // honorifics are ignored; every word of the shorter name must appear in the
 // longer one, either whole or as an initial, and at least one whole word must.
+//
+// A one-word name only matches the same one word (or the same letters run
+// together): "ASHA" against "ASHA DEVI" proves too little, since any Asha
+// would pass. That includes names that are one word once honorifics are
+// dropped, like "Asha Kumari". Such pairs go to a person instead.
 func namesMatch(a, b string) bool {
 	ta, tb := nameTokens(a), nameTokens(b)
 	if len(ta) == 0 || len(tb) == 0 {
@@ -27,6 +32,9 @@ func namesMatch(a, b string) bool {
 	short, long := ta, tb
 	if len(short) > len(long) {
 		short, long = long, short
+	}
+	if len(short) == 1 && len(long) > 1 {
+		return false
 	}
 
 	used := make([]bool, len(long))

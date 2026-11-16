@@ -14,17 +14,29 @@ import (
 	"github.com/sarthi/server/pkg/geo"
 )
 
+// presenceEvictAfter is how long a driver's app can stay silent before the
+// driver is dropped from the index: an app closed without going offline.
+// Far longer than any freshness cut readers apply, so eviction only bounds
+// memory and never decides who is alerted.
+const presenceEvictAfter = time.Hour
+
+// evictEvery is how often UpdateLocation and Register look for drivers to
+// evict.
+const evictEvery = time.Minute
+
 // DriverTracker is a concurrency-safe spatial index of online drivers.
 //
-// It maintains three maps under a single RWMutex:
+// It maintains four maps under a single RWMutex:
 //   - drivers:    driverID -> latest known Driver state
 //   - cellIndex:  H3 cell  -> set of driverIDs currently in that cell
 //   - driverCell: driverID -> the cell it is presently indexed under
+//   - seen:       driverID -> when their app last reported in
 //
 // cellIndex is what makes FindNearbyDrivers cheap: instead of scanning every
 // driver, we look up only the handful of cells covering the search radius.
 // driverCell lets UpdateLocation move a driver between cells in O(1) when they
-// cross a hex boundary.
+// cross a hex boundary. seen lets a reader ignore, and the tracker evict,
+// drivers whose app went quiet without going offline.
 type DriverTracker struct {
 	mu sync.RWMutex
 
@@ -32,6 +44,9 @@ type DriverTracker struct {
 	drivers    map[string]*domain.Driver
 	cellIndex  map[geo.Cell]map[string]struct{}
 	driverCell map[string]geo.Cell
+	seen       map[string]time.Time
+	lastEvict  time.Time
+	now        func() time.Time // seam for tests
 }
 
 // NewDriverTracker creates an empty tracker indexing at the given H3
@@ -42,6 +57,8 @@ func NewDriverTracker(resolution int) *DriverTracker {
 		drivers:    make(map[string]*domain.Driver),
 		cellIndex:  make(map[geo.Cell]map[string]struct{}),
 		driverCell: make(map[string]geo.Cell),
+		seen:       make(map[string]time.Time),
+		now:        time.Now,
 	}
 }
 
@@ -58,6 +75,7 @@ type NearbyDriver struct {
 func (t *DriverTracker) Register(d domain.Driver) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.reportedIn(d.ID)
 
 	existing, ok := t.drivers[d.ID]
 	if !ok {
@@ -90,6 +108,7 @@ func (t *DriverTracker) UpdateLocation(driverID string, loc domain.Location) err
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.reportedIn(driverID)
 
 	d, ok := t.drivers[driverID]
 	if !ok {
@@ -129,21 +148,46 @@ func (t *DriverTracker) SetStatus(driverID string, status domain.DriverStatus) b
 func (t *DriverTracker) Remove(driverID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.remove(driverID)
+}
 
+// remove drops driverID from every map. Callers must hold the write lock.
+func (t *DriverTracker) remove(driverID string) {
 	if cell, ok := t.driverCell[driverID]; ok {
 		t.removeFromCell(cell, driverID)
 		delete(t.driverCell, driverID)
 	}
 	delete(t.drivers, driverID)
+	delete(t.seen, driverID)
+}
+
+// reportedIn notes that driverID's app just reported in and, at most every
+// evictEvery, drops drivers silent for presenceEvictAfter. Callers must hold
+// the write lock.
+func (t *DriverTracker) reportedIn(driverID string) {
+	now := t.now()
+	t.seen[driverID] = now
+	if now.Sub(t.lastEvict) < evictEvery {
+		return
+	}
+	t.lastEvict = now
+	for id, at := range t.seen {
+		if now.Sub(at) > presenceEvictAfter {
+			t.remove(id)
+		}
+	}
 }
 
 // FindNearbyDrivers returns available drivers within radiusMeters of
-// (lat, lng), nearest first. limit <= 0 means no cap.
+// (lat, lng) whose last position is from seenSince or later, nearest first.
+// A zero seenSince takes any position. limit <= 0 means no cap; a caller
+// that filters the results further should pass 0 and stop when it has
+// enough, so stale or ineligible drivers can't crowd out the rest.
 //
 // It first asks H3 for the cells covering the search disk (a coarse superset),
 // gathers the drivers bucketed in those cells, then filters each by exact
 // haversine distance so the radius is honoured precisely.
-func (t *DriverTracker) FindNearbyDrivers(lat, lng, radiusMeters float64, limit int) ([]NearbyDriver, error) {
+func (t *DriverTracker) FindNearbyDrivers(lat, lng, radiusMeters float64, seenSince time.Time, limit int) ([]NearbyDriver, error) {
 	cells, err := geo.DiskForRadius(lat, lng, radiusMeters, t.resolution)
 	if err != nil {
 		return nil, err
@@ -154,7 +198,7 @@ func (t *DriverTracker) FindNearbyDrivers(lat, lng, radiusMeters float64, limit 
 	for _, cell := range cells {
 		for driverID := range t.cellIndex[cell] {
 			d := t.drivers[driverID]
-			if d == nil || d.Status != domain.DriverStatusAvailable {
+			if d == nil || d.Status != domain.DriverStatusAvailable || d.Location.UpdatedAt.Before(seenSince) {
 				continue
 			}
 			dist := geo.HaversineMeters(lat, lng, d.Location.Lat, d.Location.Lng)
@@ -188,11 +232,18 @@ func (t *DriverTracker) Get(driverID string) (domain.Driver, bool) {
 	return *d, true
 }
 
-// Count returns the number of drivers currently tracked.
-func (t *DriverTracker) Count() int {
+// CountSeenSince returns how many tracked drivers' apps have reported in
+// (gone online or sent a position) since a time.
+func (t *DriverTracker) CountSeenSince(since time.Time) int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return len(t.drivers)
+	n := 0
+	for _, at := range t.seen {
+		if !at.Before(since) {
+			n++
+		}
+	}
+	return n
 }
 
 // addToCell / removeFromCell mutate the spatial index. Both assume the caller

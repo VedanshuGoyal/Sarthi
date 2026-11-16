@@ -180,6 +180,8 @@ func run() error {
 		verifier,
 		cfg.Surepass.DigiLockerRedirectURL,
 	)
+	// Every change to a driver's payout account is pushed to them.
+	driverKYC.SetAlerts(notify)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and
@@ -194,11 +196,14 @@ func run() error {
 		repository.NewDriverRideRepository(pool),
 		driverProfiles,
 		presence,
-		// Wrong start-code attempts, keyed by ride id (5 per code).
-		memstore.NewOTPGuard(),
+		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new
+		// code; 3 codes, then the ride is locked for 15 minutes.
+		memstore.NewStartCodeGuard(),
 		liveLocations,
 		notify,
 	)
+	// A driver a reviewer rejects hands back the rides they hold.
+	driverKYC.SetRideReleaser(driverRides)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
 	// apps short-lived tokens (GET /maps/token).

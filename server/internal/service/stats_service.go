@@ -13,10 +13,10 @@ type StatsStore interface {
 	Stats(ctx context.Context, q repository.StatsQuery) (domain.AdminStats, error)
 }
 
-// OnDutyCounter counts the drivers in the live presence index
-// (memstore.DriverTracker).
+// OnDutyCounter counts the drivers in the live presence index whose app
+// has reported in since a time (memstore.DriverTracker).
 type OnDutyCounter interface {
-	Count() int
+	CountSeenSince(since time.Time) int
 }
 
 // StatsService is the ops dashboard's read: counts from PostgreSQL, who is
@@ -65,7 +65,8 @@ func (s *StatsService) Stats(ctx context.Context) (domain.AdminStats, error) {
 		w.win.CommissionPaise = commissionOn(w.win.GrossFarePaise, s.commissionBP)
 	}
 	if s.onDuty != nil {
-		n := s.onDuty.Count()
+		// Like the ride alerts, only drivers whose app reported in lately.
+		n := s.onDuty.CountSeenSince(now.Add(-presenceFresh))
 		st.DriversOnDuty = &n
 	}
 	return st, nil

@@ -36,6 +36,7 @@ const (
 	pushTypeRideCompleted  = "ride_completed"
 	pushTypePaymentPaid    = "payment_received"
 	pushTypeKYCDecided     = "kyc_decided"
+	pushTypeBankChanged    = "bank_account_changed"
 )
 
 const (
@@ -45,7 +46,8 @@ const (
 	// offline.
 	presenceFresh = 10 * time.Minute
 
-	// maxAlertedDrivers caps one request's fan-out, nearest first.
+	// maxAlertedDrivers caps one request's fan-out: the nearest this many
+	// drivers who could take the ride.
 	maxAlertedDrivers = 200
 
 	// pushTimeout bounds one event's sends.
@@ -69,7 +71,7 @@ type PushTokenStore interface {
 // NearbyDriverFinder searches the live presence index
 // (memstore.DriverTracker).
 type NearbyDriverFinder interface {
-	FindNearbyDrivers(lat, lng, radiusMeters float64, limit int) ([]memstore.NearbyDriver, error)
+	FindNearbyDrivers(lat, lng, radiusMeters float64, seenSince time.Time, limit int) ([]memstore.NearbyDriver, error)
 }
 
 // NotifyService sends the apps' push notifications, Uber-style:
@@ -184,7 +186,11 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	if closesIn <= 0 {
 		return
 	}
-	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM, maxAlertedDrivers)
+	// Only fresh positions, and no cap until eligibility is known: the cap
+	// counts drivers who could take the ride, so nearer stale or ineligible
+	// ones can't crowd them out.
+	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM,
+		s.now().Add(-presenceFresh), 0)
 	if err != nil {
 		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
 		return
@@ -192,12 +198,14 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	distance := map[string]float64{}
 	var ids []string
 	for _, n := range nearby {
-		if n.Driver.ID == skip || s.now().Sub(n.Driver.Location.UpdatedAt) > presenceFresh {
+		if len(ids) == maxAlertedDrivers {
+			break
+		}
+		if n.Driver.ID == skip {
 			continue
 		}
 		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
-		if err != nil || p.KYCStatus != domain.KYCVerified ||
-			!canDrive(p.Transmission, plan.Car) {
+		if err != nil || clearedToDrive(p, s.now()) != nil || !canDrive(p.Transmission, plan.Car) {
 			continue
 		}
 		ids = append(ids, n.Driver.ID)
@@ -352,6 +360,36 @@ func (s *NotifyService) KYCDecided(ctx context.Context, driverID string, status 
 			}
 		}
 		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeKYCDecided, "driverId", driverID, "devices", sent)
+	})
+}
+
+// BankAccountChanged tells a driver their payout account was just set to
+// the one ending last4, so a change they didn't make — someone else holding
+// their session — doesn't go unnoticed until a payout goes astray.
+func (s *NotifyService) BankAccountChanged(ctx context.Context, driverID, last4 string) {
+	body := fmt.Sprintf("Your earnings will now be paid to the account ending %s. "+
+		"If you didn't make this change, contact MOJUD support right away.", last4)
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "Bank account changed",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "bank-account",
+				Data:    map[string]string{"type": pushTypeBankChanged},
+				TTL:     7 * 24 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeBankChanged, "driverId", driverID, "devices", sent)
 	})
 }
 

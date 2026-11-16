@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -23,10 +22,18 @@ var ErrBankAccountNotFound = errors.New("bank account not found")
 // a different driver, detected by the unique index on the fingerprint.
 var ErrAadhaarTaken = errors.New("this Aadhaar number is already registered")
 
+// ErrKYCChanged is returned when a reviewer's decision names the status they
+// saw, and the driver's KYC has moved on since.
+var ErrKYCChanged = errors.New("this driver's documents changed since you opened them; reload and review again")
+
 // aadhaarFingerprintIndex is the unique index from 0008_create_driver_kyc that
 // enforces one Aadhaar per driver. Matched by name so an unrelated future
 // constraint on `drivers` isn't misreported as a duplicate Aadhaar.
 const aadhaarFingerprintIndex = "drivers_aadhaar_fingerprint"
+
+// aadhaarIdentityIndex is 0017's unique index on the fingerprint of the
+// identity DigiLocker verified.
+const aadhaarIdentityIndex = "drivers_aadhaar_identity_fingerprint"
 
 // documentColumns is the shared SELECT list, in DriverDocument field order.
 const documentColumns = `id, kind, object_key, content_type, byte_size, sha256,
@@ -37,12 +44,12 @@ const documentColumns = `id, kind, object_key, content_type, byte_size, sha256,
 // Image bytes are not its concern — those live in internal/storage, and this
 // table only holds the key that finds them.
 type DriverKYCRepository struct {
-	pool *pgxpool.Pool
+	db DB
 }
 
-// NewDriverKYCRepository wires the repository to a connection pool.
-func NewDriverKYCRepository(pool *pgxpool.Pool) *DriverKYCRepository {
-	return &DriverKYCRepository{pool: pool}
+// NewDriverKYCRepository wires the repository to a pool (or a transaction).
+func NewDriverKYCRepository(db DB) *DriverKYCRepository {
+	return &DriverKYCRepository{db: db}
 }
 
 // UpsertDocumentParams carries one uploaded image's metadata.
@@ -92,7 +99,7 @@ func (r *DriverKYCRepository) UpsertDocument(
 		d           domain.DriverDocument
 		previousKey string
 	)
-	err := r.pool.QueryRow(ctx, q,
+	err := r.db.QueryRow(ctx, q,
 		driverID, p.Kind, p.ObjectKey, p.ContentType, p.ByteSize, p.SHA256,
 	).Scan(
 		&d.ID, &d.Kind, &d.ObjectKey, &d.ContentType, &d.ByteSize, &d.SHA256,
@@ -115,7 +122,7 @@ func (r *DriverKYCRepository) ListDocuments(ctx context.Context, driverID string
 	const q = `SELECT ` + documentColumns + `
 		FROM driver_documents WHERE driver_id = $1 ORDER BY uploaded_at`
 
-	rows, err := r.pool.Query(ctx, q, driverID)
+	rows, err := r.db.Query(ctx, q, driverID)
 	if err != nil {
 		return nil, fmt.Errorf("listing documents: %w", err)
 	}
@@ -146,7 +153,7 @@ func (r *DriverKYCRepository) FindDocument(
 		FROM driver_documents WHERE driver_id = $1 AND kind = $2`
 
 	var d domain.DriverDocument
-	err := r.pool.QueryRow(ctx, q, driverID, kind).Scan(
+	err := r.db.QueryRow(ctx, q, driverID, kind).Scan(
 		&d.ID, &d.Kind, &d.ObjectKey, &d.ContentType, &d.ByteSize, &d.SHA256,
 		&d.Status, &d.RejectReason, &d.UploadedAt, &d.ReviewedAt,
 	)
@@ -196,7 +203,7 @@ func (r *DriverKYCRepository) UpdateProfile(ctx context.Context, driverID string
 				THEN NULL ELSE license_verified_at END
 		WHERE id = $1`
 
-	tag, err := r.pool.Exec(ctx, q, driverID,
+	tag, err := r.db.Exec(ctx, q, driverID,
 		p.FullName, p.DateOfBirth, p.Gender, p.Transmission,
 		p.AadhaarLast4, p.AadhaarFingerprint, p.DrivingLicenseNumber,
 	)
@@ -217,6 +224,9 @@ func (r *DriverKYCRepository) UpdateProfile(ctx context.Context, driverID string
 // on the transition into review; the timestamp is only written the first time,
 // so re-submitting doesn't rewrite when the driver originally finished.
 //
+// A rejected driver stays rejected: their edits are the fixes the reviewer
+// asked for, and only their next submit (or a reviewer) moves them on.
+//
 // The time comes from the database rather than the caller, so it can't be
 // ordered inconsistently against uploaded_at and updated_at on neighbouring
 // rows, which are also database clock.
@@ -225,14 +235,14 @@ func (r *DriverKYCRepository) SetKYCStatus(
 ) error {
 	const q = `
 		UPDATE drivers
-		SET kyc_status = $2,
+		SET kyc_status = CASE WHEN kyc_status = 'rejected' THEN 'rejected' ELSE $2 END,
 		    kyc_submitted_at = CASE
 		        WHEN $3 THEN coalesce(kyc_submitted_at, now())
 		        ELSE kyc_submitted_at
 		    END
 		WHERE id = $1`
 
-	tag, err := r.pool.Exec(ctx, q, driverID, status, recordSubmission)
+	tag, err := r.db.Exec(ctx, q, driverID, status, recordSubmission)
 	if err != nil {
 		return fmt.Errorf("updating kyc status: %w", err)
 	}
@@ -248,7 +258,9 @@ const profileColumns = `d.name, d.date_of_birth, coalesce(d.gender, ''), d.trans
 	d.kyc_status, d.kyc_submitted_at,
 	d.aadhaar_verified_at, coalesce(d.digilocker_client_id, ''),
 	d.license_verified_at, coalesce(d.license_name, ''), d.license_valid_until,
-	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, '')`
+	coalesce(d.license_vehicle_classes, '{}'), coalesce(d.kyc_review_note, ''),
+	coalesce(d.aadhaar_fingerprint, ''), d.kyc_rejected_at,
+	coalesce(d.kyc_cleared_selfie_sha256, '')`
 
 // profileScan returns the Scan targets for profileColumns, and a func that
 // finishes p once the row has been read.
@@ -260,6 +272,8 @@ func profileScan(p *domain.DriverProfile) ([]any, func()) {
 		&p.AadhaarVerifiedAt, &p.DigiLockerClientID,
 		&p.LicenseVerifiedAt, &p.LicenseName, &validUntil,
 		&p.LicenseClasses, &p.KYCReviewNote,
+		&p.AadhaarFingerprint, &p.KYCRejectedAt,
+		&p.ClearedSelfieSHA256,
 	}
 	return dest, func() {
 		if validUntil != nil {
@@ -277,7 +291,7 @@ func (r *DriverKYCRepository) FindProfile(ctx context.Context, driverID string) 
 
 	var p domain.DriverProfile
 	dest, finish := profileScan(&p)
-	err := r.pool.QueryRow(ctx, q, driverID).Scan(dest...)
+	err := r.db.QueryRow(ctx, q, driverID).Scan(dest...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.DriverProfile{}, ErrDriverNotFound
 	}
@@ -291,7 +305,7 @@ func (r *DriverKYCRepository) FindProfile(ctx context.Context, driverID string) 
 // SetDigiLockerSession records the DigiLocker session a driver was sent to
 // (empty clears it).
 func (r *DriverKYCRepository) SetDigiLockerSession(ctx context.Context, driverID, clientID string) error {
-	tag, err := r.pool.Exec(ctx,
+	tag, err := r.db.Exec(ctx,
 		`UPDATE drivers SET digilocker_client_id = NULLIF($2, '') WHERE id = $1`, driverID, clientID)
 	if err != nil {
 		return fmt.Errorf("saving digilocker session: %w", err)
@@ -304,9 +318,16 @@ func (r *DriverKYCRepository) SetDigiLockerSession(ctx context.Context, driverID
 
 // SaveAadhaarVerification takes the driver's name, date of birth and gender
 // from their Aadhaar (gender only when DigiLocker gave one we know), marks
-// the Aadhaar verified and closes the DigiLocker session. Like any edit, it
-// puts the driver back to incomplete.
-func (r *DriverKYCRepository) SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error {
+// the Aadhaar verified, records identityFingerprint (of what DigiLocker
+// verified) and closes the DigiLocker session. Like any edit, it puts the
+// driver back to incomplete (a rejected driver stays rejected).
+//
+// [ErrAadhaarTaken] when another driver already verified the same identity:
+// by fingerprint, or — for drivers verified before fingerprints were kept —
+// by the same name, date of birth and last 4 digits.
+func (r *DriverKYCRepository) SaveAadhaarVerification(
+	ctx context.Context, driverID string, rec domain.AadhaarRecord, identityFingerprint string,
+) error {
 	const q = `
 		UPDATE drivers SET
 			name                 = $2,
@@ -316,22 +337,44 @@ func (r *DriverKYCRepository) SaveAadhaarVerification(ctx context.Context, drive
 			license_verified_at  = CASE WHEN date_of_birth IS DISTINCT FROM $3::date
 				THEN NULL ELSE license_verified_at END,
 			aadhaar_verified_at  = now(),
+			aadhaar_identity_fingerprint = coalesce(NULLIF($5, ''), aadhaar_identity_fingerprint),
 			digilocker_client_id = NULL,
-			kyc_status           = 'incomplete'
-		WHERE id = $1`
+			kyc_status           = CASE WHEN kyc_status = 'rejected' THEN 'rejected' ELSE 'incomplete' END
+		WHERE id = $1
+		  AND NOT EXISTS (
+		      SELECT 1 FROM drivers o
+		      WHERE o.id <> $1
+		        AND o.aadhaar_identity_fingerprint IS NULL
+		        AND o.aadhaar_verified_at IS NOT NULL
+		        AND o.aadhaar_last4 = $6
+		        AND o.date_of_birth = $3::date
+		        AND upper(regexp_replace(btrim(o.name), '\s+', ' ', 'g'))
+		            = upper(regexp_replace(btrim($2::text), '\s+', ' ', 'g')))`
 
-	tag, err := r.pool.Exec(ctx, q, driverID, rec.Name, rec.DateOfBirth, string(rec.Gender))
+	tag, err := r.db.Exec(ctx, q, driverID, rec.Name, rec.DateOfBirth, string(rec.Gender), identityFingerprint, rec.Last4)
 	if err != nil {
+		pgErr, ok := errors.AsType[*pgconn.PgError](err)
+		if ok && pgErr.Code == uniqueViolation && pgErr.ConstraintName == aadhaarIdentityIndex {
+			return ErrAadhaarTaken
+		}
 		return fmt.Errorf("saving aadhaar verification: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var exists bool
+	if err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM drivers WHERE id = $1)`, driverID).Scan(&exists); err != nil {
+		return fmt.Errorf("saving aadhaar verification: %w", err)
+	}
+	if !exists {
 		return ErrDriverNotFound
 	}
-	return nil
+	return ErrAadhaarTaken
 }
 
 // SaveLicenseVerification stores a licence the lookup found, with what it
-// returned, and puts the driver back to incomplete.
+// returned, and puts the driver back to incomplete (a rejected driver stays
+// rejected).
 func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error {
 	const q = `
 		UPDATE drivers SET
@@ -340,14 +383,14 @@ func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, drive
 			license_name            = NULLIF($3, ''),
 			license_valid_until     = $4,
 			license_vehicle_classes = $5,
-			kyc_status              = 'incomplete'
+			kyc_status              = CASE WHEN kyc_status = 'rejected' THEN 'rejected' ELSE 'incomplete' END
 		WHERE id = $1`
 
 	var validUntil *time.Time
 	if !rec.ValidUntil.IsZero() {
 		validUntil = &rec.ValidUntil
 	}
-	tag, err := r.pool.Exec(ctx, q, driverID, rec.Number, rec.Name, validUntil, rec.Classes)
+	tag, err := r.db.Exec(ctx, q, driverID, rec.Number, rec.Name, validUntil, rec.Classes)
 	if err != nil {
 		return fmt.Errorf("saving licence verification: %w", err)
 	}
@@ -357,28 +400,120 @@ func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, drive
 	return nil
 }
 
-// DecideKYC sets the driver's status with the reason behind it: the outcome
-// of a submission, or a reviewer's decision. Leaving incomplete stamps
-// kyc_submitted_at the first time.
-func (r *DriverKYCRepository) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error {
-	const q = `
-		UPDATE drivers
-		SET kyc_status       = $2,
-		    kyc_review_note  = NULLIF($3, ''),
-		    kyc_submitted_at = CASE
-		        WHEN $2 <> 'incomplete' THEN coalesce(kyc_submitted_at, now())
-		        ELSE kyc_submitted_at
-		    END
-		WHERE id = $1`
-
-	tag, err := r.pool.Exec(ctx, q, driverID, status, note)
+// DecideSubmission settles a driver's submission with their row locked: it
+// reads their profile, documents and bank account, asks decide for the
+// outcome, and writes it, in one transaction. Every KYC edit updates the
+// driver's row, so none can land between the read and the write: one that
+// arrives meanwhile waits, then reopens the driver as usual. An error from
+// decide is returned as is and nothing is written. kyc_submitted_at is
+// stamped the first time; clearing the driver records the selfie that was
+// decided on as the one cleared.
+func (r *DriverKYCRepository) DecideSubmission(
+	ctx context.Context, driverID string,
+	decide func(domain.DriverKYC) (domain.KYCStatus, string, error),
+) error {
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("deciding kyc: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var locked int
+	err = tx.QueryRow(ctx, `SELECT 1 FROM drivers WHERE id = $1 FOR UPDATE`, driverID).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrDriverNotFound
 	}
+	if err != nil {
+		return fmt.Errorf("deciding kyc: %w", err)
+	}
+	kyc, err := (&DriverKYCRepository{db: tx}).loadKYC(ctx, driverID)
+	if err != nil {
+		return err
+	}
+	status, note, err := decide(kyc)
+	if err != nil {
+		return err
+	}
+	var clearedSelfie string
+	if status == domain.KYCVerified {
+		for _, d := range kyc.Documents {
+			if d.Kind == domain.DocumentSelfie {
+				clearedSelfie = d.SHA256
+			}
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE drivers
+		SET kyc_status       = $2,
+		    kyc_review_note  = NULLIF($3, ''),
+		    kyc_submitted_at = coalesce(kyc_submitted_at, now()),
+		    kyc_cleared_selfie_sha256 = coalesce(NULLIF($4, ''), kyc_cleared_selfie_sha256)
+		WHERE id = $1`, driverID, status, note, clearedSelfie); err != nil {
+		return fmt.Errorf("deciding kyc: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("deciding kyc: %w", err)
+	}
 	return nil
+}
+
+// loadKYC reads everything a submission is decided on.
+func (r *DriverKYCRepository) loadKYC(ctx context.Context, driverID string) (domain.DriverKYC, error) {
+	profile, err := r.FindProfile(ctx, driverID)
+	if err != nil {
+		return domain.DriverKYC{}, err
+	}
+	docs, err := r.ListDocuments(ctx, driverID)
+	if err != nil {
+		return domain.DriverKYC{}, err
+	}
+	kyc := domain.DriverKYC{Profile: profile, Documents: docs}
+	account, err := r.FindBankAccount(ctx, driverID)
+	switch {
+	case err == nil:
+		kyc.BankAccount = &account
+	case !errors.Is(err, ErrBankAccountNotFound):
+		return domain.DriverKYC{}, err
+	}
+	return kyc, nil
+}
+
+// ReviewKYC records a reviewer's decision, verified or rejected, with the
+// note the driver is shown. A rejection holds the driver for a person
+// (kyc_rejected_at) until a reviewer verifies them; a verification records
+// the selfie on file as the one cleared. With expected set, the decision
+// only lands while the driver is still in that status — what the reviewer
+// was looking at — and is otherwise [ErrKYCChanged].
+func (r *DriverKYCRepository) ReviewKYC(
+	ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus,
+) error {
+	const q = `
+		UPDATE drivers
+		SET kyc_status       = $2::text,
+		    kyc_review_note  = NULLIF($3, ''),
+		    kyc_submitted_at = coalesce(kyc_submitted_at, now()),
+		    kyc_rejected_at  = CASE WHEN $2::text = 'rejected' THEN now() END,
+		    kyc_cleared_selfie_sha256 = CASE WHEN $2::text = 'verified'
+		        THEN coalesce((SELECT sha256 FROM driver_documents WHERE driver_id = $1 AND kind = 'selfie'),
+		                      kyc_cleared_selfie_sha256)
+		        ELSE kyc_cleared_selfie_sha256 END
+		WHERE id = $1 AND ($4::text = '' OR kyc_status = $4::text)`
+
+	tag, err := r.db.Exec(ctx, q, driverID, status, note, expected)
+	if err != nil {
+		return fmt.Errorf("reviewing kyc: %w", err)
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var exists bool
+	if err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM drivers WHERE id = $1)`, driverID).Scan(&exists); err != nil {
+		return fmt.Errorf("reviewing kyc: %w", err)
+	}
+	if !exists {
+		return ErrDriverNotFound
+	}
+	return ErrKYCChanged
 }
 
 // RecordCheck logs one call to the verification provider.
@@ -388,7 +523,7 @@ func (r *DriverKYCRepository) RecordCheck(
 	const q = `
 		INSERT INTO driver_kyc_checks (driver_id, kind, provider_ref, outcome, detail)
 		VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''))`
-	if _, err := r.pool.Exec(ctx, q, driverID, kind, ref, outcome, detail); err != nil {
+	if _, err := r.db.Exec(ctx, q, driverID, kind, ref, outcome, detail); err != nil {
 		return fmt.Errorf("recording kyc check: %w", err)
 	}
 	return nil
@@ -406,7 +541,22 @@ func (r *DriverKYCRepository) CountChecks(
 		  AND outcome NOT IN ('pending', 'error')
 		  AND (kind <> 'digilocker' OR outcome = 'started')`
 	var n int
-	if err := r.pool.QueryRow(ctx, q, driverID, kind, since).Scan(&n); err != nil {
+	if err := r.db.QueryRow(ctx, q, driverID, kind, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting kyc checks: %w", err)
+	}
+	return n, nil
+}
+
+// CountAllChecks counts every driver's paid checks since a time, by the
+// rules CountChecks applies to one driver's.
+func (r *DriverKYCRepository) CountAllChecks(ctx context.Context, since time.Time) (int, error) {
+	const q = `
+		SELECT count(*) FROM driver_kyc_checks
+		WHERE created_at >= $1
+		  AND outcome NOT IN ('pending', 'error')
+		  AND (kind <> 'digilocker' OR outcome = 'started')`
+	var n int
+	if err := r.db.QueryRow(ctx, q, since).Scan(&n); err != nil {
 		return 0, fmt.Errorf("counting kyc checks: %w", err)
 	}
 	return n, nil
@@ -425,7 +575,7 @@ func (r *DriverKYCRepository) ListKYCReviews(ctx context.Context, status domain.
 		ORDER BY d.kyc_submitted_at NULLS LAST, d.created_at
 		LIMIT 200`
 
-	rows, err := r.pool.Query(ctx, q, status)
+	rows, err := r.db.Query(ctx, q, status)
 	if err != nil {
 		return nil, fmt.Errorf("listing kyc reviews: %w", err)
 	}
@@ -499,7 +649,7 @@ func (r *DriverKYCRepository) UpsertBankAccount(
 		RETURNING ` + bankColumns
 
 	var a domain.DriverBankAccount
-	err := r.pool.QueryRow(ctx, q, driverID,
+	err := r.db.QueryRow(ctx, q, driverID,
 		p.AccountHolderName, p.AccountNumberEncrypted, p.AccountNumberLast4, p.IFSCCode,
 		p.Verified, p.VerifiedName,
 	).Scan(bankScan(&a)...)
@@ -515,7 +665,7 @@ func (r *DriverKYCRepository) FindBankAccount(ctx context.Context, driverID stri
 	const q = `SELECT ` + bankColumns + ` FROM driver_bank_accounts WHERE driver_id = $1`
 
 	var a domain.DriverBankAccount
-	err := r.pool.QueryRow(ctx, q, driverID).Scan(bankScan(&a)...)
+	err := r.db.QueryRow(ctx, q, driverID).Scan(bankScan(&a)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.DriverBankAccount{}, ErrBankAccountNotFound
 	}

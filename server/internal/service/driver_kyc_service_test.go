@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,11 +67,11 @@ func TestUploadDocumentStoresProcessedBytes(t *testing.T) {
 func TestUploadDocumentDeletesTheImageItReplaces(t *testing.T) {
 	svc, _, blob := newTestService(t)
 
-	first, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 100, 100))
+	first, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 100, 100))
 	if err != nil {
 		t.Fatalf("first upload: %v", err)
 	}
-	second, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 120, 120))
+	second, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 120, 120))
 	if err != nil {
 		t.Fatalf("retake: %v", err)
 	}
@@ -117,13 +118,19 @@ func TestUploadSelfieStoresASmallDriverPhoto(t *testing.T) {
 		t.Errorf("version = %q, want %q", version, doc.SHA256[:12])
 	}
 
-	// Other documents never get a customer-facing copy.
-	aadhaar, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 100, 100))
-	if err != nil {
-		t.Fatalf("aadhaar upload: %v", err)
+}
+
+// Aadhaar and licence photos are no longer taken: an older app (or a direct
+// call) sending one gets 410, and nothing is stored.
+func TestUploadDocumentRefusesRetiredKinds(t *testing.T) {
+	svc, store, blob := newTestService(t)
+	for _, kind := range []domain.DocumentKind{domain.DocumentAadhaar, domain.DocumentDrivingLicense} {
+		if _, err := svc.UploadDocument(t.Context(), testDriverID, kind, encodeJPEG(t, 100, 100)); !errors.Is(err, ErrDocumentRetired) {
+			t.Errorf("%s: err = %v, want ErrDocumentRetired", kind, err)
+		}
 	}
-	if _, ok := blob.objects[driverPhotoKey(aadhaar.ObjectKey)]; ok {
-		t.Error("an Aadhaar upload produced a driver photo")
+	if len(blob.objects) != 0 || len(store.documents) != 0 {
+		t.Errorf("stored %d objects and %d rows for refused uploads", len(blob.objects), len(store.documents))
 	}
 }
 
@@ -310,6 +317,7 @@ func TestUpdateProfileRejectsUnderageDriver(t *testing.T) {
 
 func TestSetBankAccountEncryptsTheNumber(t *testing.T) {
 	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
 	const accountNumber = "123456789012345"
 
 	account, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", accountNumber, "hdfc0001234")
@@ -339,6 +347,29 @@ func TestSetBankAccountEncryptsTheNumber(t *testing.T) {
 	}
 	if string(opened) != accountNumber {
 		t.Errorf("decrypted = %q, want %q", opened, accountNumber)
+	}
+}
+
+type bankAlerts struct{ last4 []string }
+
+func (b *bankAlerts) BankAccountChanged(_ context.Context, _ string, last4 string) {
+	b.last4 = append(b.last4, last4)
+}
+
+// Every change of payout account is pushed to the driver, so one made by
+// someone else holding their session doesn't go unnoticed.
+func TestSetBankAccountTellsTheDriver(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
+	alerts := &bankAlerts{}
+	svc.SetAlerts(alerts)
+	for _, number := range []string{"123456789012", "000011112222"} {
+		if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", number, "HDFC0001234"); err != nil {
+			t.Fatalf("SetBankAccount: %v", err)
+		}
+	}
+	if !slices.Equal(alerts.last4, []string{"9012", "2222"}) {
+		t.Errorf("alerts = %v, want one per change", alerts.last4)
 	}
 }
 
@@ -474,6 +505,49 @@ func TestDigiLockerVerifiesTheAadhaar(t *testing.T) {
 	}
 }
 
+// "One Aadhaar, one driver" follows what DigiLocker verified: a second
+// account that types different leading digits before the same last four
+// still can't verify the same Aadhaar.
+func TestDigiLockerRefusesAnAadhaarAnotherDriverVerified(t *testing.T) {
+	verify := func(typed string, taken map[string]bool) (*fakeKYCStore, error) {
+		svc, store, _ := newTestService(t)
+		store.takenIdentities = taken
+		if err := svc.UpdateProfile(t.Context(), testDriverID, ProfileUpdate{AadhaarNumber: ptr(typed)}); err != nil {
+			t.Fatalf("UpdateProfile: %v", err)
+		}
+		if _, err := svc.StartDigiLocker(t.Context(), testDriverID); err != nil {
+			t.Fatalf("StartDigiLocker: %v", err)
+		}
+		_, err := svc.CompleteDigiLocker(t.Context(), testDriverID)
+		return store, err
+	}
+
+	first, err := verify("123456789012", nil)
+	if err != nil || first.identity == "" {
+		t.Fatalf("first account: err %v, identity %q", err, first.identity)
+	}
+	second, err := verify("999999999012", map[string]bool{first.identity: true})
+	if !errors.Is(err, repository.ErrAadhaarTaken) {
+		t.Fatalf("second account: err = %v, want ErrAadhaarTaken", err)
+	}
+	if second.profile.AadhaarVerifiedAt != nil || second.profile.DigiLockerClientID != "" {
+		t.Errorf("second account: verified %v, session %q; want neither", second.profile.AadhaarVerifiedAt, second.profile.DigiLockerClientID)
+	}
+	if got := second.checks[len(second.checks)-1]; got.outcome != domain.CheckRejected {
+		t.Errorf("last check = %+v, want a rejection on record", got)
+	}
+}
+
+func TestAadhaarIdentityIgnoresCaseAndSpacing(t *testing.T) {
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	a := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: "Asha  Kumari", DateOfBirth: dob, Last4: "9012"})
+	b := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: " ASHA KUMARI ", DateOfBirth: dob, Last4: "9012"})
+	c := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: "Asha Kumari", DateOfBirth: dob, Last4: "9013"})
+	if a != b || a == c {
+		t.Errorf("fingerprints: %s %s %s; want the first two equal and the third different", a, b, c)
+	}
+}
+
 func TestDigiLockerRejectsAnotherAadhaar(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	ctx := t.Context()
@@ -513,6 +587,7 @@ func TestVerifyDrivingLicense(t *testing.T) {
 			verifier.license, verifier.licenseFound = tc.rec, tc.found
 			dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
 			store.profile.DateOfBirth = &dob
+			aadhaarVerified(store)
 
 			kyc, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "mp09 2019 0012345")
 			if !errors.Is(err, tc.wantErr) {
@@ -538,6 +613,7 @@ func TestChecksAreLimitedPerDay(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
 	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
 	svc.verifier.(*fakeVerifier).licenseFound = false
 
 	for i := range MaxChecksPerDay {
@@ -550,8 +626,63 @@ func TestChecksAreLimitedPerDay(t *testing.T) {
 	}
 }
 
+// Licence and bank lookups are paid and return a name: they're only offered
+// to an account that has proved who it is through DigiLocker.
+func TestPaidChecksNeedTheAadhaarFirst(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+
+	if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrAadhaarFirst) {
+		t.Errorf("licence: err = %v, want ErrAadhaarFirst", err)
+	}
+	if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234"); !errors.Is(err, ErrAadhaarFirst) {
+		t.Errorf("bank: err = %v, want ErrAadhaarFirst", err)
+	}
+	if v := svc.verifier.(*fakeVerifier); v.licenseCalls != 0 || v.bankCalls != 0 || len(store.checks) != 0 {
+		t.Errorf("provider called (licence %d, bank %d, checks %d) before the Aadhaar was verified",
+			v.licenseCalls, v.bankCalls, len(store.checks))
+	}
+}
+
+// Parallel requests from one driver can't all pass the daily count before
+// any of them is recorded: each kind of check runs one at a time.
+func TestPaidChecksRunOneAtATimePerDriver(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
+	verifier := svc.verifier.(*fakeVerifier)
+	verifier.licenseFound = false
+
+	var wg sync.WaitGroup
+	for range 3 * MaxChecksPerDay {
+		wg.Go(func() { _, _ = svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345") })
+	}
+	wg.Wait()
+	if verifier.licenseCalls != MaxChecksPerDay {
+		t.Errorf("provider called %d times, want the daily cap of %d", verifier.licenseCalls, MaxChecksPerDay)
+	}
+}
+
+func TestPaidChecksStopAtTheDailyBudget(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
+	store.otherDriversChecks = MaxPaidChecksPerDay
+
+	if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrVerificationUnavailable) {
+		t.Errorf("err = %v, want ErrVerificationUnavailable once the budget is used", err)
+	}
+	if svc.verifier.(*fakeVerifier).licenseCalls != 0 {
+		t.Error("the provider was called past the budget")
+	}
+}
+
 func TestSetBankAccountRefusesAnAccountTheBankDoesntKnow(t *testing.T) {
 	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
 	svc.verifier.(*fakeVerifier).bank = domain.BankAccountRecord{}
 
 	_, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234")
@@ -591,6 +722,171 @@ func TestEditingAfterSubmissionReopensReview(t *testing.T) {
 
 	if store.profile.KYCStatus != domain.KYCIncomplete {
 		t.Errorf("status = %q, want %q after an edit", store.profile.KYCStatus, domain.KYCIncomplete)
+	}
+}
+
+// A driver a reviewer rejected can't clear themselves: their edits keep them
+// rejected, and their resubmission goes back to a person — with the
+// reviewer's note kept — however good the automated checks look.
+func TestRejectionByAReviewerSticks(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	ctx := t.Context()
+	completeKYC(t, svc, store)
+	if _, err := svc.Submit(ctx, testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCRejected, "Selfie is someone else", domain.KYCVerified); err != nil {
+		t.Fatalf("DecideKYC: %v", err)
+	}
+
+	// Edits keep the rejection showing.
+	if _, err := svc.UploadDocument(ctx, testDriverID, domain.DocumentSelfie, encodeJPEG(t, 90, 90)); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	if store.profile.KYCStatus != domain.KYCRejected {
+		t.Fatalf("status after an edit = %q, want still rejected", store.profile.KYCStatus)
+	}
+
+	// Submitting, again and again, only reaches a person.
+	for i := range 2 {
+		kyc, err := svc.Submit(ctx, testDriverID)
+		if err != nil {
+			t.Fatalf("Submit #%d: %v", i+1, err)
+		}
+		if kyc.Profile.KYCStatus != domain.KYCSubmitted {
+			t.Fatalf("Submit #%d: status = %q, want submitted", i+1, kyc.Profile.KYCStatus)
+		}
+		if kyc.Profile.KYCReviewNote != "Selfie is someone else" {
+			t.Errorf("Submit #%d: note = %q, want the reviewer's", i+1, kyc.Profile.KYCReviewNote)
+		}
+		// An edit while waiting reopens them; it mustn't lift the hold.
+		if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{
+			Transmission: ptr(string(domain.DriverTransmissionManual)),
+		}); err != nil {
+			t.Fatalf("UpdateProfile: %v", err)
+		}
+	}
+
+	// Only a reviewer clears them, and that lifts the hold.
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCVerified, "", ""); err != nil {
+		t.Fatalf("DecideKYC(verified): %v", err)
+	}
+	if store.profile.KYCStatus != domain.KYCVerified || store.profile.KYCRejectedAt != nil {
+		t.Errorf("after a reviewer's approval: status %q, hold %v", store.profile.KYCStatus, store.profile.KYCRejectedAt)
+	}
+}
+
+type heldRides struct{ released []string }
+
+func (h *heldRides) ReleaseHeldRides(_ context.Context, driverID string) (int, error) {
+	h.released = append(h.released, driverID)
+	return 1, nil
+}
+
+// A reviewer's rejection hands back the rides the driver holds; an approval
+// doesn't touch them.
+func TestRejectionReleasesTheDriversRides(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	rides := &heldRides{}
+	svc.SetRideReleaser(rides)
+
+	if err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCVerified, "", ""); err != nil {
+		t.Fatalf("DecideKYC(verified): %v", err)
+	}
+	if len(rides.released) != 0 {
+		t.Fatalf("an approval released rides: %v", rides.released)
+	}
+	if err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCRejected, "Licence is fake", ""); err != nil {
+		t.Fatalf("DecideKYC(rejected): %v", err)
+	}
+	if !slices.Equal(rides.released, []string{testDriverID}) {
+		t.Errorf("released = %v, want the rejected driver's rides", rides.released)
+	}
+}
+
+// The first clearance is automatic; after that, a new selfie goes to a
+// person to compare with the face customers have been shown.
+func TestNewSelfieAfterClearanceGoesToAPerson(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	ctx := t.Context()
+	completeKYC(t, svc, store)
+	if kyc, err := svc.Submit(ctx, testDriverID); err != nil || kyc.Profile.KYCStatus != domain.KYCVerified {
+		t.Fatalf("first Submit: %v (%+v)", err, kyc.Profile)
+	}
+
+	if _, err := svc.UploadDocument(ctx, testDriverID, domain.DocumentSelfie, encodeJPEG(t, 120, 90)); err != nil {
+		t.Fatalf("UploadDocument: %v", err)
+	}
+	kyc, err := svc.Submit(ctx, testDriverID)
+	if err != nil {
+		t.Fatalf("Submit after a new selfie: %v", err)
+	}
+	if kyc.Profile.KYCStatus != domain.KYCSubmitted || !strings.Contains(kyc.Profile.KYCReviewNote, "photo changed") {
+		t.Fatalf("after a new selfie: status %q, note %q; want submitted for a person", kyc.Profile.KYCStatus, kyc.Profile.KYCReviewNote)
+	}
+
+	// Once a reviewer has looked and cleared it, it's the cleared photo.
+	if err := svc.DecideKYC(ctx, testDriverID, domain.KYCVerified, "", domain.KYCSubmitted); err != nil {
+		t.Fatalf("DecideKYC: %v", err)
+	}
+	if err := svc.UpdateProfile(ctx, testDriverID, ProfileUpdate{
+		Transmission: ptr(string(domain.DriverTransmissionManual)),
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if kyc, err := svc.Submit(ctx, testDriverID); err != nil || kyc.Profile.KYCStatus != domain.KYCVerified {
+		t.Errorf("an edit after the photo was cleared: %v, status %q; want verified", err, kyc.Profile.KYCStatus)
+	}
+}
+
+// A reviewer's decision lands only on the state they looked at.
+func TestReviewerDecisionNeedsTheStatusTheySaw(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	completeKYC(t, svc, store)
+	store.bankAccount.VerifiedName = "RAVI SHARMA"
+	if _, err := svc.Submit(t.Context(), testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	// The driver edits while the reviewer has the card open.
+	if err := svc.UpdateProfile(t.Context(), testDriverID, ProfileUpdate{
+		Transmission: ptr(string(domain.DriverTransmissionManual)),
+	}); err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	err := svc.DecideKYC(t.Context(), testDriverID, domain.KYCVerified, "", domain.KYCSubmitted)
+	if !errors.Is(err, repository.ErrKYCChanged) {
+		t.Fatalf("err = %v, want ErrKYCChanged", err)
+	}
+	if store.profile.KYCStatus != domain.KYCIncomplete {
+		t.Errorf("status = %q, want the driver's incomplete left alone", store.profile.KYCStatus)
+	}
+}
+
+// Re-saving a step unchanged — or sending nothing — must not take a verified
+// driver off the road.
+func TestUnchangedProfileKeepsAVerifiedDriverVerified(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	completeKYC(t, svc, store)
+	if _, err := svc.Submit(t.Context(), testDriverID); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	p := store.profile
+	unchanged := map[string]ProfileUpdate{
+		"empty":        {},
+		"transmission": {Transmission: ptr(string(p.Transmission))},
+		"identity, as on the Aadhaar": {
+			FullName: ptr(p.FullName), DateOfBirth: p.DateOfBirth, Gender: ptr(string(p.Gender)),
+		},
+		"same Aadhaar number, spaced": {AadhaarNumber: ptr("1234 5678 9012")},
+		"same licence, lower case":    {DrivingLicenseNumber: ptr("mp09 2019 0012345")},
+	}
+	for name, u := range unchanged {
+		if err := svc.UpdateProfile(t.Context(), testDriverID, u); err != nil {
+			t.Fatalf("%s: UpdateProfile: %v", name, err)
+		}
+		if store.profile.KYCStatus != domain.KYCVerified {
+			t.Fatalf("%s: status = %q, want still verified", name, store.profile.KYCStatus)
+		}
 	}
 }
 
@@ -639,7 +935,39 @@ func TestOpenDocumentReportsAMissingDocument(t *testing.T) {
 
 // --- helpers -------------------------------------------------------------
 
+func TestYearsBetweenCountsByCalendarDate(t *testing.T) {
+	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	cases := []struct {
+		name     string
+		dob, now time.Time
+		want     int
+	}{
+		// Day-of-year shifts by one after February across leap years; these
+		// two were wrong when birthdays were compared by YearDay.
+		{"18th birthday, born in a leap year", day(2008, time.August, 7), day(2026, time.August, 7), 18},
+		{"day before the 18th birthday, now a leap year", day(2006, time.March, 2), day(2024, time.March, 1), 17},
+		{"18th birthday, now a leap year", day(2006, time.March, 2), day(2024, time.March, 2), 18},
+		{"29 Feb birthday, 28 Feb", day(2008, time.February, 29), day(2026, time.February, 28), 17},
+		{"29 Feb birthday, 1 Mar", day(2008, time.February, 29), day(2026, time.March, 1), 18},
+		// Just after midnight IST on the birthday is still 6 August in UTC.
+		{"birthday begins in IST", day(2008, time.August, 7), time.Date(2026, time.August, 6, 19, 0, 0, 0, time.UTC), 18},
+		{"evening before, IST", day(2008, time.August, 7), time.Date(2026, time.August, 6, 18, 0, 0, 0, time.UTC), 17},
+	}
+	for _, c := range cases {
+		if got := yearsBetween(c.dob, c.now); got != c.want {
+			t.Errorf("%s: yearsBetween = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
+
+// aadhaarVerified marks the test driver's Aadhaar as checked through
+// DigiLocker, which the licence and bank steps need first.
+func aadhaarVerified(store *fakeKYCStore) {
+	now := time.Now()
+	store.profile.AadhaarVerifiedAt = &now
+}
 
 func testCipher(t *testing.T) *secret.Cipher {
 	t.Helper()
@@ -752,6 +1080,13 @@ type fakeKYCStore struct {
 	submittedAt       *time.Time
 
 	checks []fakeCheck
+	// otherDriversChecks is how many paid checks other drivers made today.
+	otherDriversChecks int
+
+	// identity is the Aadhaar identity fingerprint saved; takenIdentities
+	// are those another driver already verified.
+	identity        string
+	takenIdentities map[string]bool
 
 	upsertErr error
 	nextID    int
@@ -825,6 +1160,9 @@ func (f *fakeKYCStore) UpdateProfile(_ context.Context, _ string, p repository.U
 	if p.AadhaarLast4 != nil {
 		f.profile.AadhaarLast4 = *p.AadhaarLast4
 	}
+	if p.AadhaarFingerprint != nil {
+		f.profile.AadhaarFingerprint = *p.AadhaarFingerprint
+	}
 	if p.DrivingLicenseNumber != nil {
 		f.profile.DrivingLicenseNumber = *p.DrivingLicenseNumber
 	}
@@ -838,7 +1176,7 @@ func (f *fakeKYCStore) FindProfile(context.Context, string) (domain.DriverProfil
 func (f *fakeKYCStore) SetKYCStatus(
 	_ context.Context, _ string, status domain.KYCStatus, recordSubmission bool,
 ) error {
-	f.profile.KYCStatus = status
+	f.reopen(status)
 	// Mirrors the repository: the database stamps the time, once.
 	if recordSubmission && f.submittedAt == nil {
 		now := time.Now()
@@ -879,7 +1217,11 @@ func (f *fakeKYCStore) SetDigiLockerSession(_ context.Context, _ string, clientI
 	return nil
 }
 
-func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec domain.AadhaarRecord) error {
+func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec domain.AadhaarRecord, identity string) error {
+	if f.takenIdentities[identity] {
+		return repository.ErrAadhaarTaken
+	}
+	f.identity = identity
 	now := time.Now()
 	f.profile.FullName, f.profile.DateOfBirth = rec.Name, &rec.DateOfBirth
 	if rec.Gender != "" {
@@ -887,7 +1229,7 @@ func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec 
 	}
 	f.profile.AadhaarVerifiedAt = &now
 	f.profile.DigiLockerClientID = ""
-	f.profile.KYCStatus = domain.KYCIncomplete
+	f.reopen(domain.KYCIncomplete)
 	return nil
 }
 
@@ -901,17 +1243,56 @@ func (f *fakeKYCStore) SaveLicenseVerification(_ context.Context, _ string, rec 
 		f.profile.LicenseValidUntil = &domain.Date{Time: rec.ValidUntil}
 	}
 	f.profile.LicenseClasses = rec.Classes
-	f.profile.KYCStatus = domain.KYCIncomplete
+	f.reopen(domain.KYCIncomplete)
 	return nil
 }
 
-func (f *fakeKYCStore) DecideKYC(_ context.Context, _ string, status domain.KYCStatus, note string) error {
+// reopen mirrors the repository's edit paths: a rejected driver stays
+// rejected.
+func (f *fakeKYCStore) reopen(status domain.KYCStatus) {
+	if f.profile.KYCStatus != domain.KYCRejected {
+		f.profile.KYCStatus = status
+	}
+}
+
+func (f *fakeKYCStore) DecideSubmission(
+	ctx context.Context, driverID string, decide func(domain.DriverKYC) (domain.KYCStatus, string, error),
+) error {
+	docs, _ := f.ListDocuments(ctx, driverID)
+	status, note, err := decide(domain.DriverKYC{Profile: f.profile, Documents: docs, BankAccount: f.bankAccount})
+	if err != nil {
+		return err
+	}
+	f.decide(status, note)
+	return nil
+}
+
+func (f *fakeKYCStore) ReviewKYC(
+	_ context.Context, _ string, status domain.KYCStatus, note string, expected domain.KYCStatus,
+) error {
+	if expected != "" && f.profile.KYCStatus != expected {
+		return repository.ErrKYCChanged
+	}
+	f.decide(status, note)
+	f.profile.KYCRejectedAt = nil
+	if status == domain.KYCRejected {
+		now := time.Now()
+		f.profile.KYCRejectedAt = &now
+	}
+	return nil
+}
+
+func (f *fakeKYCStore) decide(status domain.KYCStatus, note string) {
 	f.profile.KYCStatus, f.profile.KYCReviewNote = status, note
-	if status != domain.KYCIncomplete && f.submittedAt == nil {
+	if status == domain.KYCVerified {
+		if selfie, ok := f.documents[domain.DocumentSelfie]; ok {
+			f.profile.ClearedSelfieSHA256 = selfie.SHA256
+		}
+	}
+	if f.submittedAt == nil {
 		now := time.Now()
 		f.submittedAt, f.profile.KYCSubmittedAt = &now, &now
 	}
-	return nil
 }
 
 func (f *fakeKYCStore) RecordCheck(
@@ -934,6 +1315,10 @@ func (f *fakeKYCStore) CountChecks(_ context.Context, _ string, kind domain.KYCC
 		n++
 	}
 	return n, nil
+}
+
+func (f *fakeKYCStore) CountAllChecks(context.Context, time.Time) (int, error) {
+	return f.otherDriversChecks + len(f.checks), nil
 }
 
 func (f *fakeKYCStore) ListKYCReviews(context.Context, domain.KYCStatus) ([]domain.KYCReview, error) {
@@ -965,6 +1350,9 @@ type fakeVerifier struct {
 	licenseFound  bool
 	licenseNumber string
 	bank          domain.BankAccountRecord
+
+	// Paid calls made; unguarded, so -race flags any made in parallel.
+	licenseCalls, bankCalls int
 }
 
 func newFakeVerifier() *fakeVerifier {
@@ -995,10 +1383,12 @@ func (f *fakeVerifier) DigiLockerAadhaar(context.Context, string) (domain.Aadhaa
 }
 
 func (f *fakeVerifier) DrivingLicense(_ context.Context, number string, _ time.Time) (domain.LicenseRecord, bool, error) {
+	f.licenseCalls++
 	f.licenseNumber = number
 	return f.license, f.licenseFound, nil
 }
 
 func (f *fakeVerifier) BankAccount(context.Context, string, string) (domain.BankAccountRecord, error) {
+	f.bankCalls++
 	return f.bank, nil
 }

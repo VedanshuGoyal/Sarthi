@@ -176,8 +176,11 @@ type DriverProfile struct {
 	Transmission         DriverTransmission `json:"transmission,omitempty"`
 	AadhaarLast4         string             `json:"aadhaarLast4,omitempty"`
 	DrivingLicenseNumber string             `json:"drivingLicenseNumber,omitempty"`
-	KYCStatus            KYCStatus          `json:"kycStatus"`
-	KYCSubmittedAt       *time.Time         `json:"kycSubmittedAt,omitempty"`
+	// AadhaarFingerprint is the keyed hash of the typed Aadhaar number, so an
+	// unchanged re-save can be told from a new number. Never serialised.
+	AadhaarFingerprint string     `json:"-"`
+	KYCStatus          KYCStatus  `json:"kycStatus"`
+	KYCSubmittedAt     *time.Time `json:"kycSubmittedAt,omitempty"`
 
 	// AadhaarVerifiedAt is when DigiLocker confirmed the Aadhaar. From then on
 	// FullName, DateOfBirth and Gender are the Aadhaar's and can't be edited.
@@ -194,6 +197,12 @@ type DriverProfile struct {
 	// KYCReviewNote says why a submission is waiting on a person, or why it
 	// was rejected.
 	KYCReviewNote string `json:"kycReviewNote,omitempty"`
+	// KYCRejectedAt is when a reviewer last rejected the driver; until a
+	// reviewer verifies them, their own submissions only reach a person.
+	KYCRejectedAt *time.Time `json:"kycRejectedAt,omitempty"`
+	// ClearedSelfieSHA256 is the hash of the selfie on file when the driver
+	// was last cleared; empty until the first clearance.
+	ClearedSelfieSHA256 string `json:"-"`
 }
 
 // DriverBankAccount is where a driver's earnings are paid. The account number

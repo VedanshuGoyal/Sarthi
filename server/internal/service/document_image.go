@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -21,8 +22,14 @@ const (
 
 	// MaxDocumentPixels rejects decompression bombs: a small file can declare
 	// enormous dimensions, and decoding it would allocate width*height*4
-	// bytes. Checked from the header before any pixels are decoded.
-	MaxDocumentPixels = 50_000_000 // 50 MP
+	// bytes. Checked from the header before any pixels are decoded. 16 MP
+	// takes a full-resolution phone photo (about 12 MP) with room to spare;
+	// the app itself sends 1600 px images, about 2 MP.
+	MaxDocumentPixels = 16_000_000 // 16 MP
+
+	// maxConcurrentDecodes bounds how many uploads are decoded at once. A
+	// decode at the pixel cap holds up to ~64 MB until it's re-encoded.
+	maxConcurrentDecodes = 2
 
 	// MaxDocumentEdge is the longest side kept after re-encoding. The app
 	// already captures at 1600px, so this only bites when the request didn't
@@ -45,6 +52,10 @@ var ErrDocumentTooLarge = errors.New("document image is too large")
 // server can decode.
 var ErrUnsupportedImage = errors.New("document must be a JPEG or PNG image")
 
+// decodeSlots holds a token for each upload being decoded, so parallel
+// uploads queue for the pixels instead of all decoding at once.
+var decodeSlots = make(chan struct{}, maxConcurrentDecodes)
+
 // processDocumentImage validates raw and returns it as a clean JPEG.
 //
 // The re-encode is the point, not a side effect. Phone photos carry EXIF, and
@@ -53,7 +64,10 @@ var ErrUnsupportedImage = errors.New("document must be a JPEG or PNG image")
 // Decoding to pixels and encoding fresh drops every metadata block, and as a
 // bonus it means a stored "image" is always something we successfully parsed,
 // never an arbitrary blob with an image extension.
-func processDocumentImage(raw []byte) ([]byte, error) {
+//
+// The header checks run at once; the decode waits for one of
+// [maxConcurrentDecodes] slots, or until ctx ends.
+func processDocumentImage(ctx context.Context, raw []byte) ([]byte, error) {
 	if len(raw) == 0 {
 		return nil, ErrUnsupportedImage
 	}
@@ -77,6 +91,12 @@ func processDocumentImage(raw []byte) ([]byte, error) {
 		return nil, ErrDocumentTooLarge
 	}
 
+	select {
+	case decodeSlots <- struct{}{}:
+		defer func() { <-decodeSlots }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return nil, ErrUnsupportedImage

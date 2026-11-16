@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sarthi/server/internal/domain"
 	"github.com/sarthi/server/internal/repository"
@@ -25,7 +26,7 @@ func (f fakeStatsStore) Stats(context.Context, repository.StatsQuery) (domain.Ad
 
 type fakeOnDuty int
 
-func (n fakeOnDuty) Count() int { return int(n) }
+func (n fakeOnDuty) CountSeenSince(time.Time) int { return int(n) }
 
 // statsRouter is the real router with only the stats service wired.
 func statsRouter(adminToken string, store service.StatsStore) http.Handler {

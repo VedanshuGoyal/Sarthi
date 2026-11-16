@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -160,6 +161,28 @@ func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	}
 	if len(tokens.deleted) != 1 || tokens.deleted[0] != "tok-both-2" {
 		t.Errorf("deleted = %v, want the unregistered tok-both-2", tokens.deleted)
+	}
+}
+
+// The fan-out cap counts drivers who could take the ride: a crowd of nearer
+// drivers who can't (KYC not done) or whose app went quiet mustn't use it up.
+func TestRideRequested_capCountsOnlyEligibleDrivers(t *testing.T) {
+	svc, tokens, sender, tr := newNotifyTest(t)
+	for i := range maxAlertedDrivers {
+		placeDriver(t, tr, fmt.Sprintf("unknown-%d", i), gateLat, gateLng, testNow) // no profile: not cleared
+		placeDriver(t, tr, fmt.Sprintf("quiet-%d", i), gateLat, gateLng, testNow.Add(-time.Hour))
+	}
+	placeDriver(t, tr, "auto", gateLat+0.018, gateLng, testNow) // ~2 km, the furthest
+	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
+
+	rb := openRide("ride-cap", testNow.Add(3*time.Hour), 4, "automatic")
+	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
+	plan.ScheduledAt = *rb.Booking.ScheduledAt
+	svc.RideRequested(context.Background(), rb.Booking, plan)
+	svc.Wait()
+
+	if got := sender.byToken(); len(got) != 1 || got["tok-auto"].Token == "" {
+		t.Fatalf("alerted %v, want the one eligible driver", keys(got))
 	}
 }
 
@@ -321,6 +344,25 @@ func TestDriverReleased_tooLateToRebook(t *testing.T) {
 	if len(got) != 1 || !strings.HasSuffix(got["tok-phone"].Body, "Please book again.") {
 		t.Fatalf("sent %v (customer body %q), want only the customer, told to book again",
 			keys(got), got["tok-phone"].Body)
+	}
+}
+
+func TestBankAccountChanged_tellsTheDriver(t *testing.T) {
+	svc, tokens, sender, _ := newNotifyTest(t)
+	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
+	_ = tokens.SaveForDriver(context.Background(), "both", "tok-both")
+
+	svc.BankAccountChanged(context.Background(), "auto", "9012")
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 1 {
+		t.Fatalf("sent to %v, want only that driver", keys(got))
+	}
+	m := got["tok-auto"]
+	if m.Title != "Bank account changed" || m.Data["type"] != pushTypeBankChanged ||
+		!strings.Contains(m.Body, "ending 9012") {
+		t.Errorf("message = %+v", m)
 	}
 }
 
