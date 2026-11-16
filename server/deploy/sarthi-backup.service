@@ -1,0 +1,10 @@
+[Unit]
+Description=Sarthi nightly PostgreSQL backup
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sarthi/deploy/backup.sh
+Nice=10
+IOSchedulingClass=idle

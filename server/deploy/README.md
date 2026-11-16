@@ -174,3 +174,36 @@ systemctl daemon-reload
 # Postgres and its data are left alone on purpose — drop them deliberately:
 #   sudo -u postgres dropdb sarthi && sudo -u postgres dropuser sarthi
 ```
+
+## Backups
+
+`sarthi-backup.timer` runs `/opt/sarthi/deploy/backup.sh` every night at 03:30 IST:
+
+- `pg_dump` → `/var/backups/sarthi/sarthi-<stamp>.sql.gz` (0600, newest 14 kept)
+- copy to the bucket under `backups/db/` via `sarthi-backup-upload` (same `S3_*` env as the server)
+- set an R2 lifecycle rule on `backups/db/` (e.g. delete after 30 days)
+
+Install once (`redeploy.sh` keeps the script and uploader current afterwards):
+
+```bash
+cp server/deploy/sarthi-backup.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now sarthi-backup.timer
+systemctl start sarthi-backup.service && journalctl -u sarthi-backup -n 20   # first run
+```
+
+Check: `systemctl list-timers sarthi-backup.timer`, `ls -lt /var/backups/sarthi | head`.
+
+### Restore drill (do it once, then quarterly)
+
+Restore into a scratch database, never over `sarthi`:
+
+```bash
+sudo -u postgres createdb sarthi_restore_test
+zcat /var/backups/sarthi/<latest>.sql.gz | sudo -u postgres psql -q -d sarthi_restore_test
+sudo -u postgres psql -d sarthi_restore_test -c "select count(*) from bookings"
+sudo -u postgres dropdb sarthi_restore_test
+```
+
+Real restore (outage): stop `sarthi`, take a fresh dump of whatever is there,
+recreate `sarthi` owned by the `sarthi` user, load the dump as `sarthi`, start
+the service, check `/healthz`.

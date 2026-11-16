@@ -37,6 +37,15 @@ TMP_BINARY="$(mktemp /tmp/sarthi-server.XXXXXX)"
 trap 'rm -f "$TMP_BINARY"' EXIT
 ( cd "$SERVER_DIR" && "$GO" build -o "$TMP_BINARY" ./cmd/server ) || die "build failed — nothing was deployed"
 
+# The nightly backup's off-box uploader and script (sarthi-backup.timer).
+# Not part of the health-checked swap below: a failure here only warns.
+if ( cd "$SERVER_DIR" && "$GO" build -o /opt/sarthi/bin/sarthi-backup-upload.new ./cmd/backup-upload ); then
+	mv /opt/sarthi/bin/sarthi-backup-upload.new /opt/sarthi/bin/sarthi-backup-upload
+	install -D -m 750 "$DEPLOY_DIR/backup.sh" /opt/sarthi/deploy/backup.sh
+else
+	printf 'warning: backup uploader did not build; nightly off-box copies will fail\n' >&2
+fi
+
 log "Swapping in the new binary"
 [[ -f "$BINARY" ]] && cp -a "$BINARY" "$BINARY.prev"
 install -m 755 "$TMP_BINARY" "$BINARY"
