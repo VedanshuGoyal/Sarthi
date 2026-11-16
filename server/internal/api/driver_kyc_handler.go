@@ -263,6 +263,8 @@ func (h *DriverKYCHandler) writeKYCError(w http.ResponseWriter, err error, fallb
 			err.Error()+" (maximum "+strconv.Itoa(service.MaxDocumentBytes>>20)+" MB)", 0)
 	case errors.Is(err, service.ErrUnknownDocumentKind):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrDocumentRetired):
+		writeErrorCode(w, http.StatusGone, "document_retired", err.Error(), 0)
 	case errors.Is(err, service.ErrKYCIncomplete):
 		writeErrorCode(w, http.StatusConflict, "kyc_incomplete", err.Error(), 0)
 	case errors.Is(err, repository.ErrAadhaarTaken):

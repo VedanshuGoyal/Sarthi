@@ -67,11 +67,11 @@ func TestUploadDocumentStoresProcessedBytes(t *testing.T) {
 func TestUploadDocumentDeletesTheImageItReplaces(t *testing.T) {
 	svc, _, blob := newTestService(t)
 
-	first, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 100, 100))
+	first, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 100, 100))
 	if err != nil {
 		t.Fatalf("first upload: %v", err)
 	}
-	second, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 120, 120))
+	second, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentSelfie, encodeJPEG(t, 120, 120))
 	if err != nil {
 		t.Fatalf("retake: %v", err)
 	}
@@ -118,13 +118,19 @@ func TestUploadSelfieStoresASmallDriverPhoto(t *testing.T) {
 		t.Errorf("version = %q, want %q", version, doc.SHA256[:12])
 	}
 
-	// Other documents never get a customer-facing copy.
-	aadhaar, err := svc.UploadDocument(t.Context(), testDriverID, domain.DocumentAadhaar, encodeJPEG(t, 100, 100))
-	if err != nil {
-		t.Fatalf("aadhaar upload: %v", err)
+}
+
+// Aadhaar and licence photos are no longer taken: an older app (or a direct
+// call) sending one gets 410, and nothing is stored.
+func TestUploadDocumentRefusesRetiredKinds(t *testing.T) {
+	svc, store, blob := newTestService(t)
+	for _, kind := range []domain.DocumentKind{domain.DocumentAadhaar, domain.DocumentDrivingLicense} {
+		if _, err := svc.UploadDocument(t.Context(), testDriverID, kind, encodeJPEG(t, 100, 100)); !errors.Is(err, ErrDocumentRetired) {
+			t.Errorf("%s: err = %v, want ErrDocumentRetired", kind, err)
+		}
 	}
-	if _, ok := blob.objects[driverPhotoKey(aadhaar.ObjectKey)]; ok {
-		t.Error("an Aadhaar upload produced a driver photo")
+	if len(blob.objects) != 0 || len(store.documents) != 0 {
+		t.Errorf("stored %d objects and %d rows for refused uploads", len(blob.objects), len(store.documents))
 	}
 }
 

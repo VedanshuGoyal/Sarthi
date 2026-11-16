@@ -35,6 +35,12 @@ var ErrInvalidProfile = errors.New("invalid document details")
 // ErrUnknownDocumentKind is returned for a document kind Sarthi doesn't collect.
 var ErrUnknownDocumentKind = errors.New("unknown document kind")
 
+// ErrDocumentRetired is returned for an upload of an Aadhaar or licence
+// photo. Both are checked at source now, and an Aadhaar photo carries the
+// full number, which MOJUD doesn't keep. Photos already on file can still be
+// read.
+var ErrDocumentRetired = errors.New("this document is checked online now and its photo isn't needed; update the app")
+
 // ErrNoDriverPhoto is returned when a driver hasn't uploaded a selfie, or a
 // booking has no driver whose photo could be shown.
 var ErrNoDriverPhoto = errors.New("no driver photo")
@@ -168,6 +174,9 @@ func (s *DriverKYCService) UploadDocument(
 ) (domain.DriverDocument, error) {
 	if !validDocumentKind(kind) {
 		return domain.DriverDocument{}, ErrUnknownDocumentKind
+	}
+	if !slices.Contains(domain.RequiredDocumentKinds, kind) {
+		return domain.DriverDocument{}, ErrDocumentRetired
 	}
 
 	clean, err := processDocumentImage(ctx, raw)
