@@ -191,6 +191,25 @@ void main() {
       ).unorderedEquals([DocumentKind.aadhaar, DocumentKind.aadhaar]);
     });
 
+    // F14: the retry used to copy the stored capture onto itself, which
+    // truncates it, so every retry sent an empty file.
+    test('a retry sends the photo itself, not an emptied copy', () async {
+      final repository = _FakeKycRepository(
+        failWith: const KycException('upload failed'),
+      );
+      final vm = viewModel(repository);
+      await vm.capturePhoto(DocumentKind.aadhaar, writePickedPhoto());
+      final stored = vm.data.capturePathFor(DocumentKind.aadhaar)!;
+
+      repository.failWith = null;
+      await vm.retryUpload(DocumentKind.aadhaar);
+      await vm.retryUpload(DocumentKind.aadhaar);
+
+      const photo = [0xff, 0xd8, 0xff, 0xe0];
+      check(repository.uploadedBytes).deepEquals([photo, photo, photo]);
+      check(File(stored).readAsBytesSync()).deepEquals(photo);
+    });
+
     test(
       'a retake replaces the previous capture rather than piling up',
       () async {
@@ -216,6 +235,23 @@ void main() {
         check(captures).length.equals(1);
       },
     );
+  });
+
+  group('DocumentFileStore', () {
+    test('persisting the stored capture again leaves it intact', () async {
+      final store = DocumentFileStore(directory: tempDir);
+      final stored = await store.persist(
+        DocumentKind.selfie,
+        writePickedPhoto(),
+      );
+
+      final again = await store.persist(DocumentKind.selfie, stored);
+
+      check(again).equals(stored);
+      check(
+        File(stored).readAsBytesSync(),
+      ).deepEquals([0xff, 0xd8, 0xff, 0xe0]);
+    });
   });
 
   group('per driver', () {
@@ -530,6 +566,9 @@ class _FakeKycRepository implements DriverKycRepository {
   /// Every kind uploaded, in order, including repeats from a retry.
   final List<DocumentKind> uploaded = [];
 
+  /// The bytes of each upload's file, read when it was sent.
+  final List<List<int>> uploadedBytes = [];
+
   /// Every license number sent for checking.
   final List<String> verifiedLicenses = [];
 
@@ -545,6 +584,7 @@ class _FakeKycRepository implements DriverKycRepository {
   @override
   Future<DriverKyc> uploadDocument(DocumentKind kind, String path) async {
     uploaded.add(kind);
+    uploadedBytes.add(File(path).readAsBytesSync());
     return _respond();
   }
 

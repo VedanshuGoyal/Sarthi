@@ -131,20 +131,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
         _notify();
         return;
       }
-      _data = _data
-          .withCapture(kind, path)
-          .withUploadState(kind, DocumentUploadState.uploading);
-      _error = null;
-      _notify();
-
-      try {
-        _kyc = await _repository.uploadDocument(kind, path);
-        _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
-      } on KycException catch (e) {
-        _data = _data.withUploadState(kind, DocumentUploadState.failed);
-        _error = e.message;
-      }
-      _notify();
+      await _upload(kind, path);
     } finally {
       _capturing.remove(kind);
     }
@@ -154,10 +141,34 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   final Set<DocumentKind> _capturing = {};
 
   /// Retries a failed upload for [kind] using the capture already on disk.
+  /// It is sent as it is: it's already in durable storage, and storing it
+  /// again would copy the file onto itself.
   Future<void> retryUpload(DocumentKind kind) async {
     final path = _data.capturePathFor(kind);
-    if (path == null) return;
-    await capturePhoto(kind, path);
+    if (path == null || !_capturing.add(kind)) return;
+    try {
+      await _upload(kind, path);
+    } finally {
+      _capturing.remove(kind);
+    }
+  }
+
+  /// Uploads the stored capture at [path], tracking its state for the tile.
+  Future<void> _upload(DocumentKind kind, String path) async {
+    _data = _data
+        .withCapture(kind, path)
+        .withUploadState(kind, DocumentUploadState.uploading);
+    _error = null;
+    _notify();
+
+    try {
+      _kyc = await _repository.uploadDocument(kind, path);
+      _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
+    } on KycException catch (e) {
+      _data = _data.withUploadState(kind, DocumentUploadState.failed);
+      _error = e.message;
+    }
+    _notify();
   }
 
   Future<void> setVehicleType(VehicleType type) =>
