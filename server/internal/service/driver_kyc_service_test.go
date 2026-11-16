@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -310,6 +311,7 @@ func TestUpdateProfileRejectsUnderageDriver(t *testing.T) {
 
 func TestSetBankAccountEncryptsTheNumber(t *testing.T) {
 	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
 	const accountNumber = "123456789012345"
 
 	account, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", accountNumber, "hdfc0001234")
@@ -351,7 +353,8 @@ func (b *bankAlerts) BankAccountChanged(_ context.Context, _ string, last4 strin
 // Every change of payout account is pushed to the driver, so one made by
 // someone else holding their session doesn't go unnoticed.
 func TestSetBankAccountTellsTheDriver(t *testing.T) {
-	svc, _, _ := newTestService(t)
+	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
 	alerts := &bankAlerts{}
 	svc.SetAlerts(alerts)
 	for _, number := range []string{"123456789012", "000011112222"} {
@@ -535,6 +538,7 @@ func TestVerifyDrivingLicense(t *testing.T) {
 			verifier.license, verifier.licenseFound = tc.rec, tc.found
 			dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
 			store.profile.DateOfBirth = &dob
+			aadhaarVerified(store)
 
 			kyc, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "mp09 2019 0012345")
 			if !errors.Is(err, tc.wantErr) {
@@ -560,6 +564,7 @@ func TestChecksAreLimitedPerDay(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
 	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
 	svc.verifier.(*fakeVerifier).licenseFound = false
 
 	for i := range MaxChecksPerDay {
@@ -572,8 +577,63 @@ func TestChecksAreLimitedPerDay(t *testing.T) {
 	}
 }
 
+// Licence and bank lookups are paid and return a name: they're only offered
+// to an account that has proved who it is through DigiLocker.
+func TestPaidChecksNeedTheAadhaarFirst(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+
+	if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrAadhaarFirst) {
+		t.Errorf("licence: err = %v, want ErrAadhaarFirst", err)
+	}
+	if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234"); !errors.Is(err, ErrAadhaarFirst) {
+		t.Errorf("bank: err = %v, want ErrAadhaarFirst", err)
+	}
+	if v := svc.verifier.(*fakeVerifier); v.licenseCalls != 0 || v.bankCalls != 0 || len(store.checks) != 0 {
+		t.Errorf("provider called (licence %d, bank %d, checks %d) before the Aadhaar was verified",
+			v.licenseCalls, v.bankCalls, len(store.checks))
+	}
+}
+
+// Parallel requests from one driver can't all pass the daily count before
+// any of them is recorded: each kind of check runs one at a time.
+func TestPaidChecksRunOneAtATimePerDriver(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
+	verifier := svc.verifier.(*fakeVerifier)
+	verifier.licenseFound = false
+
+	var wg sync.WaitGroup
+	for range 3 * MaxChecksPerDay {
+		wg.Go(func() { _, _ = svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345") })
+	}
+	wg.Wait()
+	if verifier.licenseCalls != MaxChecksPerDay {
+		t.Errorf("provider called %d times, want the daily cap of %d", verifier.licenseCalls, MaxChecksPerDay)
+	}
+}
+
+func TestPaidChecksStopAtTheDailyBudget(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	store.profile.DateOfBirth = &dob
+	aadhaarVerified(store)
+	store.otherDriversChecks = MaxPaidChecksPerDay
+
+	if _, err := svc.VerifyDrivingLicense(t.Context(), testDriverID, "MP0920190012345"); !errors.Is(err, ErrVerificationUnavailable) {
+		t.Errorf("err = %v, want ErrVerificationUnavailable once the budget is used", err)
+	}
+	if svc.verifier.(*fakeVerifier).licenseCalls != 0 {
+		t.Error("the provider was called past the budget")
+	}
+}
+
 func TestSetBankAccountRefusesAnAccountTheBankDoesntKnow(t *testing.T) {
 	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
 	svc.verifier.(*fakeVerifier).bank = domain.BankAccountRecord{}
 
 	_, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234")
@@ -790,6 +850,13 @@ func TestYearsBetweenCountsByCalendarDate(t *testing.T) {
 
 func ptr[T any](v T) *T { return &v }
 
+// aadhaarVerified marks the test driver's Aadhaar as checked through
+// DigiLocker, which the licence and bank steps need first.
+func aadhaarVerified(store *fakeKYCStore) {
+	now := time.Now()
+	store.profile.AadhaarVerifiedAt = &now
+}
+
 func testCipher(t *testing.T) *secret.Cipher {
 	t.Helper()
 	c, err := secret.NewCipher(bytes.Repeat([]byte{0x11}, secret.KeyLength))
@@ -901,6 +968,8 @@ type fakeKYCStore struct {
 	submittedAt       *time.Time
 
 	checks []fakeCheck
+	// otherDriversChecks is how many paid checks other drivers made today.
+	otherDriversChecks int
 
 	upsertErr error
 	nextID    int
@@ -1122,6 +1191,10 @@ func (f *fakeKYCStore) CountChecks(_ context.Context, _ string, kind domain.KYCC
 	return n, nil
 }
 
+func (f *fakeKYCStore) CountAllChecks(context.Context, time.Time) (int, error) {
+	return f.otherDriversChecks + len(f.checks), nil
+}
+
 func (f *fakeKYCStore) ListKYCReviews(context.Context, domain.KYCStatus) ([]domain.KYCReview, error) {
 	return nil, nil
 }
@@ -1151,6 +1224,9 @@ type fakeVerifier struct {
 	licenseFound  bool
 	licenseNumber string
 	bank          domain.BankAccountRecord
+
+	// Paid calls made; unguarded, so -race flags any made in parallel.
+	licenseCalls, bankCalls int
 }
 
 func newFakeVerifier() *fakeVerifier {
@@ -1181,10 +1257,12 @@ func (f *fakeVerifier) DigiLockerAadhaar(context.Context, string) (domain.Aadhaa
 }
 
 func (f *fakeVerifier) DrivingLicense(_ context.Context, number string, _ time.Time) (domain.LicenseRecord, bool, error) {
+	f.licenseCalls++
 	f.licenseNumber = number
 	return f.license, f.licenseFound, nil
 }
 
 func (f *fakeVerifier) BankAccount(context.Context, string, string) (domain.BankAccountRecord, error) {
+	f.bankCalls++
 	return f.bank, nil
 }

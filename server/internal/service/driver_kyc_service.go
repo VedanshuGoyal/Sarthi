@@ -62,6 +62,7 @@ type DriverKYCStore interface {
 	ReviewKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error
 	RecordCheck(ctx context.Context, driverID string, kind domain.KYCCheckKind, ref string, outcome domain.KYCCheckOutcome, detail string) error
 	CountChecks(ctx context.Context, driverID string, kind domain.KYCCheckKind, since time.Time) (int, error)
+	CountAllChecks(ctx context.Context, since time.Time) (int, error)
 	ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error)
 }
 
@@ -88,6 +89,9 @@ type DriverKYCService struct {
 
 	// alerts, when set, is told about bank-account changes.
 	alerts KYCAlerter
+
+	// checkLocks serialises each driver's paid checks of one kind.
+	checkLocks keyedLocks
 
 	now func() time.Time
 }
@@ -450,6 +454,7 @@ func (s *DriverKYCService) SetBankAccount(
 
 	// Checked before it's stored: an account the bank doesn't know would
 	// only fail later, at the first payout.
+	defer s.lockChecks(driverID, domain.CheckBankAccount)()
 	checked, err := s.verifyBankAccount(ctx, driverID, number, code)
 	if err != nil {
 		return domain.DriverBankAccount{}, err

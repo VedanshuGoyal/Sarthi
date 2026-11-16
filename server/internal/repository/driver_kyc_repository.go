@@ -498,6 +498,21 @@ func (r *DriverKYCRepository) CountChecks(
 	return n, nil
 }
 
+// CountAllChecks counts every driver's paid checks since a time, by the
+// rules CountChecks applies to one driver's.
+func (r *DriverKYCRepository) CountAllChecks(ctx context.Context, since time.Time) (int, error) {
+	const q = `
+		SELECT count(*) FROM driver_kyc_checks
+		WHERE created_at >= $1
+		  AND outcome NOT IN ('pending', 'error')
+		  AND (kind <> 'digilocker' OR outcome = 'started')`
+	var n int
+	if err := r.db.QueryRow(ctx, q, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("counting kyc checks: %w", err)
+	}
+	return n, nil
+}
+
 // ListKYCReviews returns the drivers whose KYC is in status, oldest
 // submission first.
 func (r *DriverKYCRepository) ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error) {

@@ -116,6 +116,35 @@ func TestDriverKYCRepository_RejectionSticks_Integration(t *testing.T) {
 	}
 }
 
+func TestDriverKYCRepository_CountAllChecks_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	repo := NewDriverKYCRepository(tx)
+	since := time.Now().Add(-time.Minute)
+	before, err := repo.CountAllChecks(ctx, since)
+	if err != nil {
+		t.Fatalf("CountAllChecks: %v", err)
+	}
+	a, b := newTestDriver(t, ctx, tx), newTestDriver(t, ctx, tx)
+	for _, c := range []struct {
+		driver  string
+		kind    domain.KYCCheckKind
+		outcome domain.KYCCheckOutcome
+	}{
+		{a, domain.CheckDrivingLicense, domain.CheckNotFound}, // counts
+		{a, domain.CheckBankAccount, domain.CheckVerified},    // counts
+		{b, domain.CheckDigiLocker, domain.CheckStarted},      // counts
+		{b, domain.CheckDigiLocker, domain.CheckVerified},     // the same session's result
+		{b, domain.CheckBankAccount, domain.CheckError},       // the provider didn't answer
+	} {
+		if err := repo.RecordCheck(ctx, c.driver, c.kind, "", c.outcome, ""); err != nil {
+			t.Fatalf("RecordCheck: %v", err)
+		}
+	}
+	if n, err := repo.CountAllChecks(ctx, since); err != nil || n-before != 3 {
+		t.Errorf("CountAllChecks = %d (+%d), %v; want +3", n, n-before, err)
+	}
+}
+
 // An edit that arrives while a submission is being decided waits for it, and
 // then reopens the driver: it can't be overwritten by a decision made on the
 // state from before it.

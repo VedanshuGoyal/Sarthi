@@ -24,6 +24,12 @@ type IdentityVerifier interface {
 // check is a paid call to the provider.
 const MaxChecksPerDay = 5
 
+// MaxPaidChecksPerDay caps paid checks across all drivers per rolling day,
+// so a burst of new accounts can't drain the provider balance and stop real
+// onboarding. My estimate: about 60 drivers finishing onboarding a day at
+// three checks each plus retries; raise it once real sign-ups need more.
+const MaxPaidChecksPerDay = 200
+
 var (
 	// ErrVerificationUnavailable: the provider isn't configured or couldn't
 	// answer. Worth retrying later.
@@ -44,6 +50,8 @@ var (
 	ErrLicenseRejected = errors.New("this licence can't be used")
 	// ErrBankAccountInvalid: the penny drop found no such account.
 	ErrBankAccountInvalid = errors.New("we couldn't verify this account, check the account number and IFSC")
+	// ErrAadhaarFirst: licence and bank checks come after DigiLocker.
+	ErrAadhaarFirst = fmt.Errorf("%w: verify your Aadhaar with DigiLocker first", ErrInvalidProfile)
 	// ErrIdentityLocked: name, date of birth and gender come from the Aadhaar.
 	ErrIdentityLocked = errors.New("your name, date of birth and gender come from your Aadhaar and can't be changed")
 )
@@ -55,6 +63,7 @@ func (s *DriverKYCService) StartDigiLocker(ctx context.Context, driverID string)
 	if s.verifier == nil {
 		return domain.DigiLockerSession{}, ErrVerificationUnavailable
 	}
+	defer s.lockChecks(driverID, domain.CheckDigiLocker)()
 	profile, err := s.store.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DigiLockerSession{}, err
@@ -158,9 +167,15 @@ func (s *DriverKYCService) VerifyDrivingLicense(ctx context.Context, driverID, n
 	if s.verifier == nil {
 		return domain.DriverKYC{}, ErrVerificationUnavailable
 	}
+	defer s.lockChecks(driverID, domain.CheckDrivingLicense)()
 	profile, err := s.store.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverKYC{}, err
+	}
+	// The licence is looked up with the Aadhaar's date of birth, and a paid
+	// lookup isn't offered to an account that hasn't proved who it is.
+	if profile.AadhaarVerifiedAt == nil {
+		return domain.DriverKYC{}, ErrAadhaarFirst
 	}
 	if profile.DateOfBirth == nil {
 		return domain.DriverKYC{}, fmt.Errorf("%w: add your date of birth first", ErrInvalidProfile)
@@ -235,6 +250,13 @@ func (s *DriverKYCService) verifyBankAccount(ctx context.Context, driverID, numb
 	if s.verifier == nil {
 		return domain.BankAccountRecord{}, ErrVerificationUnavailable
 	}
+	profile, err := s.store.FindProfile(ctx, driverID)
+	if err != nil {
+		return domain.BankAccountRecord{}, err
+	}
+	if profile.AadhaarVerifiedAt == nil {
+		return domain.BankAccountRecord{}, ErrAadhaarFirst
+	}
 	if err := s.checkAllowance(ctx, driverID, domain.CheckBankAccount); err != nil {
 		return domain.BankAccountRecord{}, err
 	}
@@ -253,14 +275,34 @@ func (s *DriverKYCService) verifyBankAccount(ctx context.Context, driverID, numb
 	return rec, nil
 }
 
-// checkAllowance refuses a check once the driver has used today's attempts.
+// lockChecks makes driverID's checks of kind run one at a time, from the
+// allowance count through the provider call to recording it, so parallel
+// requests can't all pass the count before any is recorded. It returns the
+// unlock.
+func (s *DriverKYCService) lockChecks(driverID string, kind domain.KYCCheckKind) (unlock func()) {
+	return s.checkLocks.lock(driverID + "/" + string(kind))
+}
+
+// checkAllowance refuses a check once the driver has used today's attempts,
+// or every driver together has used today's budget. Call it under
+// lockChecks.
 func (s *DriverKYCService) checkAllowance(ctx context.Context, driverID string, kind domain.KYCCheckKind) error {
-	n, err := s.store.CountChecks(ctx, driverID, kind, s.now().Add(-24*time.Hour))
+	since := s.now().Add(-24 * time.Hour)
+	n, err := s.store.CountChecks(ctx, driverID, kind, since)
 	if err != nil {
 		return err
 	}
 	if n >= MaxChecksPerDay {
 		return ErrTooManyChecks
+	}
+	total, err := s.store.CountAllChecks(ctx, since)
+	if err != nil {
+		return err
+	}
+	if total >= MaxPaidChecksPerDay {
+		slog.ErrorContext(ctx, "kyc: today's budget of paid checks is used up",
+			"limit", MaxPaidChecksPerDay, "driverID", driverID, "kind", kind)
+		return ErrVerificationUnavailable
 	}
 	return nil
 }
