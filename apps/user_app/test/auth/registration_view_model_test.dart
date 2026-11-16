@@ -34,6 +34,7 @@ void main() {
       check(vm.step).equals(RegistrationStep.profile);
 
       vm.onDateOfBirthChanged(DateTime(2000, 1, 1));
+      vm.onConsentChanged(true);
       await vm.submitProfile(name: 'Asha Sharma', email: 'asha@example.com');
       check(vm.step).equals(RegistrationStep.done);
       check(vm.user).isNotNull();
@@ -67,6 +68,7 @@ void main() {
       check(vm.step).equals(RegistrationStep.profile);
 
       vm.onDateOfBirthChanged(DateTime(2000, 1, 1));
+      vm.onConsentChanged(true);
       await vm.submitProfile(name: 'Asha Sharma', email: 'asha@example.com');
       check(vm.step).equals(RegistrationStep.done);
       check(vm.token).equals('tok-new');

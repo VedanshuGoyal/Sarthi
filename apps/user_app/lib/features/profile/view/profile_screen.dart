@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../auth/domain/auth_user.dart';
+import 'widgets/delete_account_button.dart';
 import 'widgets/saved_cars_section.dart';
 import 'widgets/user_avatar.dart';
 
@@ -19,7 +20,8 @@ class ProfileScreen extends StatelessWidget {
   final AuthUser user;
 
   /// Invoked when the customer taps "Log out". When null the button hides —
-  /// e.g. in previews, where there is no session to end.
+  /// e.g. in previews, where there is no session to end — and so does
+  /// "Delete account", which manages itself through its view model.
   final VoidCallback? onLogout;
 
   /// Formats a date as `12 Jan 2000` without pulling in `intl` (same style the
@@ -116,6 +118,8 @@ class ProfileScreen extends StatelessWidget {
                       side: BorderSide(color: t.danger.withValues(alpha: 0.35)),
                     ),
                   ),
+                  const SizedBox(height: Skyline.s8),
+                  const DeleteAccountButton(),
                 ],
               ],
             ),
