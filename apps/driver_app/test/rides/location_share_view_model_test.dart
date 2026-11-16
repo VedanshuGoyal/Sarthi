@@ -38,19 +38,22 @@ void main() {
     vm.dispose();
   });
 
-  test('starts sharing once a ride enters the window, and sends fixes', () async {
-    repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
-    await myRides.load();
-    final vm = buildVm();
-    check(vm.isSharing).isTrue();
+  test(
+    'starts sharing once a ride enters the window, and sends fixes',
+    () async {
+      repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
+      await myRides.load();
+      final vm = buildVm();
+      check(vm.isSharing).isTrue();
 
-    location.emit((lat: 28.6, lng: 77.2, heading: 90.0));
-    await Future<void>.delayed(Duration.zero);
+      location.emit((lat: 28.6, lng: 77.2, heading: 90.0));
+      await Future<void>.delayed(Duration.zero);
 
-    check(repo.sharedLocations).length.equals(1);
-    check(repo.sharedLocations.single).equals((28.6, 77.2, 90.0));
-    vm.dispose();
-  });
+      check(repo.sharedLocations).length.equals(1);
+      check(repo.sharedLocations.single).equals((28.6, 77.2, 90.0));
+      vm.dispose();
+    },
+  );
 
   test('throttles sends to one per minSendGap', () async {
     repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
@@ -94,6 +97,62 @@ void main() {
     check(vm.isSharing).isTrue();
     check(repo.sharedLocations).isEmpty();
     vm.dispose();
+  });
+
+  // F15: the window is a function of time, but used to be re-checked only
+  // when the ride list changed.
+  testWidgets('starts sharing when the window opens with the app left open', (
+    tester,
+  ) async {
+    now = DateTime.parse('2026-10-26T07:30:00+05:30'); // 90 min out
+    repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
+    await myRides.load();
+    final vm = LocationShareViewModel(
+      myRides: myRides,
+      location: location,
+      repository: repo,
+      now: () => now,
+      recheckEvery: const Duration(seconds: 30),
+    );
+    addTearDown(vm.dispose);
+    check(vm.isSharing).isFalse();
+
+    now = DateTime.parse('2026-10-26T07:59:50+05:30');
+    await tester.pump(const Duration(seconds: 30));
+    check(vm.isSharing).isFalse();
+
+    now = DateTime.parse('2026-10-26T08:00:20+05:30'); // inside the window
+    await tester.pump(const Duration(seconds: 30));
+    check(vm.isSharing).isTrue();
+  });
+
+  // testWidgets fails on a timer still pending when the body ends, so these
+  // also check that the re-check stops once there is nothing to wait for.
+  testWidgets('no ride held, no clock to watch', (tester) async {
+    repo.mine = [ride(id: 'r', status: 'completed', scheduledAt: scheduledAt)];
+    await myRides.load();
+    final vm = buildVm();
+    addTearDown(vm.dispose);
+
+    await tester.pump(const Duration(minutes: 5));
+
+    check(vm.isSharing).isFalse();
+  });
+
+  testWidgets('a ride released before its window stops the re-check', (
+    tester,
+  ) async {
+    now = DateTime.parse('2026-10-26T07:30:00+05:30'); // 90 min out
+    repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
+    await myRides.load();
+    final vm = buildVm();
+    addTearDown(vm.dispose);
+
+    repo.mine = [];
+    await myRides.load();
+    await tester.pump(const Duration(minutes: 5));
+
+    check(vm.isSharing).isFalse();
   });
 
   test('more than 60 minutes before pickup, nothing is shared', () async {

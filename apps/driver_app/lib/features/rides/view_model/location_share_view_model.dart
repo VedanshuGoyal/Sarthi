@@ -17,6 +17,11 @@ import 'my_rides_view_model.dart';
 /// it, only create it once (the Home shell does, on sign-in). It's
 /// independent of duty status: a ride stays trackable even if the driver
 /// has gone off duty in between.
+///
+/// The window also opens with the clock, not only with the list: while the
+/// driver holds a ride that isn't trackable yet, the rides are re-checked
+/// every [recheckEvery], so sharing starts at T-60 min with nothing else
+/// reloading the list.
 class LocationShareViewModel extends ChangeNotifier {
   LocationShareViewModel({
     required this._myRides,
@@ -24,6 +29,7 @@ class LocationShareViewModel extends ChangeNotifier {
     required this._repository,
     this._now = DateTime.now,
     this._minSendGap = const Duration(seconds: 10),
+    this.recheckEvery = const Duration(seconds: 30),
   }) {
     _myRides.addListener(_onRidesChanged);
     _onRidesChanged();
@@ -41,7 +47,12 @@ class LocationShareViewModel extends ChangeNotifier {
   /// the position stream fires.
   final Duration _minSendGap;
 
+  /// How often the window is re-checked while a held ride is still ahead
+  /// of it.
+  final Duration recheckEvery;
+
   StreamSubscription<DeviceFix>? _subscription;
+  Timer? _recheck;
   DateTime? _lastSentAt;
   bool _isSharing = false;
   bool _disposed = false;
@@ -52,11 +63,20 @@ class LocationShareViewModel extends ChangeNotifier {
   bool get isSharing => _isSharing;
 
   void _onRidesChanged() {
+    if (_disposed) return;
     final tracked = _myRides.trackableAt(_now()).isNotEmpty;
     if (tracked && _subscription == null) {
       _start();
     } else if (!tracked && _subscription != null) {
       _stop();
+    }
+    // Waiting on the clock: a ride is held but its window hasn't opened.
+    final waiting = !tracked && _myRides.upcoming.isNotEmpty;
+    if (waiting && _recheck == null) {
+      _recheck = Timer.periodic(recheckEvery, (_) => _onRidesChanged());
+    } else if (!waiting) {
+      _recheck?.cancel();
+      _recheck = null;
     }
   }
 
@@ -104,6 +124,7 @@ class LocationShareViewModel extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _myRides.removeListener(_onRidesChanged);
+    _recheck?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
