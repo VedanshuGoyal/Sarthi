@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/cars_repository.dart';
@@ -61,6 +63,27 @@ class _FakeCarsRepository extends CarsRepository {
     ];
     return cars;
   }
+}
+
+/// Answers [list] with the cars as they were when asked, once [gate] opens.
+class _SlowListRepository extends _FakeCarsRepository {
+  _SlowListRepository(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<List<Car>> list() async {
+    final answer = cars;
+    await gate.future;
+    return answer;
+  }
+}
+
+/// A list call that fails with something other than a request error — a
+/// malformed cached entry, say.
+class _BrokenListRepository extends _FakeCarsRepository {
+  @override
+  Future<List<Car>> list() async => throw StateError('bad cache');
 }
 
 void main() {
@@ -165,6 +188,34 @@ void main() {
       check(message).equals('down');
       check(vm.removing).isNull();
       check(vm.cars).deepEquals(const [_sedan]);
+    });
+
+    test('a slow load does not drop a car added meanwhile', () async {
+      final gate = Completer<void>();
+      final repo = _SlowListRepository(gate)..cars = const [_sedan];
+      final vm = SavedCarsViewModel(repository: repo);
+
+      // The first fill from the server is slow; the customer adds a car.
+      final loading = vm.load();
+      final added = await vm.addCar(
+        registration: 'DL09ZZ0001',
+        type: CarType.hatchback,
+        transmission: Transmission.manual,
+      );
+      gate.complete();
+      await loading;
+
+      check(vm.cars).contains(added);
+      check(vm.isLoading).isFalse();
+    });
+
+    test('an unexpected load error still stops the spinner', () async {
+      final vm = SavedCarsViewModel(repository: _BrokenListRepository());
+
+      await vm.load();
+
+      check(vm.isLoading).isFalse();
+      check(vm.loadFailed).isTrue();
     });
 
     test('honours seeded initial cars without fetching', () {
