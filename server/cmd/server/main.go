@@ -246,7 +246,7 @@ func run() error {
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken),
+			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

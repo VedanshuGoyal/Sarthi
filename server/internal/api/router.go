@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -28,6 +27,7 @@ func NewRouter(
 	stats *service.StatsService,
 	webhook WebhookVerifier,
 	adminToken string,
+	corsOrigins []string,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -149,41 +149,13 @@ func NewRouter(
 	mux.HandleFunc("PUT /driver/push-token", requireAuth(driverSessions, pt.SaveDriver))
 	mux.HandleFunc("DELETE /driver/push-token", requireAuth(driverSessions, pt.ForgetDriver))
 
-	return withCORS(logRequests(mux))
-}
-
-// withCORS makes the API reachable from the Flutter web app, which runs on a
-// different origin (localhost:<random>) and so triggers browser CORS checks.
-// It reflects the request Origin and answers the preflight OPTIONS request
-// directly — the method-aware mux registers no OPTIONS routes, so OPTIONS would
-// otherwise 405. Permissive by design for local dev; restrict the allowed
-// origins before deploying.
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Max-Age", "600")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// logRequests is a tiny access-log middleware.
-func logRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		slog.Info("request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"duration", time.Since(start).String(),
-		)
-	})
+	// Outermost first: CORS answers preflights, every request is logged with
+	// its status, admin callers are audited and throttled, public login routes
+	// are rate-limited, and bodies are size-capped before any handler reads.
+	var handler http.Handler = mux
+	handler = limitBodies(handler, isUpload)
+	handler = rateLimit(handler, authRateLimits())
+	handler = guardAdmin(handler, newWindowLimiter(10, 15*time.Minute))
+	handler = logRequests(handler)
+	return withCORS(handler, corsOrigins)
 }
