@@ -79,18 +79,35 @@ class MyRidesViewModel extends ChangeNotifier {
   /// The latest copy of ride [id], if it is one of the driver's.
   Ride? byId(String id) => _rides.where((r) => r.id == id).firstOrNull;
 
+  /// Re-reads the driver's rides. Only the latest load's answer is used,
+  /// and rides changed on this phone while it was in flight (an action's
+  /// reply, an accept, a release) keep their newer state: the list the
+  /// server sent may predate them.
   Future<void> load() async {
+    final seq = ++_loadSeq;
     _isLoading = true;
-    notifyListeners();
+    _notify();
     try {
-      _rides = await _repository.myRides();
+      final fetched = await _repository.myRides();
+      if (seq != _loadSeq) return;
+      final edits = _editsDuringLoad;
+      final fetchedIds = {for (final r in fetched) r.id};
+      _rides = [
+        for (final r in fetched)
+          if (!edits.containsKey(r.id)) r else ?edits[r.id],
+        for (final MapEntry(:key, :value) in edits.entries)
+          if (!fetchedIds.contains(key)) ?value,
+      ];
       _error = null;
     } on RidesException catch (e) {
-      _error = e.message;
+      if (seq == _loadSeq) _error = e.message;
     } finally {
-      _isLoading = false;
-      _hasLoaded = true;
-      notifyListeners();
+      if (seq == _loadSeq) {
+        _editsDuringLoad.clear();
+        _isLoading = false;
+        _hasLoaded = true;
+        _notify();
+      }
     }
   }
 
@@ -103,7 +120,28 @@ class MyRidesViewModel extends ChangeNotifier {
         if (r.id != ride.id) r,
       merged,
     ];
-    notifyListeners();
+    if (_isLoading) _editsDuringLoad[ride.id] = merged;
+    _notify();
+  }
+
+  int _loadSeq = 0;
+
+  /// Rides changed on this phone while a load was in flight — null for one
+  /// handed back. They win over that load's possibly older copy.
+  final Map<String, Ride?> _editsDuringLoad = {};
+
+  bool _disposed = false;
+
+  /// Notifies only while alive: a different driver signing in replaces this
+  /// view model while a load or action may still be in flight.
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   /// Applies a lifecycle [action] to [ride]. Returns null on success or a
@@ -120,7 +158,7 @@ class MyRidesViewModel extends ChangeNotifier {
     String? note,
   }) async {
     _busyRideId = ride.id;
-    notifyListeners();
+    _notify();
     try {
       final updated = await _repository.act(
         ride.id,
@@ -134,6 +172,7 @@ class MyRidesViewModel extends ChangeNotifier {
           for (final r in _rides)
             if (r.id != ride.id) r,
         ];
+        if (_isLoading) _editsDuringLoad[ride.id] = null;
       } else if (updated != null) {
         upsert(updated);
       }
@@ -151,7 +190,7 @@ class MyRidesViewModel extends ChangeNotifier {
       return e.message;
     } finally {
       _busyRideId = null;
-      notifyListeners();
+      _notify();
     }
   }
 
