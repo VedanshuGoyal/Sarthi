@@ -69,8 +69,10 @@ func TestRateLimitPerIPAndGlobal(t *testing.T) {
 		return rec.Code
 	}
 
-	if hit("1.1.1.1", "/auth/otp") != 200 || hit("1.1.1.1", "/auth/otp") != 200 {
-		t.Fatal("the first two hits from one IP should pass")
+	for i := 1; i <= 2; i++ {
+		if code := hit("1.1.1.1", "/auth/otp"); code != 200 {
+			t.Fatalf("hit %d from one IP: got %d, want 200", i, code)
+		}
 	}
 	if code := hit("1.1.1.1", "/auth/otp"); code != http.StatusTooManyRequests {
 		t.Fatalf("third hit from one IP: got %d, want 429", code)
@@ -100,8 +102,10 @@ func TestGuardAdminBacksOffAfterFailedTokens(t *testing.T) {
 		h.ServeHTTP(rec, r)
 		return rec.Code
 	}
-	if call() != http.StatusUnauthorized || call() != http.StatusUnauthorized {
-		t.Fatal("the first wrong tokens get a plain 401")
+	for i := 1; i <= 2; i++ {
+		if code := call(); code != http.StatusUnauthorized {
+			t.Fatalf("wrong token %d: got %d, want a plain 401", i, code)
+		}
 	}
 	if code := call(); code != http.StatusTooManyRequests {
 		t.Fatalf("after repeated failures: got %d, want 429", code)
