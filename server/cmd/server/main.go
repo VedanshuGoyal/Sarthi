@@ -260,8 +260,9 @@ func run() error {
 	// The ops dashboard's counts (GET /admin/stats): PostgreSQL, plus who is
 	// on duty from the presence index.
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
-	// Account deletion (DPDP).
+	// Account deletion (DPDP), and the daily sweep of data past retention.
 	erasure := service.NewErasureService(repository.NewErasureRepository(pool), sessions, driverSessions, blob, presence)
+	go service.NewRetentionService(repository.NewRetentionRepository(pool), erasure).Run(ctx)
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
