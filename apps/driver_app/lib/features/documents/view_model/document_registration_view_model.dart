@@ -37,6 +37,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   bool _isSaving = false;
   String? _error;
   String? _errorCode;
+  bool _disposed = false;
 
   /// On-device state: capture paths and permission grants.
   DriverDocuments get data => _data;
@@ -61,7 +62,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// the device. Safe to call more than once.
   Future<void> load() async {
     _isLoading = true;
-    notifyListeners();
+    _notify();
     try {
       _kyc = await _repository.load();
       await _restoreCaptures();
@@ -70,7 +71,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       _error = e.message;
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -127,14 +128,14 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       } on Exception {
         _data = _data.withUploadState(kind, DocumentUploadState.failed);
         _error = "Couldn't save the photo. Please take it again.";
-        notifyListeners();
+        _notify();
         return;
       }
       _data = _data
           .withCapture(kind, path)
           .withUploadState(kind, DocumentUploadState.uploading);
       _error = null;
-      notifyListeners();
+      _notify();
 
       try {
         _kyc = await _repository.uploadDocument(kind, path);
@@ -143,7 +144,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
         _data = _data.withUploadState(kind, DocumentUploadState.failed);
         _error = e.message;
       }
-      notifyListeners();
+      _notify();
     } finally {
       _capturing.remove(kind);
     }
@@ -213,7 +214,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       backgroundLocationGranted: backgroundLocationGranted,
       batteryUnrestricted: batteryUnrestricted,
     );
-    notifyListeners();
+    _notify();
   }
 
   /// Submits the completed Document View. The backend clears the driver
@@ -229,7 +230,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     if (saved) {
       await _files.discardAll();
       _data = _data.copyWith(capturePaths: const {});
-      notifyListeners();
+      _notify();
     }
     return saved;
   }
@@ -240,7 +241,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     final kyc = await _run(write);
     if (kyc == null) return false;
     _kyc = kyc;
-    notifyListeners();
+    _notify();
     return true;
   }
 
@@ -255,7 +256,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     _isSaving = true;
     _error = null;
     _errorCode = null;
-    notifyListeners();
+    _notify();
     try {
       return await request();
     } on KycException catch (e) {
@@ -264,7 +265,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       return null;
     } finally {
       _isSaving = false;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -279,5 +280,18 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       if (_kyc.hasUploaded(kind)) states[kind] = DocumentUploadState.uploaded;
     }
     _data = _data.copyWith(capturePaths: paths, uploadStates: states);
+  }
+
+  /// Notifies only while alive: a sign-out replaces this view model (see
+  /// `documentRegistrationViewModelProvider`) while a request may still be
+  /// in flight.
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

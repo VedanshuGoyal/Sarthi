@@ -20,10 +20,16 @@ final driverKycRepositoryProvider = Provider<DriverKycRepository>((ref) {
 /// The Document View flow's view model.
 ///
 /// Not `autoDispose`: the driver navigates in and out of six sub-screens via
-/// `Navigator.push`/`pop`, and the loaded state must survive each of those —
-/// only a fresh sign-in (a new provider container) should reset it.
+/// `Navigator.push`/`pop`, and the loaded state must survive each of those.
+/// Rebuilt per signed-in driver, though, like the ride view models: the app
+/// keeps one provider container across sign-outs, and the gate in main.dart
+/// would otherwise let the next driver on this phone in on the previous
+/// one's verified status (and show them that driver's KYC details).
 final documentRegistrationViewModelProvider =
     ChangeNotifierProvider<DocumentRegistrationViewModel>((ref) {
+      ref.watch(
+        driverAuthControllerProvider.select((s) => s.valueOrNull?.driver.id),
+      );
       return DocumentRegistrationViewModel(
         repository: ref.watch(driverKycRepositoryProvider),
       );
