@@ -55,6 +55,17 @@ type Config struct {
 	// when unset.
 	CommissionBasisPoints int64
 
+	// AllowDevDefaults (ALLOW_DEV_DEFAULTS=1) lets the server boot without an
+	// SMS provider (accepting the dev OTP) and without at-rest keys (using the
+	// public dev keys). Local runs and CI set it; production must not, so a
+	// dropped env var fails the boot instead of silently opening every account.
+	AllowDevDefaults bool
+
+	// CORSAllowedOrigins (CORS_ALLOWED_ORIGINS, comma-separated) are browser
+	// origins allowed to call the API, besides localhost on any port. The
+	// mobile apps and the same-origin admin page need none.
+	CORSAllowedOrigins []string
+
 	// AdminToken guards the back-office routes (GET /users, /admin/…).
 	// Empty turns them off.
 	AdminToken string
@@ -191,13 +202,28 @@ func Load() (Config, error) {
 		addr = ":8080"
 	}
 
+	allowDev := os.Getenv("ALLOW_DEV_DEFAULTS") == "1"
+
 	storage, err := loadStorage()
 	if err != nil {
 		return Config{}, err
 	}
-	secrets, err := loadSecrets()
+	secrets, err := loadSecrets(allowDev)
 	if err != nil {
 		return Config{}, err
+	}
+	fast2sms := Fast2SMSConfig{
+		APIKey: os.Getenv("FAST2SMS_API_KEY"),
+		OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
+	}
+	if !allowDev && !fast2sms.Enabled() {
+		return Config{}, fmt.Errorf("FAST2SMS_API_KEY and FAST2SMS_OTP_ID are required; " +
+			"without them the fixed dev OTP opens every account (set ALLOW_DEV_DEFAULTS=1 for local runs)")
+	}
+	adminToken := os.Getenv("ADMIN_TOKEN")
+	if !allowDev && adminToken != "" && len(adminToken) < MinAdminTokenLength {
+		return Config{}, fmt.Errorf("ADMIN_TOKEN must be at least %d characters "+
+			"(generate one with `openssl rand -hex 32`)", MinAdminTokenLength)
 	}
 
 	phonePe, err := loadPhonePe()
@@ -212,7 +238,9 @@ func Load() (Config, error) {
 	return Config{
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
-		AdminToken:            os.Getenv("ADMIN_TOKEN"),
+		AllowDevDefaults:      allowDev,
+		CORSAllowedOrigins:    splitList(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		AdminToken:            adminToken,
 		Surepass: SurepassConfig{
 			Token:                 strings.TrimSpace(os.Getenv("SUREPASS_TOKEN")),
 			BaseURL:               os.Getenv("SUREPASS_BASE_URL"),
@@ -220,10 +248,7 @@ func Load() (Config, error) {
 		},
 		DatabaseURL: dsn,
 		Addr:        addr,
-		Fast2SMS: Fast2SMSConfig{
-			APIKey: os.Getenv("FAST2SMS_API_KEY"),
-			OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
-		},
+		Fast2SMS:    fast2sms,
 		OlaMaps: OlaMapsConfig{
 			ClientID:     os.Getenv("OLA_MAPS_CLIENT_ID"),
 			ClientSecret: os.Getenv("OLA_MAPS_CLIENT_SECRET"),
@@ -318,18 +343,42 @@ func loadStorage() (StorageConfig, error) {
 	}
 }
 
+// splitList parses a comma-separated env value, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// MinAdminTokenLength is the shortest ADMIN_TOKEN accepted outside dev mode.
+// The token alone guards decrypted bank numbers and KYC decisions.
+const MinAdminTokenLength = 32
+
 // loadSecrets reads the at-rest protection keys.
 //
-// Both are optional, mirroring how a missing SMS provider falls back to the
-// dev OTP: an unconfigured environment derives them from a fixed public
-// constant so local runs and CI work out of the box, and main logs a warning.
-// The constant is deliberately stable rather than random — a key regenerated
-// on every boot would silently orphan anything encrypted before the restart.
-func loadSecrets() (SecretsConfig, error) {
+// They come as a pair: setting only one is always an error, because the
+// other would silently fall back to a public constant. With neither set,
+// allowDev (ALLOW_DEV_DEFAULTS=1) derives both from a fixed public constant so
+// local runs and CI work out of the box, and main logs a warning; without it
+// the boot fails. The constant is deliberately stable rather than random — a
+// key regenerated on every boot would silently orphan anything encrypted
+// before the restart.
+func loadSecrets(allowDev bool) (SecretsConfig, error) {
 	encoded := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
 	pepper := os.Getenv("DOCUMENT_HASH_PEPPER")
 
-	if encoded == "" || pepper == "" {
+	if (encoded == "") != (pepper == "") {
+		return SecretsConfig{}, fmt.Errorf("set both DOCUMENT_ENCRYPTION_KEY and DOCUMENT_HASH_PEPPER, or neither")
+	}
+	if encoded == "" {
+		if !allowDev {
+			return SecretsConfig{}, fmt.Errorf("DOCUMENT_ENCRYPTION_KEY and DOCUMENT_HASH_PEPPER are required; " +
+				"without them bank numbers are sealed with a public key (set ALLOW_DEV_DEFAULTS=1 for local runs)")
+		}
 		return SecretsConfig{
 			EncryptionKey: devSecret("encryption-key"),
 			Pepper:        devSecret("hash-pepper"),

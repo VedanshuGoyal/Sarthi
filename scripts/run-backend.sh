@@ -28,7 +28,10 @@ fi
 
 : "${DATABASE_URL:=postgres://sarthi:sarthi@localhost:5432/sarthi?sslmode=disable}"
 : "${ADDR:=:8080}"
-export DATABASE_URL ADDR
+# Local runs may use the dev OTP (123456) and the public dev encryption keys.
+# Production never sets this, so a missing secret fails the boot there.
+: "${ALLOW_DEV_DEFAULTS:=1}"
+export DATABASE_URL ADDR ALLOW_DEV_DEFAULTS
 
 # Pick whichever Compose is installed: the `docker compose` v2 plugin if
 # present, otherwise the standalone `docker-compose` binary.
