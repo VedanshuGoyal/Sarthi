@@ -253,6 +253,11 @@ func run() error {
 	}
 	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
 	go payments.RunSweeper(ctx)
+	// Every minute: re-alert drivers about rides nobody has taken, tell the
+	// customer when no driver has turned up, remind both sides an hour
+	// ahead, and log an ERROR for ops when a driver is late or a ride runs
+	// hours over. Idempotent through booking_events.
+	go service.NewRideWatchdog(repository.NewRideWatchRepository(pool), notify).Run(ctx)
 	payouts := service.NewPayoutService(paymentStore, documentCipher)
 	if cfg.AdminToken == "" {
 		slog.Warn("admin: no ADMIN_TOKEN set; GET /users and /admin/* are off")

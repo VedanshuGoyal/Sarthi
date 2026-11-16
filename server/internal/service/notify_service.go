@@ -37,6 +37,9 @@ const (
 	pushTypePaymentPaid    = "payment_received"
 	pushTypeKYCDecided     = "kyc_decided"
 	pushTypeBankChanged    = "bank_account_changed"
+	pushTypeNoDriverYet    = "no_driver_yet"
+	pushTypeRideExpired    = "ride_expired"
+	pushTypeRideReminder   = "ride_reminder"
 )
 
 const (
@@ -436,6 +439,90 @@ func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, pla
 	})
 }
 
+// RealertDrivers sends open booking b's "new ride request" again to the
+// drivers who could take it — the watchdog's re-broadcast for a ride nobody
+// has taken hours before it starts.
+func (s *NotifyService) RealertDrivers(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		s.alertDrivers(ctx, b, plan, "")
+	})
+}
+
+// NoDriverYet tells the customer that no driver has taken open booking b
+// yet, an hour before it starts, and until when MOJUD keeps looking.
+func (s *NotifyService) NoDriverYet(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		closes := plan.ScheduledAt.Add(-acceptCutoff)
+		body := fmt.Sprintf("No driver has taken your ride on %s yet. We're alerting more drivers "+
+			"and will keep looking until %s.", formatWhen(plan.ScheduledAt), formatClock(closes))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeNoDriverYet, "Still finding your driver", body,
+			max(closes.Sub(s.now()), 10*time.Minute))
+	})
+}
+
+// NoDriverFound tells the customer that booking b closed to drivers with
+// nobody taking it.
+func (s *NotifyService) NoDriverFound(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("We couldn't find a driver for your ride on %s. "+
+			"Please book again for a later time.", formatWhen(plan.ScheduledAt))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeRideExpired, "No driver found", body, time.Hour)
+	})
+}
+
+// RideReminder reminds the driver and the customer of accepted booking b
+// that it starts soon (the watchdog sends it an hour ahead). The driver is
+// asked to open the app, which is what starts sharing their position on
+// the customer's map.
+func (s *NotifyService) RideReminder(ctx context.Context, b domain.Booking, plan tripPlan) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		ttl := max(plan.ScheduledAt.Sub(s.now()), 10*time.Minute)
+		title := "Your ride starts " + formatUntil(plan.ScheduledAt.Sub(s.now()))
+
+		driverBody := fmt.Sprintf("%s · %s.", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan))
+		if plan.Pickup.Address != "" {
+			driverBody += "\nPickup: " + plan.Pickup.Address
+		}
+		driverBody += "\nOpen MOJUD Driver so the customer can see you on the way."
+		s.tellDriver(ctx, b.DriverID, b.ID, pushTypeRideReminder, title, driverBody, ttl)
+
+		name := s.driverName(ctx, b.DriverID)
+		if name == "" {
+			name = "Your driver"
+		}
+		customerBody := fmt.Sprintf("%s is driving for you at %s. You can follow them on the map in the app from now.",
+			name, formatClock(plan.ScheduledAt))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeRideReminder, title, customerBody, ttl)
+	})
+}
+
+// tellDriver sends one ride update to every install of driverID.
+func (s *NotifyService) tellDriver(ctx context.Context, driverID, rideID, kind, title, body string, ttl time.Duration) {
+	byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+	if err != nil {
+		slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", rideID, "error", err)
+		return
+	}
+	sent := 0
+	for _, token := range byDriver[driverID] {
+		if s.send(ctx, push.Message{
+			Token:   token,
+			Title:   title,
+			Body:    body,
+			Channel: channelRideRequests,
+			Tag:     "ride-" + rideID,
+			Data:    map[string]string{"type": kind, "rideId": rideID},
+			TTL:     ttl,
+		}) {
+			sent++
+		}
+	}
+	slog.InfoContext(ctx, "push: driver update sent", "type", kind, "rideId", rideID, "devices", sent)
+}
+
 // tellCustomer sends one ride update to every install of userID.
 func (s *NotifyService) tellCustomer(ctx context.Context, userID, rideID, kind, title, body string, ttl time.Duration) {
 	tokens, err := s.tokens.ForUser(ctx, userID)
@@ -537,6 +624,29 @@ func tripLabel(tripType string, plan tripPlan) string {
 // formatWhen renders a start time in IST, e.g. "Mon 26 Oct, 10:30 AM".
 func formatWhen(t time.Time) string {
 	return t.In(ist).Format("Mon 2 Jan, 3:04 PM")
+}
+
+// formatClock renders a time of day in IST, e.g. "9:30 AM".
+func formatClock(t time.Time) string {
+	return t.In(ist).Format("3:04 PM")
+}
+
+// formatUntil renders how far off something is, to the minute: "in 1 hour",
+// "in 45 min", "in 2 h 10 min", or "now".
+func formatUntil(d time.Duration) string {
+	m := int(d.Round(time.Minute) / time.Minute)
+	switch {
+	case m <= 0:
+		return "now"
+	case m == 60:
+		return "in 1 hour"
+	case m < 60:
+		return fmt.Sprintf("in %d min", m)
+	case m%60 == 0:
+		return fmt.Sprintf("in %d h", m/60)
+	default:
+		return fmt.Sprintf("in %d h %d min", m/60, m%60)
+	}
 }
 
 // formatDistance renders metres as "800 m" or "3.2 km".
