@@ -43,6 +43,14 @@ func (r *DriverSessionRepository) Delete(ctx context.Context, token string) erro
 	return nil
 }
 
+// DeleteForUser removes every session of driver driverID (account erasure).
+func (r *DriverSessionRepository) DeleteForUser(ctx context.Context, driverID string) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM driver_sessions WHERE driver_id = $1`, driverID); err != nil {
+		return fmt.Errorf("deleting driver sessions: %w", err)
+	}
+	return nil
+}
+
 // ListActive returns every still-valid (unexpired) session. Used on boot to
 // warm the in-memory cache from the durable store.
 func (r *DriverSessionRepository) ListActive(ctx context.Context) ([]domain.Session, error) {
