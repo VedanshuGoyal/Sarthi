@@ -160,6 +160,41 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	}
 }
 
+// A booking exactly as the current customer app builds it — a luxury car
+// late in the evening, so the quote includes the night surcharge — is
+// accepted at the app's price.
+func TestBookingService_Record_acceptsTheAppsFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["scheduledAt"] = "2026-10-24T21:00:00.000" // 9pm IST for 3h: 2 night hours
+	d["hours"] = 3.0
+	d["car"] = map[string]any{"registration": "DL01AB1234", "carType": "luxury", "transmission": "automatic"}
+	d["fare"] = 538.0 // RoundTripTariff.luxury.fareFor(3) = 440, + 50 + 24×2
+
+	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if store.params.FarePaise != 53800 || store.params.FareEstimated {
+		t.Errorf("fare = %d (estimated %v), want quoted 53800", store.params.FarePaise, store.params.FareEstimated)
+	}
+}
+
+func TestBookingService_Record_rejectsTamperedFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["hours"] = 10.0
+	d["fare"] = 300.0 // the tariff is 1040
+
+	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); !errors.Is(err, ErrFareMismatch) {
+		t.Fatalf("err = %v, want ErrFareMismatch", err)
+	}
+	if store.insertHit {
+		t.Error("a tampered booking must not be stored")
+	}
+}
+
 func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 	wantErr := errors.New("db down")
 	svc := newTestBookingService(&fakeBookingStore{err: wantErr})

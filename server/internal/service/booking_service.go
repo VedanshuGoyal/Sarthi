@@ -128,6 +128,12 @@ func (s *BookingService) Record(ctx context.Context, userID, tripType string, de
 	if plan.ScheduledAt.Before(s.now().Add(minBookingLead - bookingLeadSlack)) {
 		return domain.Booking{}, ErrBookingTooSoon
 	}
+	// The fare is the server's, not the client's: a tampered quote or drive
+	// time is refused rather than silently repriced.
+	if err := plan.checkBookable(tripType); err != nil {
+		slog.WarnContext(ctx, "booking refused: price check", "userId", userID, "tripType", tripType, "error", err)
+		return domain.Booking{}, err
+	}
 	fare, estimated := plan.Fare()
 	booking, err := s.store.Insert(ctx, repository.InsertBookingParams{
 		UserID:        userID,
