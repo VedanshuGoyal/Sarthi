@@ -50,7 +50,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       maxWidth: 1024,
       imageQuality: 85,
     );
-    if (photo == null) return;
+    if (photo == null || !mounted) return;
 
     setState(() => _error = null);
     // Uploaded as soon as it's taken: a selfie sitting in the OS cache
@@ -126,7 +126,11 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       fields: [
         Center(
           child: GestureDetector(
-            onTap: _pickSelfie,
+            // Blocked mid-upload, like the document tiles: a retake would
+            // replace the file under the in-flight request.
+            onTap: selfieState == DocumentUploadState.uploading
+                ? null
+                : _pickSelfie,
             child: Container(
               width: 96,
               height: 96,

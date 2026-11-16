@@ -211,6 +211,57 @@ void main() {
     );
   });
 
+  group('double submits', () {
+    test('a retake while the photo is still uploading is ignored', () async {
+      final repository = _FakeKycRepository(
+        kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
+      );
+      final vm = viewModel(repository);
+
+      await Future.wait([
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('first.jpg')),
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('second.jpg')),
+      ]);
+
+      check(repository.uploaded).deepEquals([DocumentKind.selfie]);
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.uploaded);
+
+      // Once it has landed, a retake goes through again.
+      await vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('third.jpg'));
+      check(repository.uploaded).length.equals(2);
+    });
+
+    test('a capture that cannot be stored fails instead of hanging', () async {
+      final repository = _FakeKycRepository();
+      final vm = viewModel(repository);
+
+      await vm.capturePhoto(DocumentKind.selfie, '${tempDir.path}/gone.jpg');
+
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.failed);
+      check(vm.error).isNotNull();
+      check(repository.uploaded).isEmpty();
+    });
+
+    test('a second check while one is in flight is not sent', () async {
+      final repository = _FakeKycRepository(kyc: _completeKyc);
+      final vm = viewModel(repository);
+
+      final results = await Future.wait([
+        vm.verifyDrivingLicense('MP0920190012345'),
+        vm.verifyDrivingLicense('MP0920190012345'),
+      ]);
+
+      check(repository.verifiedLicenses).length.equals(1);
+      check(results).deepEquals([true, false]);
+      check(vm.isSaving).isFalse();
+      check(vm.error).isNull();
+    });
+  });
+
   group('saving a step', () {
     test('folds the backend response in as the new truth', () async {
       final repository = _FakeKycRepository(

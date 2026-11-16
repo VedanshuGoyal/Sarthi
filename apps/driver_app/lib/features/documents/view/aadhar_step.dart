@@ -60,6 +60,7 @@ class _AadharStepState extends ConsumerState<AadharStep> {
         return;
       }
       await vm.setAadhar(number: typed);
+      if (!mounted) return;
       if (vm.error != null) {
         setState(() => _error = vm.error);
         return;
