@@ -280,7 +280,10 @@ func (s *DriverKYCService) recordCheck(
 func reviewIssues(kyc domain.DriverKYC) []string {
 	var issues []string
 	p := kyc.Profile
-	if p.LicenseName != "" && !namesMatch(p.FullName, p.LicenseName) {
+	switch {
+	case p.LicenseName == "":
+		issues = append(issues, "licence holder's name not on record")
+	case !namesMatch(p.FullName, p.LicenseName):
 		issues = append(issues, fmt.Sprintf("licence name %q differs from Aadhaar name %q", p.LicenseName, p.FullName))
 	}
 	if p.LicenseValidUntil == nil {
