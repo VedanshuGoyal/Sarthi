@@ -24,14 +24,28 @@
 # SMS OTPs to both /auth/otp (customer) and /driver/auth/otp (driver) — this
 # APK gets that for free by pointing at the same DOMAIN as build-user-app-apk.sh.
 #
-# Release builds are signed with apps/driver_app/android/key.properties if
-# present (see build.gradle.kts); otherwise Flutter falls back to the debug
-# key, so this still runs on a fresh checkout — just not distributable.
+# Release builds are signed with apps/driver_app/android/key.properties (see
+# build.gradle.kts). Without it a release build fails, because a debug-signed
+# APK can't update the installs already out there. ALLOW_DEBUG_SIGNING=1
+# builds a local, non-distributable release with the debug key instead.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MODE="${1:-release}"
+
+# Check the signing key up front rather than after a long Gradle run.
+if [ "$MODE" = "release" ] && [ ! -f "$REPO_ROOT/apps/driver_app/android/key.properties" ]; then
+  if [ "${ALLOW_DEBUG_SIGNING:-}" = "1" ]; then
+    echo "⚠️  No apps/driver_app/android/key.properties — signing with the debug key." >&2
+    echo "   This APK can't update a published install. Don't publish it." >&2
+  else
+    echo "❌ No apps/driver_app/android/key.properties, so this release can't be signed" >&2
+    echo "   with the release key. Restore it, or set ALLOW_DEBUG_SIGNING=1 for a" >&2
+    echo "   local, non-distributable build." >&2
+    exit 1
+  fi
+fi
 
 PROD_ENV="$REPO_ROOT/server/.env.prod"
 DOMAIN=""
@@ -58,14 +72,18 @@ if [ -z "$APP_BUILD" ]; then
   exit 1
 fi
 
+BUILD_ARGS=(--dart-define="API_BASE_URL=${API_BASE_URL}" --dart-define="APP_BUILD=${APP_BUILD}")
+if [ "${ALLOW_DEBUG_SIGNING:-}" = "1" ]; then
+  BUILD_ARGS+=(--android-project-arg=allowDebugSigning=true)
+fi
+
 echo "🌐 Pointing APK at ${API_BASE_URL} (build ${APP_BUILD})"
 
 echo "📦 Resolving dependencies..."
 flutter pub get
 
 echo "🛠️  Building driver_app APK (${MODE})..."
-flutter build apk --"${MODE}" --dart-define="API_BASE_URL=${API_BASE_URL}" \
-  --dart-define="APP_BUILD=${APP_BUILD}"
+flutter build apk --"${MODE}" "${BUILD_ARGS[@]}"
 
 BUILT_APK="build/app/outputs/flutter-apk/app-${MODE}.apk"
 if [ ! -f "$BUILT_APK" ]; then

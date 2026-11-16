@@ -7,12 +7,32 @@ plugins {
 }
 
 // Release signing: reads android/key.properties (gitignored — never commit a
-// keystore or its passwords). Falls back to the debug key when the file is
-// absent, so a fresh checkout still builds.
+// keystore or its passwords). A release build without it fails: a
+// debug-signed APK on apps.mojud.life can't update any install signed with
+// the release key, and uninstalling to get it wipes the session. For a local,
+// non-distributable release build, opt in to the debug key with
+// -PallowDebugSigning=true (flutter build apk --android-project-arg
+// allowDebugSigning=true, or ALLOW_DEBUG_SIGNING=1 for scripts/build-*-apk.sh).
+// Debug builds and `flutter run` are unaffected.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val allowDebugSigning = findProperty("allowDebugSigning")?.toString() == "true"
+
+// Refuse to package a release signed with the debug key unless asked to.
+gradle.taskGraph.whenReady {
+    val releasing = hasTask("${project.path}:packageRelease") ||
+        hasTask("${project.path}:bundleRelease")
+    if (releasing && !keystorePropertiesFile.exists() && !allowDebugSigning) {
+        throw GradleException(
+            "No android/key.properties: this release would be signed with the debug " +
+                "key and could not update installs of the published app. Add the " +
+                "release keystore, or pass -PallowDebugSigning=true for a local, " +
+                "non-distributable build."
+        )
     }
 }
 
@@ -52,8 +72,8 @@ android {
 
     buildTypes {
         release {
-            // The release keystore once key.properties exists; debug keys
-            // otherwise, so a fresh checkout still builds.
+            // The release keystore when key.properties exists; otherwise the
+            // debug key, which the check above allows only on request.
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
