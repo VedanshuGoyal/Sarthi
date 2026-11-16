@@ -42,9 +42,14 @@ final tripSelectionViewModelProvider =
 /// auth state (like [authRepositoryProvider]).
 final locationRepositoryProvider = Provider<LocationRepository>((ref) {
   String? sessionToken() => ref.read(authControllerProvider).valueOrNull?.token;
+  final backend = ref.watch(backendClientProvider);
   return LocationRepository(
-    tokenProvider: OlaMapsAuthenticator(tokenGetter: sessionToken).accessToken,
-    recentsApi: RecentPickupsApi(tokenGetter: sessionToken),
+    client: ref.watch(thirdPartyClientProvider),
+    tokenProvider: OlaMapsAuthenticator(
+      client: backend,
+      tokenGetter: sessionToken,
+    ).accessToken,
+    recentsApi: RecentPickupsApi(client: backend, tokenGetter: sessionToken),
     recentsCache: SecureRecentLocationsStorage(
       userId: ref.watch(_userIdProvider),
     ),
@@ -64,6 +69,7 @@ final _userIdProvider = Provider<String?>((ref) {
 /// Overridden in tests with a fake so no real request is made.
 final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
   return BookingRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });
@@ -110,6 +116,7 @@ final upiCheckoutProvider = Provider<UpiCheckout>((ref) {
 final carsRepositoryProvider = Provider<CarsRepository>((ref) {
   return CarsRepository(
     api: CarsApi(
+      client: ref.watch(backendClientProvider),
       tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
     ),
     storage: SecureSavedCarsStorage(userId: ref.watch(_userIdProvider)),
