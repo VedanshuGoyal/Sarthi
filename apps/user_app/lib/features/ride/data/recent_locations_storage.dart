@@ -21,13 +21,20 @@ abstract interface class RecentLocationsStorage {
 /// `flutter_secure_storage` — pickup history is mildly sensitive, so it rides
 /// the same secure store as the auth session rather than plain preferences.
 class SecureRecentLocationsStorage implements RecentLocationsStorage {
-  SecureRecentLocationsStorage({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+  /// [userId] is the signed-in customer's: each account on this phone gets
+  /// its own history, so the next one to sign in isn't shown the last one's
+  /// pickups (home, work…) before the server's list arrives, or offline.
+  SecureRecentLocationsStorage({FlutterSecureStorage? storage, String? userId})
+    : _storage = storage ?? const FlutterSecureStorage(),
+      _key = userId == null ? keyPrefix : '$keyPrefix.$userId';
 
   final FlutterSecureStorage _storage;
 
-  /// Key under which the JSON array of pickups is stored.
-  static const String _key = 'sarthi.ride.recentPickups';
+  /// Prefix of the key under which each account's JSON array of pickups is
+  /// stored.
+  static const String keyPrefix = 'sarthi.ride.recentPickups';
+
+  final String _key;
 
   @override
   Future<List<PickupLocation>> read() async {

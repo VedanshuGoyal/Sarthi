@@ -6,7 +6,9 @@ import 'data/cars_api.dart';
 import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'data/ola_maps_authenticator.dart';
+import 'data/recent_locations_storage.dart';
 import 'data/recent_pickups_api.dart';
+import 'data/saved_cars_storage.dart';
 import 'data/upi_checkout.dart';
 import 'domain/one_way_trip.dart';
 import 'domain/pickup_location.dart';
@@ -43,6 +45,17 @@ final locationRepositoryProvider = Provider<LocationRepository>((ref) {
   return LocationRepository(
     tokenProvider: OlaMapsAuthenticator(tokenGetter: sessionToken).accessToken,
     recentsApi: RecentPickupsApi(tokenGetter: sessionToken),
+    recentsCache: SecureRecentLocationsStorage(
+      userId: ref.watch(_userIdProvider),
+    ),
+  );
+});
+
+/// The signed-in customer's id, so the on-device caches below are kept per
+/// account.
+final _userIdProvider = Provider<String?>((ref) {
+  return ref.watch(
+    authControllerProvider.select((s) => s.valueOrNull?.user.id),
   );
 });
 
@@ -99,6 +112,7 @@ final carsRepositoryProvider = Provider<CarsRepository>((ref) {
     api: CarsApi(
       tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
     ),
+    storage: SecureSavedCarsStorage(userId: ref.watch(_userIdProvider)),
   );
 });
 

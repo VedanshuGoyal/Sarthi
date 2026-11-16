@@ -22,13 +22,20 @@ abstract interface class SavedCarsStorage {
 /// vehicle, so it rides the same secure store as the auth session and the
 /// pickup history rather than plain preferences.
 class SecureSavedCarsStorage implements SavedCarsStorage {
-  SecureSavedCarsStorage({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+  /// [userId] is the signed-in customer's: each account on this phone gets
+  /// its own list, so the next one to sign in never sees — or books with —
+  /// the last one's cars (reads are served from here, not the server).
+  SecureSavedCarsStorage({FlutterSecureStorage? storage, String? userId})
+    : _storage = storage ?? const FlutterSecureStorage(),
+      _key = userId == null ? keyPrefix : '$keyPrefix.$userId';
 
   final FlutterSecureStorage _storage;
 
-  /// Key under which the JSON array of cars is stored.
-  static const String _key = 'sarthi.ride.savedCars';
+  /// Prefix of the key under which each account's JSON array of cars is
+  /// stored.
+  static const String keyPrefix = 'sarthi.ride.savedCars';
+
+  final String _key;
 
   @override
   Future<List<Car>> read() async {
