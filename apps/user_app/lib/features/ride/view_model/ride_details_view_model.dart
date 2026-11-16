@@ -487,9 +487,14 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   /// Asks the server to re-check the payment up to [attempts] times,
   /// [paySyncEvery] apart, until it's paid; puts each reply in the list.
+  ///
+  /// Keeps going if the customer leaves the screen meanwhile: the payment
+  /// has already gone through at the gateway, and until the server has
+  /// checked, the Activity list (which outlives this screen) offers "Pay"
+  /// for it again.
   Future<MyBooking?> _syncPayment(String id, {required int attempts}) async {
     MyBooking? latest;
-    for (var i = 0; i < attempts && !_disposed; i++) {
+    for (var i = 0; i < attempts; i++) {
       if (i > 0) await Future<void>.delayed(paySyncEvery);
       try {
         latest = await _repository.syncPayment(id);
