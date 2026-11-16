@@ -31,6 +31,10 @@ var ErrKYCChanged = errors.New("this driver's documents changed since you opened
 // constraint on `drivers` isn't misreported as a duplicate Aadhaar.
 const aadhaarFingerprintIndex = "drivers_aadhaar_fingerprint"
 
+// aadhaarIdentityIndex is 0017's unique index on the fingerprint of the
+// identity DigiLocker verified.
+const aadhaarIdentityIndex = "drivers_aadhaar_identity_fingerprint"
+
 // documentColumns is the shared SELECT list, in DriverDocument field order.
 const documentColumns = `id, kind, object_key, content_type, byte_size, sha256,
 	status, coalesce(reject_reason, ''), uploaded_at, reviewed_at`
@@ -312,9 +316,16 @@ func (r *DriverKYCRepository) SetDigiLockerSession(ctx context.Context, driverID
 
 // SaveAadhaarVerification takes the driver's name, date of birth and gender
 // from their Aadhaar (gender only when DigiLocker gave one we know), marks
-// the Aadhaar verified and closes the DigiLocker session. Like any edit, it
-// puts the driver back to incomplete (a rejected driver stays rejected).
-func (r *DriverKYCRepository) SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error {
+// the Aadhaar verified, records identityFingerprint (of what DigiLocker
+// verified) and closes the DigiLocker session. Like any edit, it puts the
+// driver back to incomplete (a rejected driver stays rejected).
+//
+// [ErrAadhaarTaken] when another driver already verified the same identity:
+// by fingerprint, or — for drivers verified before fingerprints were kept —
+// by the same name, date of birth and last 4 digits.
+func (r *DriverKYCRepository) SaveAadhaarVerification(
+	ctx context.Context, driverID string, rec domain.AadhaarRecord, identityFingerprint string,
+) error {
 	const q = `
 		UPDATE drivers SET
 			name                 = $2,
@@ -324,18 +335,39 @@ func (r *DriverKYCRepository) SaveAadhaarVerification(ctx context.Context, drive
 			license_verified_at  = CASE WHEN date_of_birth IS DISTINCT FROM $3::date
 				THEN NULL ELSE license_verified_at END,
 			aadhaar_verified_at  = now(),
+			aadhaar_identity_fingerprint = coalesce(NULLIF($5, ''), aadhaar_identity_fingerprint),
 			digilocker_client_id = NULL,
 			kyc_status           = CASE WHEN kyc_status = 'rejected' THEN 'rejected' ELSE 'incomplete' END
-		WHERE id = $1`
+		WHERE id = $1
+		  AND NOT EXISTS (
+		      SELECT 1 FROM drivers o
+		      WHERE o.id <> $1
+		        AND o.aadhaar_identity_fingerprint IS NULL
+		        AND o.aadhaar_verified_at IS NOT NULL
+		        AND o.aadhaar_last4 = $6
+		        AND o.date_of_birth = $3::date
+		        AND upper(regexp_replace(btrim(o.name), '\s+', ' ', 'g'))
+		            = upper(regexp_replace(btrim($2::text), '\s+', ' ', 'g')))`
 
-	tag, err := r.db.Exec(ctx, q, driverID, rec.Name, rec.DateOfBirth, string(rec.Gender))
+	tag, err := r.db.Exec(ctx, q, driverID, rec.Name, rec.DateOfBirth, string(rec.Gender), identityFingerprint, rec.Last4)
 	if err != nil {
+		pgErr, ok := errors.AsType[*pgconn.PgError](err)
+		if ok && pgErr.Code == uniqueViolation && pgErr.ConstraintName == aadhaarIdentityIndex {
+			return ErrAadhaarTaken
+		}
 		return fmt.Errorf("saving aadhaar verification: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var exists bool
+	if err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM drivers WHERE id = $1)`, driverID).Scan(&exists); err != nil {
+		return fmt.Errorf("saving aadhaar verification: %w", err)
+	}
+	if !exists {
 		return ErrDriverNotFound
 	}
-	return nil
+	return ErrAadhaarTaken
 }
 
 // SaveLicenseVerification stores a licence the lookup found, with what it

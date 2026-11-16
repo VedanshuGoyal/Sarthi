@@ -66,8 +66,8 @@ func TestDriverKYCRepository_RejectionSticks_Integration(t *testing.T) {
 		t.Fatalf("SetKYCStatus: %v", err)
 	}
 	if err := repo.SaveAadhaarVerification(ctx, id, domain.AadhaarRecord{
-		Name: "Test Driver", DateOfBirth: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC),
-	}); err != nil {
+		Name: "Test Driver", DateOfBirth: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC), Last4: "0001",
+	}, "fp-"+id); err != nil {
 		t.Fatalf("SaveAadhaarVerification: %v", err)
 	}
 	if err := repo.SaveLicenseVerification(ctx, id, domain.LicenseRecord{Number: "DL0420110012345"}); err != nil {
@@ -113,6 +113,65 @@ func TestDriverKYCRepository_RejectionSticks_Integration(t *testing.T) {
 	missing := "00000000-0000-0000-0000-000000000000"
 	if err := repo.ReviewKYC(ctx, missing, domain.KYCVerified, "", domain.KYCSubmitted); !errors.Is(err, ErrDriverNotFound) {
 		t.Errorf("unknown driver: err = %v, want ErrDriverNotFound", err)
+	}
+}
+
+// inSavepoint runs fn on a savepoint of tx, rolling it back if fn fails, so
+// an expected constraint violation doesn't abort the test's transaction.
+func inSavepoint(t *testing.T, ctx context.Context, tx pgx.Tx, fn func(DB) error) error {
+	t.Helper()
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		t.Fatalf("savepoint: %v", err)
+	}
+	if err := fn(sp); err != nil {
+		_ = sp.Rollback(ctx)
+		return err
+	}
+	if err := sp.Commit(ctx); err != nil {
+		t.Fatalf("releasing savepoint: %v", err)
+	}
+	return nil
+}
+
+func TestDriverKYCRepository_OneAadhaarIdentityOneDriver_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	dob := time.Date(1991, 5, 6, 0, 0, 0, 0, time.UTC)
+	tag := fmt.Sprint(time.Now().UnixNano())
+	asha := domain.AadhaarRecord{Name: "Asha Kumari", DateOfBirth: dob, Last4: "9012"}
+	save := func(driverID string, rec domain.AadhaarRecord, fp string) error {
+		return inSavepoint(t, ctx, tx, func(db DB) error {
+			return NewDriverKYCRepository(db).SaveAadhaarVerification(ctx, driverID, rec, fp)
+		})
+	}
+
+	first, second := newTestDriver(t, ctx, tx), newTestDriver(t, ctx, tx)
+	if err := save(first, asha, "asha-"+tag); err != nil {
+		t.Fatalf("first driver: %v", err)
+	}
+	if err := save(first, asha, "asha-"+tag); err != nil {
+		t.Fatalf("first driver verifying again: %v", err)
+	}
+	if err := save(second, asha, "asha-"+tag); !errors.Is(err, ErrAadhaarTaken) {
+		t.Fatalf("second driver, same identity: err = %v, want ErrAadhaarTaken", err)
+	}
+
+	// A driver verified before fingerprints were kept is matched by the
+	// identity in clear, whatever the case and spacing of the name.
+	legacy := newTestDriver(t, ctx, tx)
+	if _, err := tx.Exec(ctx, `
+		UPDATE drivers SET name = ' RAVI   kumar', date_of_birth = $2, aadhaar_last4 = '4321',
+		       aadhaar_verified_at = now()
+		WHERE id = $1`, legacy, dob); err != nil {
+		t.Fatalf("legacy driver: %v", err)
+	}
+	ravi := domain.AadhaarRecord{Name: "Ravi Kumar", DateOfBirth: dob, Last4: "4321"}
+	if err := save(second, ravi, "ravi-"+tag); !errors.Is(err, ErrAadhaarTaken) {
+		t.Fatalf("matching a legacy driver: err = %v, want ErrAadhaarTaken", err)
+	}
+	ravi.Last4 = "4322"
+	if err := save(second, ravi, "ravi2-"+tag); err != nil {
+		t.Fatalf("a different identity: %v", err)
 	}
 }
 

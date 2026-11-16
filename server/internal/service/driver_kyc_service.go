@@ -56,7 +56,7 @@ type DriverKYCStore interface {
 	FindBankAccount(ctx context.Context, driverID string) (domain.DriverBankAccount, error)
 
 	SetDigiLockerSession(ctx context.Context, driverID, clientID string) error
-	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error
+	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord, identityFingerprint string) error
 	SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error
 	DecideSubmission(ctx context.Context, driverID string, decide func(domain.DriverKYC) (domain.KYCStatus, string, error)) error
 	ReviewKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error

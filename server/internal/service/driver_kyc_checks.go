@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/repository"
+	"github.com/sarthi/server/internal/secret"
 )
 
 // IdentityVerifier checks a driver's documents at source (kyc/surepass).
@@ -142,11 +144,30 @@ func (s *DriverKYCService) CompleteDigiLocker(ctx context.Context, driverID stri
 		return domain.DriverKYC{}, fmt.Errorf("%w: driver must be at least %d years old", ErrInvalidProfile, MinDriverAge)
 	}
 
-	if err := s.store.SaveAadhaarVerification(ctx, driverID, rec); err != nil {
+	// One Aadhaar, one driver — by what DigiLocker verified, not the digits
+	// typed, of which DigiLocker only confirms the last four.
+	err = s.store.SaveAadhaarVerification(ctx, driverID, rec, aadhaarIdentity(s.pepper, rec))
+	if errors.Is(err, repository.ErrAadhaarTaken) {
+		s.recordCheck(ctx, driverID, domain.CheckDigiLocker, clientID, domain.CheckRejected,
+			"this Aadhaar is already verified for another driver")
+		slog.WarnContext(ctx, "kyc: aadhaar identity already registered", "driverID", driverID)
+		s.endDigiLocker(ctx, driverID)
+		return domain.DriverKYC{}, err
+	}
+	if err != nil {
 		return domain.DriverKYC{}, err
 	}
 	s.recordCheck(ctx, driverID, domain.CheckDigiLocker, clientID, domain.CheckVerified, "")
 	return s.Load(ctx, driverID)
+}
+
+// aadhaarIdentity fingerprints what DigiLocker verified — the Aadhaar's name
+// (upper-cased, spaces collapsed), date of birth and last 4 digits — so the
+// same person can't verify a second account behind different typed digits.
+func aadhaarIdentity(pepper []byte, rec domain.AadhaarRecord) string {
+	name := strings.Join(strings.Fields(strings.ToUpper(rec.Name)), " ")
+	return secret.Fingerprint(pepper,
+		"aadhaar-identity:"+name+"|"+rec.DateOfBirth.Format(time.DateOnly)+"|"+rec.Last4)
 }
 
 // endDigiLocker forgets a session that has been read, so a retry starts a

@@ -499,6 +499,49 @@ func TestDigiLockerVerifiesTheAadhaar(t *testing.T) {
 	}
 }
 
+// "One Aadhaar, one driver" follows what DigiLocker verified: a second
+// account that types different leading digits before the same last four
+// still can't verify the same Aadhaar.
+func TestDigiLockerRefusesAnAadhaarAnotherDriverVerified(t *testing.T) {
+	verify := func(typed string, taken map[string]bool) (*fakeKYCStore, error) {
+		svc, store, _ := newTestService(t)
+		store.takenIdentities = taken
+		if err := svc.UpdateProfile(t.Context(), testDriverID, ProfileUpdate{AadhaarNumber: ptr(typed)}); err != nil {
+			t.Fatalf("UpdateProfile: %v", err)
+		}
+		if _, err := svc.StartDigiLocker(t.Context(), testDriverID); err != nil {
+			t.Fatalf("StartDigiLocker: %v", err)
+		}
+		_, err := svc.CompleteDigiLocker(t.Context(), testDriverID)
+		return store, err
+	}
+
+	first, err := verify("123456789012", nil)
+	if err != nil || first.identity == "" {
+		t.Fatalf("first account: err %v, identity %q", err, first.identity)
+	}
+	second, err := verify("999999999012", map[string]bool{first.identity: true})
+	if !errors.Is(err, repository.ErrAadhaarTaken) {
+		t.Fatalf("second account: err = %v, want ErrAadhaarTaken", err)
+	}
+	if second.profile.AadhaarVerifiedAt != nil || second.profile.DigiLockerClientID != "" {
+		t.Errorf("second account: verified %v, session %q; want neither", second.profile.AadhaarVerifiedAt, second.profile.DigiLockerClientID)
+	}
+	if got := second.checks[len(second.checks)-1]; got.outcome != domain.CheckRejected {
+		t.Errorf("last check = %+v, want a rejection on record", got)
+	}
+}
+
+func TestAadhaarIdentityIgnoresCaseAndSpacing(t *testing.T) {
+	dob := time.Date(1995, time.March, 2, 0, 0, 0, 0, time.UTC)
+	a := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: "Asha  Kumari", DateOfBirth: dob, Last4: "9012"})
+	b := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: " ASHA KUMARI ", DateOfBirth: dob, Last4: "9012"})
+	c := aadhaarIdentity([]byte("p"), domain.AadhaarRecord{Name: "Asha Kumari", DateOfBirth: dob, Last4: "9013"})
+	if a != b || a == c {
+		t.Errorf("fingerprints: %s %s %s; want the first two equal and the third different", a, b, c)
+	}
+}
+
 func TestDigiLockerRejectsAnotherAadhaar(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	ctx := t.Context()
@@ -971,6 +1014,11 @@ type fakeKYCStore struct {
 	// otherDriversChecks is how many paid checks other drivers made today.
 	otherDriversChecks int
 
+	// identity is the Aadhaar identity fingerprint saved; takenIdentities
+	// are those another driver already verified.
+	identity        string
+	takenIdentities map[string]bool
+
 	upsertErr error
 	nextID    int
 }
@@ -1100,7 +1148,11 @@ func (f *fakeKYCStore) SetDigiLockerSession(_ context.Context, _ string, clientI
 	return nil
 }
 
-func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec domain.AadhaarRecord) error {
+func (f *fakeKYCStore) SaveAadhaarVerification(_ context.Context, _ string, rec domain.AadhaarRecord, identity string) error {
+	if f.takenIdentities[identity] {
+		return repository.ErrAadhaarTaken
+	}
+	f.identity = identity
 	now := time.Now()
 	f.profile.FullName, f.profile.DateOfBirth = rec.Name, &rec.DateOfBirth
 	if rec.Gender != "" {
