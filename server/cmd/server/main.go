@@ -166,6 +166,8 @@ func run() error {
 		verifier,
 		cfg.Surepass.DigiLockerRedirectURL,
 	)
+	// Every change to a driver's payout account is pushed to them.
+	driverKYC.SetAlerts(notify)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and

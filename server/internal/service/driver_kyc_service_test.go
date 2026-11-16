@@ -342,6 +342,28 @@ func TestSetBankAccountEncryptsTheNumber(t *testing.T) {
 	}
 }
 
+type bankAlerts struct{ last4 []string }
+
+func (b *bankAlerts) BankAccountChanged(_ context.Context, _ string, last4 string) {
+	b.last4 = append(b.last4, last4)
+}
+
+// Every change of payout account is pushed to the driver, so one made by
+// someone else holding their session doesn't go unnoticed.
+func TestSetBankAccountTellsTheDriver(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	alerts := &bankAlerts{}
+	svc.SetAlerts(alerts)
+	for _, number := range []string{"123456789012", "000011112222"} {
+		if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", number, "HDFC0001234"); err != nil {
+			t.Fatalf("SetBankAccount: %v", err)
+		}
+	}
+	if !slices.Equal(alerts.last4, []string{"9012", "2222"}) {
+		t.Errorf("alerts = %v, want one per change", alerts.last4)
+	}
+}
+
 func TestSetBankAccountRejectsMalformedDetails(t *testing.T) {
 	tests := map[string]struct{ holder, number, ifsc string }{
 		"blank holder":     {"", "123456789", "HDFC0001234"},

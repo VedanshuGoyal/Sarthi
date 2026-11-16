@@ -36,6 +36,7 @@ const (
 	pushTypeRideCompleted  = "ride_completed"
 	pushTypePaymentPaid    = "payment_received"
 	pushTypeKYCDecided     = "kyc_decided"
+	pushTypeBankChanged    = "bank_account_changed"
 )
 
 const (
@@ -352,6 +353,36 @@ func (s *NotifyService) KYCDecided(ctx context.Context, driverID string, status 
 			}
 		}
 		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeKYCDecided, "driverId", driverID, "devices", sent)
+	})
+}
+
+// BankAccountChanged tells a driver their payout account was just set to
+// the one ending last4, so a change they didn't make — someone else holding
+// their session — doesn't go unnoticed until a payout goes astray.
+func (s *NotifyService) BankAccountChanged(ctx context.Context, driverID, last4 string) {
+	body := fmt.Sprintf("Your earnings will now be paid to the account ending %s. "+
+		"If you didn't make this change, contact MOJUD support right away.", last4)
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "Bank account changed",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "bank-account",
+				Data:    map[string]string{"type": pushTypeBankChanged},
+				TTL:     7 * 24 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeBankChanged, "driverId", driverID, "devices", sent)
 	})
 }
 

@@ -65,6 +65,12 @@ type DriverKYCStore interface {
 	ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error)
 }
 
+// KYCAlerter tells a driver about changes to their KYC they must hear about
+// (NotifyService).
+type KYCAlerter interface {
+	BankAccountChanged(ctx context.Context, driverID, last4 string)
+}
+
 // DriverKYCService runs the driver app's six-step Document View: it validates
 // what each step collects, checks the Aadhaar, licence and bank account at
 // source, stores images in the blob store and their metadata in PostgreSQL,
@@ -79,6 +85,9 @@ type DriverKYCService struct {
 	// driver can finish KYC. digiLockerRedirect is where DigiLocker ends.
 	verifier           IdentityVerifier
 	digiLockerRedirect string
+
+	// alerts, when set, is told about bank-account changes.
+	alerts KYCAlerter
 
 	now func() time.Time
 }
@@ -100,6 +109,11 @@ func NewDriverKYCService(
 		now:                time.Now,
 	}
 }
+
+// SetAlerts wires the pushes sent when a driver's KYC changes (nil sends
+// none). Separate from the constructor because the notifier is built after
+// this service in main.
+func (s *DriverKYCService) SetAlerts(a KYCAlerter) { s.alerts = a }
 
 // Load returns everything the Document View needs to render its six steps.
 func (s *DriverKYCService) Load(ctx context.Context, driverID string) (domain.DriverKYC, error) {
@@ -456,6 +470,10 @@ func (s *DriverKYCService) SetBankAccount(
 	})
 	if err != nil {
 		return domain.DriverBankAccount{}, err
+	}
+	slog.InfoContext(ctx, "kyc: bank account changed", "driverID", driverID, "last4", account.AccountNumberLast4)
+	if s.alerts != nil {
+		s.alerts.BankAccountChanged(ctx, driverID, account.AccountNumberLast4)
 	}
 	if err := s.store.SetKYCStatus(ctx, driverID, domain.KYCIncomplete, false); err != nil {
 		return domain.DriverBankAccount{}, err

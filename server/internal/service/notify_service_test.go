@@ -324,6 +324,25 @@ func TestDriverReleased_tooLateToRebook(t *testing.T) {
 	}
 }
 
+func TestBankAccountChanged_tellsTheDriver(t *testing.T) {
+	svc, tokens, sender, _ := newNotifyTest(t)
+	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
+	_ = tokens.SaveForDriver(context.Background(), "both", "tok-both")
+
+	svc.BankAccountChanged(context.Background(), "auto", "9012")
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 1 {
+		t.Fatalf("sent to %v, want only that driver", keys(got))
+	}
+	m := got["tok-auto"]
+	if m.Title != "Bank account changed" || m.Data["type"] != pushTypeBankChanged ||
+		!strings.Contains(m.Body, "ending 9012") {
+		t.Errorf("message = %+v", m)
+	}
+}
+
 func TestRideCancelled_tellsTheDriver(t *testing.T) {
 	svc, tokens, sender, _ := newNotifyTest(t)
 	_ = tokens.SaveForDriver(context.Background(), "auto", "tok-auto")
