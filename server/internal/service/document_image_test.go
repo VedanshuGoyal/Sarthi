@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"hash/crc32"
 	"image"
@@ -9,6 +10,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"testing"
+	"time"
 )
 
 func TestProcessDocumentImageStripsEXIF(t *testing.T) {
@@ -20,7 +22,7 @@ func TestProcessDocumentImageStripsEXIF(t *testing.T) {
 		t.Fatal("test fixture has no EXIF block to strip")
 	}
 
-	got, err := processDocumentImage(withEXIF)
+	got, err := processDocumentImage(t.Context(), withEXIF)
 	if err != nil {
 		t.Fatalf("processDocumentImage: %v", err)
 	}
@@ -37,7 +39,7 @@ func TestProcessDocumentImageStripsEXIF(t *testing.T) {
 }
 
 func TestProcessDocumentImageNormalisesPNGToJPEG(t *testing.T) {
-	got, err := processDocumentImage(encodePNG(t, 120, 90))
+	got, err := processDocumentImage(t.Context(), encodePNG(t, 120, 90))
 	if err != nil {
 		t.Fatalf("processDocumentImage: %v", err)
 	}
@@ -48,7 +50,7 @@ func TestProcessDocumentImageNormalisesPNGToJPEG(t *testing.T) {
 
 func TestProcessDocumentImageDownscalesOversizeEdge(t *testing.T) {
 	const width, height = MaxDocumentEdge * 2, MaxDocumentEdge
-	got, err := processDocumentImage(encodeJPEG(t, width, height))
+	got, err := processDocumentImage(t.Context(), encodeJPEG(t, width, height))
 	if err != nil {
 		t.Fatalf("processDocumentImage: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestProcessDocumentImageDownscalesOversizeEdge(t *testing.T) {
 }
 
 func TestProcessDocumentImageLeavesSmallImagesAlone(t *testing.T) {
-	got, err := processDocumentImage(encodeJPEG(t, 640, 480))
+	got, err := processDocumentImage(t.Context(), encodeJPEG(t, 640, 480))
 	if err != nil {
 		t.Fatalf("processDocumentImage: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestProcessDocumentImageRejectsNonImages(t *testing.T) {
 
 	for name, input := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := processDocumentImage(input); !errors.Is(err, ErrUnsupportedImage) {
+			if _, err := processDocumentImage(t.Context(), input); !errors.Is(err, ErrUnsupportedImage) {
 				t.Errorf("error = %v, want ErrUnsupportedImage", err)
 			}
 		})
@@ -101,7 +103,7 @@ func TestProcessDocumentImageRejectsNonImages(t *testing.T) {
 }
 
 func TestProcessDocumentImageRejectsOversizeUpload(t *testing.T) {
-	_, err := processDocumentImage(make([]byte, MaxDocumentBytes+1))
+	_, err := processDocumentImage(t.Context(), make([]byte, MaxDocumentBytes+1))
 	if !errors.Is(err, ErrDocumentTooLarge) {
 		t.Errorf("error = %v, want ErrDocumentTooLarge", err)
 	}
@@ -112,8 +114,44 @@ func TestProcessDocumentImageRejectsOversizeUpload(t *testing.T) {
 // before any pixels are decoded.
 func TestProcessDocumentImageRejectsDecompressionBomb(t *testing.T) {
 	bomb := pngHeaderClaiming(t, 40_000, 40_000)
-	if _, err := processDocumentImage(bomb); !errors.Is(err, ErrDocumentTooLarge) {
+	if _, err := processDocumentImage(t.Context(), bomb); !errors.Is(err, ErrDocumentTooLarge) {
 		t.Errorf("error = %v, want ErrDocumentTooLarge", err)
+	}
+}
+
+// A flat 20 MP image compresses to a small upload but would decode to ~80 MB;
+// it was under the old 50 MP cap.
+func TestProcessDocumentImageRejectsTwentyMegapixels(t *testing.T) {
+	if _, err := processDocumentImage(t.Context(), pngHeaderClaiming(t, 5000, 4000)); !errors.Is(err, ErrDocumentTooLarge) {
+		t.Errorf("error = %v, want ErrDocumentTooLarge", err)
+	}
+	// A full-resolution 12 MP phone photo's dimensions are still allowed
+	// past the header check.
+	if 4000*3000 > MaxDocumentPixels {
+		t.Errorf("MaxDocumentPixels = %d no longer takes a 12 MP photo", MaxDocumentPixels)
+	}
+}
+
+// Decodes are limited to maxConcurrentDecodes at a time; an upload waiting
+// for a slot gives up when its request does.
+func TestProcessDocumentImageWaitsForADecodeSlot(t *testing.T) {
+	for range maxConcurrentDecodes {
+		decodeSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range maxConcurrentDecodes {
+			<-decodeSlots
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := processDocumentImage(ctx, encodeJPEG(t, 64, 64)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error = %v, want the request's deadline while every slot is busy", err)
+	}
+	// The header checks still answer at once.
+	if _, err := processDocumentImage(ctx, []byte("not an image")); !errors.Is(err, ErrUnsupportedImage) {
+		t.Errorf("error = %v, want ErrUnsupportedImage without waiting", err)
 	}
 }
 

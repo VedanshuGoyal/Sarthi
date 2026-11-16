@@ -156,7 +156,7 @@ func (s *DriverKYCService) UploadDocument(
 		return domain.DriverDocument{}, ErrUnknownDocumentKind
 	}
 
-	clean, err := processDocumentImage(raw)
+	clean, err := processDocumentImage(ctx, raw)
 	if err != nil {
 		return domain.DriverDocument{}, err
 	}
