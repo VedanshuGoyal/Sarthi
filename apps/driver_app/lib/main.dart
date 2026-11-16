@@ -80,6 +80,8 @@ class _AppRoot extends ConsumerWidget {
 /// a reinstall and can't be bypassed from the device. It opens only at
 /// [KycStatus.verified] — the backend's checks passed, or a reviewer cleared
 /// the driver — which is also the only status the server sends rides to.
+/// Until the backend answers, the status it last gave stands in, so a
+/// verified driver who launches the app offline still reaches their rides.
 class _SignedInRoot extends ConsumerWidget {
   const _SignedInRoot({required this.driver});
 
@@ -87,9 +89,14 @@ class _SignedInRoot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final verified = ref.watch(
-      documentRegistrationViewModelProvider.select((vm) => vm.isVerified),
+    final (restoring, verified) = ref.watch(
+      documentRegistrationViewModelProvider.select(
+        (vm) => (vm.isRestoring, vm.isVerified),
+      ),
     );
+    if (restoring) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     return verified
         ? DriverHomeShell(driver: driver)
         : const DocumentViewScreen();

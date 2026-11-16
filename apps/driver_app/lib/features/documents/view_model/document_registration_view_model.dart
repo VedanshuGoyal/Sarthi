@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
+import '../data/kyc_status_store.dart';
 import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/document_step.dart';
@@ -22,14 +25,30 @@ import '../domain/vehicle_type.dart';
 /// That makes the backend the source of truth for progress — [kyc] — and
 /// leaves [data] holding only what can't live there: the captured files and
 /// the OS permission grants.
+///
+/// The status the backend last gave is also kept on the phone
+/// ([KycStatusStore], for [driverId]), so a verified driver whose first load
+/// fails — a cold start in a basement car park — still gets Home and their
+/// rides rather than a Document View they can't leave.
 class DocumentRegistrationViewModel extends ChangeNotifier {
   DocumentRegistrationViewModel({
     required this._repository,
     DocumentFileStore? files,
-  }) : _files = files ?? DocumentFileStore();
+    KycStatusStore? statusStore,
+    String? driverId,
+  }) : _files = files ?? DocumentFileStore(),
+       _statusStore = statusStore,
+       _driverId = driverId {
+    if (statusStore != null && driverId != null) {
+      _isRestoring = true;
+      unawaited(_restoreStatus(statusStore, driverId));
+    }
+  }
 
   final DriverKycRepository _repository;
   final DocumentFileStore _files;
+  final KycStatusStore? _statusStore;
+  final String? _driverId;
 
   DriverDocuments _data = const DriverDocuments();
   DriverKyc _kyc = const DriverKyc();
@@ -38,6 +57,22 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   String? _error;
   String? _errorCode;
   bool _disposed = false;
+
+  /// Whether [kyc] is the backend's answer rather than the empty default.
+  bool _hasBackendKyc = false;
+
+  /// The status last stored on the phone, or the backend's latest.
+  KycStatus? _lastKnownStatus;
+  bool _isRestoring = false;
+  bool _loadFailed = false;
+
+  /// True until the stored status has been read back at startup, so the
+  /// gate can wait a moment instead of flashing the Document View.
+  bool get isRestoring => _isRestoring;
+
+  /// Whether the backend couldn't be read and has never answered, so all
+  /// the screen can offer is to try again (or to log out).
+  bool get loadFailed => _loadFailed && !_hasBackendKyc;
 
   /// On-device state: capture paths and permission grants.
   DriverDocuments get data => _data;
@@ -64,11 +99,12 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     _isLoading = true;
     _notify();
     try {
-      _kyc = await _repository.load();
+      _setKyc(await _repository.load());
       await _restoreCaptures();
       _error = null;
     } on KycException catch (e) {
       _error = e.message;
+      _loadFailed = true;
     } finally {
       _isLoading = false;
       _notify();
@@ -105,7 +141,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   bool get isAllComplete => completedCount == DocumentStep.values.length;
 
   /// Whether the driver is cleared to drive — the only status that opens Home.
-  bool get isVerified => _kyc.status == KycStatus.verified;
+  /// Until the backend has answered, the status stored on the phone stands
+  /// in for it.
+  bool get isVerified =>
+      (_hasBackendKyc ? _kyc.status : _lastKnownStatus) == KycStatus.verified;
 
   /// Whether a person is checking the driver's details.
   bool get isUnderReview => _kyc.status == KycStatus.submitted;
@@ -162,7 +201,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     _notify();
 
     try {
-      _kyc = await _repository.uploadDocument(kind, path);
+      _setKyc(await _repository.uploadDocument(kind, path));
       _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
     } on KycException catch (e) {
       _data = _data.withUploadState(kind, DocumentUploadState.failed);
@@ -251,9 +290,36 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   Future<bool> _save(Future<DriverKyc> Function() write) async {
     final kyc = await _run(write);
     if (kyc == null) return false;
-    _kyc = kyc;
+    _setKyc(kyc);
     _notify();
     return true;
+  }
+
+  /// Takes [kyc] from the backend as the truth, and stores its status on
+  /// the phone when it changed.
+  void _setKyc(DriverKyc kyc) {
+    _kyc = kyc;
+    _hasBackendKyc = true;
+    _loadFailed = false;
+    if (kyc.status == _lastKnownStatus) return;
+    _lastKnownStatus = kyc.status;
+    final store = _statusStore;
+    final driverId = _driverId;
+    if (store != null && driverId != null) {
+      unawaited(store.write(driverId, kyc.status).catchError((_) {}));
+    }
+  }
+
+  Future<void> _restoreStatus(KycStatusStore store, String driverId) async {
+    KycStatus? status;
+    try {
+      status = await store.read(driverId);
+    } catch (_) {
+      // Unreadable: behave as a first run and wait for the backend.
+    }
+    if (!_hasBackendKyc) _lastKnownStatus = status;
+    _isRestoring = false;
+    _notify();
   }
 
   /// Runs a request with [isSaving] up, returning its result, or null with
