@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/sarthi/server/internal/domain"
 )
 
 // newTestUser inserts a customer through db and returns its id.
@@ -46,6 +48,38 @@ func payoutOf(t *testing.T, ctx context.Context, db DB, bookingID string) string
 		t.Fatalf("reading payout_id: %v", err)
 	}
 	return payout
+}
+
+func TestPaymentRepository_OrderKeepsItsCheckoutToken_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	repo := NewPaymentRepository(tx)
+	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
+	booking := paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900)
+	expires := time.Now().Add(15 * time.Minute).Truncate(time.Microsecond)
+
+	for _, o := range []domain.PaymentOrder{
+		{MerchantOrderID: "MOJUD_test_tok", CheckoutToken: "sdk-token"},
+		{MerchantOrderID: "MOJUD_test_old"}, // opened before tokens were kept
+	} {
+		o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.ExpiresAt = booking, user, 30000, "OMO1", expires
+		if err := repo.InsertOrder(ctx, o); err != nil {
+			t.Fatalf("InsertOrder: %v", err)
+		}
+	}
+	pending, err := repo.PendingForBooking(ctx, booking)
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("PendingForBooking = %v, %v", pending, err)
+	}
+	tokens := map[string]string{}
+	for _, o := range pending {
+		tokens[o.MerchantOrderID] = o.CheckoutToken
+		if !o.ExpiresAt.Equal(expires) {
+			t.Errorf("%s expires %v, want %v", o.MerchantOrderID, o.ExpiresAt, expires)
+		}
+	}
+	if tokens["MOJUD_test_tok"] != "sdk-token" || tokens["MOJUD_test_old"] != "" {
+		t.Errorf("tokens = %v", tokens)
+	}
 }
 
 func TestPaymentRepository_DuePayoutsCarriesTheHoldInputs_Integration(t *testing.T) {

@@ -41,13 +41,13 @@ func NewPaymentRepository(db DB) *PaymentRepository {
 }
 
 const paymentOrderColumns = `merchant_order_id, booking_id, user_id, amount_paise,
-	provider_order_id, state, coalesce(transaction_id, ''), coalesce(payment_mode, ''),
-	coalesce(utr, ''), expires_at, created_at`
+	provider_order_id, coalesce(checkout_token, ''), state, coalesce(transaction_id, ''),
+	coalesce(payment_mode, ''), coalesce(utr, ''), expires_at, created_at`
 
 func scanPaymentOrder(row pgx.Row) (domain.PaymentOrder, error) {
 	var o domain.PaymentOrder
 	err := row.Scan(&o.MerchantOrderID, &o.BookingID, &o.UserID, &o.AmountPaise,
-		&o.ProviderOrderID, &o.State, &o.TransactionID, &o.PaymentMode,
+		&o.ProviderOrderID, &o.CheckoutToken, &o.State, &o.TransactionID, &o.PaymentMode,
 		&o.UTR, &o.ExpiresAt, &o.CreatedAt)
 	return o, err
 }
@@ -56,9 +56,9 @@ func scanPaymentOrder(row pgx.Row) (domain.PaymentOrder, error) {
 func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrder) error {
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO payment_orders
-		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.ExpiresAt)
+		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, checkout_token, expires_at)
+		VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7)`,
+		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.CheckoutToken, o.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("inserting payment order: %w", err)
 	}

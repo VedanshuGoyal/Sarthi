@@ -27,7 +27,7 @@ func (g *fakeGateway) CreateOrder(_ context.Context, id string, amount int64, tt
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.created = append(g.created, id)
-	return domain.GatewayOrder{ProviderOrderID: "OMO-" + id, Token: "tok", ExpiresAt: testNow.Add(ttl)}, nil
+	return domain.GatewayOrder{ProviderOrderID: "OMO-" + id, Token: "tok-" + id, ExpiresAt: testNow.Add(ttl)}, nil
 }
 
 func (g *fakeGateway) OrderStatus(_ context.Context, id string) (domain.GatewayOrderStatus, error) {
@@ -167,7 +167,7 @@ func TestCheckout_onlyForCompletedUnpaidRides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Checkout: %v", err)
 	}
-	if c.AmountPaise != 45000 || c.MerchantID != "M1" || c.Environment != "SANDBOX" || c.Token != "tok" {
+	if c.AmountPaise != 45000 || c.MerchantID != "M1" || c.Environment != "SANDBOX" || c.Token != "tok-"+c.MerchantOrderID {
 		t.Errorf("checkout = %+v", c)
 	}
 	if len(c.MerchantOrderID) > 63 || !strings.HasPrefix(c.MerchantOrderID, "MOJUD_") || strings.Contains(c.MerchantOrderID, "-") {
@@ -237,6 +237,67 @@ func TestCheckout_findsAnEarlierCheckoutThatWentThrough(t *testing.T) {
 	}
 	if len(gw.created) != 1 {
 		t.Errorf("orders created = %d, want 1", len(gw.created))
+	}
+}
+
+// A second tap on Pay while the first checkout is still open at the gateway
+// reopens that one, so there is never a second payable order to pay twice.
+func TestCheckout_reopensAnOpenCheckout(t *testing.T) {
+	store := newFakePaymentStore(completedBooking("b1", 30000))
+	gw := &fakeGateway{}
+	svc := newPayments(store, gw, &recordingPaymentAlerts{}, 0)
+	ctx := context.Background()
+
+	first, err := svc.Checkout(ctx, "u1", "b1")
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	svc.now = func() time.Time { return testNow.Add(5 * time.Minute) }
+	again, err := svc.Checkout(ctx, "u1", "b1")
+	if err != nil {
+		t.Fatalf("second Checkout: %v", err)
+	}
+	if again != first || len(gw.created) != 1 {
+		t.Fatalf("second tap = %+v (orders created %d), want the first checkout again", again, len(gw.created))
+	}
+
+	// Too close to expiring to finish paying in: a fresh one.
+	svc.now = func() time.Time { return first.ExpiresAt.Add(-time.Minute) }
+	late, err := svc.Checkout(ctx, "u1", "b1")
+	if err != nil {
+		t.Fatalf("late Checkout: %v", err)
+	}
+	if late.MerchantOrderID == first.MerchantOrderID || len(gw.created) != 2 {
+		t.Errorf("near expiry reopened %s (created %d), want a new order", late.MerchantOrderID, len(gw.created))
+	}
+
+	// One the gateway failed is never handed out again.
+	gw.set(late.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentFailed})
+	svc.now = func() time.Time { return testNow.Add(6 * time.Minute) }
+	next, err := svc.Checkout(ctx, "u1", "b1")
+	if err != nil {
+		t.Fatalf("Checkout after a failure: %v", err)
+	}
+	if next.MerchantOrderID == late.MerchantOrderID {
+		t.Error("a failed order was handed out again")
+	}
+}
+
+// An order opened before tokens were stored can't be reopened: the customer
+// gets a new one, as before.
+func TestCheckout_orderWithoutATokenIsNotReopened(t *testing.T) {
+	store := newFakePaymentStore(completedBooking("b1", 30000))
+	_ = store.InsertOrder(context.Background(), domain.PaymentOrder{
+		MerchantOrderID: "MOJUD_old_1", BookingID: "b1", UserID: "u1", AmountPaise: 30000,
+		ProviderOrderID: "OMO-old", ExpiresAt: testNow.Add(10 * time.Minute),
+	})
+	gw := &fakeGateway{}
+	c, err := newPayments(store, gw, &recordingPaymentAlerts{}, 0).Checkout(context.Background(), "u1", "b1")
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if c.MerchantOrderID == "MOJUD_old_1" || len(gw.created) != 1 {
+		t.Errorf("checkout = %s (created %d), want a new order", c.MerchantOrderID, len(gw.created))
 	}
 }
 

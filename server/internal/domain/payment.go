@@ -21,12 +21,16 @@ type PaymentOrder struct {
 	UserID          string
 	AmountPaise     int64
 	ProviderOrderID string
-	State           PaymentState
-	TransactionID   string
-	PaymentMode     string
-	UTR             string
-	ExpiresAt       time.Time
-	CreatedAt       time.Time
+	// CheckoutToken is what the app's SDK opens the order with, kept so a
+	// second tap on Pay reopens the same order instead of a second one.
+	// Empty for orders opened before it was stored.
+	CheckoutToken string
+	State         PaymentState
+	TransactionID string
+	PaymentMode   string
+	UTR           string
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
 }
 
 // SettleOutcome is what recording a completed order did to its booking.
