@@ -297,7 +297,7 @@ async function loadPayouts() {
       if (!ref.value.trim()) { msg.className = "msg bad"; msg.textContent = "Enter the UTR."; return; }
       save.disabled = true; msg.className = "msg"; msg.textContent = "Saving…";
       try {
-        await api("/admin/payouts", { method: "POST", body: JSON.stringify({ driverId: d.driverId, reference: ref.value.trim(), asOf: data.asOf }) });
+        await api("/admin/payouts", { method: "POST", body: JSON.stringify({ driverId: d.driverId, reference: ref.value.trim(), asOf: data.asOf, amountPaise: d.amountPaise, rides: d.rides }) });
         msg.className = "msg ok"; msg.textContent = "Recorded.";
       } catch (e) { msg.className = "msg bad"; msg.textContent = e.message; save.disabled = false; }
     });

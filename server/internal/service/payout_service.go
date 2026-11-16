@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/repository"
 )
 
 // ErrInvalidPayout is returned when a payout names no driver or no bank
@@ -18,7 +19,7 @@ var ErrInvalidPayout = errors.New("a payout needs the driverId and the bank's tr
 // (repository.PaymentRepository).
 type PayoutStore interface {
 	DuePayouts(ctx context.Context, asOf time.Time) ([]domain.PayoutDue, error)
-	RecordPayout(ctx context.Context, driverID, reference string, asOf, at time.Time) (domain.DriverPayout, error)
+	RecordPayout(ctx context.Context, driverID, reference string, asOf, at time.Time, expect repository.ExpectedPayout) (domain.DriverPayout, error)
 }
 
 // SealOpener decrypts a sealed bank account number (secret.Cipher).
@@ -72,8 +73,12 @@ func (s *PayoutService) Due(ctx context.Context, asOf time.Time) ([]domain.Payou
 // Record notes a transfer made to driverID — reference is the bank's UTR —
 // covering every ride of theirs paid by asOf (zero means now) and not yet
 // paid out. Pass the asOf the Due list was read at, so a ride paid after it
-// isn't swept into a transfer that didn't include it.
-func (s *PayoutService) Record(ctx context.Context, driverID, reference string, asOf time.Time) (domain.DriverPayout, error) {
+// isn't swept into a transfer that didn't include it, and the rides and
+// amount it showed (expect), so a list gone stale is refused with
+// [repository.ErrPayoutMismatch] rather than recorded.
+func (s *PayoutService) Record(
+	ctx context.Context, driverID, reference string, asOf time.Time, expect repository.ExpectedPayout,
+) (domain.DriverPayout, error) {
 	driverID, reference = strings.TrimSpace(driverID), strings.TrimSpace(reference)
 	if driverID == "" || reference == "" {
 		return domain.DriverPayout{}, ErrInvalidPayout
@@ -82,7 +87,7 @@ func (s *PayoutService) Record(ctx context.Context, driverID, reference string, 
 	if asOf.IsZero() || asOf.After(now) {
 		asOf = now
 	}
-	p, err := s.store.RecordPayout(ctx, driverID, reference, asOf, now)
+	p, err := s.store.RecordPayout(ctx, driverID, reference, asOf, now, expect)
 	if err != nil {
 		return domain.DriverPayout{}, err
 	}

@@ -188,11 +188,15 @@ func (h *AdminHandler) DuePayouts(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
-// payoutRequest records one bank transfer.
+// payoutRequest records one bank transfer. AmountPaise and Rides are what
+// the payouts list showed for the driver; when sent, a payout that no longer
+// adds up to them is refused (409 payout_mismatch).
 type payoutRequest struct {
-	DriverID  string    `json:"driverId"`
-	Reference string    `json:"reference"`
-	AsOf      time.Time `json:"asOf"`
+	DriverID    string    `json:"driverId"`
+	Reference   string    `json:"reference"`
+	AsOf        time.Time `json:"asOf"`
+	AmountPaise *int64    `json:"amountPaise,omitempty"`
+	Rides       *int      `json:"rides,omitempty"`
 }
 
 // RecordPayout handles POST /admin/payouts.
@@ -202,10 +206,13 @@ func (h *AdminHandler) RecordPayout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, `send {"driverId": "…", "reference": "UTR…", "asOf": "…"}`)
 		return
 	}
-	p, err := h.payouts.Record(r.Context(), req.DriverID, req.Reference, req.AsOf)
+	p, err := h.payouts.Record(r.Context(), req.DriverID, req.Reference, req.AsOf,
+		repository.ExpectedPayout{AmountPaise: req.AmountPaise, Rides: req.Rides})
 	switch {
 	case errors.Is(err, service.ErrInvalidPayout):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, repository.ErrPayoutMismatch):
+		writeErrorCode(w, http.StatusConflict, "payout_mismatch", err.Error(), 0)
 	case errors.Is(err, repository.ErrNothingToPayOut), errors.Is(err, repository.ErrRideNotFound):
 		writeErrorCode(w, http.StatusConflict, "nothing_to_pay_out", repository.ErrNothingToPayOut.Error(), 0)
 	case err != nil:
