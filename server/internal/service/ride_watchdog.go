@@ -71,7 +71,8 @@ type watchCheck struct {
 // tells the customer when no driver has turned up yet and when none was
 // found, reminds both sides an hour before a ride, and logs an ERROR for
 // ops (which the Telegram watchdog forwards) when a driver is late or a ride
-// runs hours over.
+// runs hours over. With WatchDuty it also takes drivers off duty whose app
+// has gone silent.
 //
 // It runs over Postgres every minute and is idempotent through
 // booking_events: a check is recorded before it is acted on, so a restart
@@ -82,6 +83,7 @@ type RideWatchdog struct {
 	alerts WatchAlerter
 	now    func() time.Time
 	checks []watchCheck
+	duty   *dutyWatch // nil: duty is left alone (see WatchDuty)
 }
 
 // NewRideWatchdog wires the watchdog to its store and the pushes it sends.
@@ -155,14 +157,14 @@ func (w *RideWatchdog) Run(ctx context.Context) {
 	}
 }
 
-// Tick makes one pass over every check and returns how many bookings it
-// acted on.
+// Tick makes one pass over every check and returns how many bookings (and
+// silent drivers) it acted on.
 func (w *RideWatchdog) Tick(ctx context.Context) int {
 	acted := 0
 	for _, c := range w.checks {
 		acted += w.run(ctx, c)
 	}
-	return acted
+	return acted + w.expireDuty(ctx)
 }
 
 // maxPlannedDuration bounds how long after its start a ride can be planned

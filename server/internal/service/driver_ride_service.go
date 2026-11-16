@@ -152,6 +152,7 @@ type DriverRideService struct {
 	codes    StartCodeGuard
 	live     LiveLocationSink
 	alerts   RideAlerter
+	duty     DutyStore // nil: duty lives in presence only
 	now      func() time.Time
 	newCode  func() (string, error)
 
@@ -432,10 +433,17 @@ func (s *DriverRideService) Earnings(ctx context.Context, driverID string) (doma
 }
 
 // SetDuty puts driverID online (optionally at a location) or takes them
-// offline in the live presence index. Going online requires cleared KYC.
+// offline in the live presence index, and — with a duty store — on their
+// row in PostgreSQL, so a restart remembers. Going online requires cleared
+// KYC. The app calls it every 20 s while on duty, as its heartbeat.
 func (s *DriverRideService) SetDuty(ctx context.Context, driverID string, online bool, at *LatLng) error {
 	if !online {
 		s.presence.Remove(driverID)
+		if s.duty != nil {
+			if err := s.duty.EndDuty(ctx, driverID); err != nil {
+				slog.WarnContext(ctx, "duty: saving off duty failed", "driverId", driverID, "error", err)
+			}
+		}
 		return nil
 	}
 	if _, err := s.clearedProfile(ctx, driverID); err != nil {
@@ -443,10 +451,26 @@ func (s *DriverRideService) SetDuty(ctx context.Context, driverID string, online
 	}
 	s.presence.Register(domain.Driver{ID: driverID, Status: domain.DriverStatusAvailable})
 	if at != nil {
-		return s.presence.UpdateLocation(driverID, domain.Location{Lat: at.Lat, Lng: at.Lng})
+		if err := s.presence.UpdateLocation(driverID, domain.Location{Lat: at.Lat, Lng: at.Lng}); err != nil {
+			return err
+		}
+	}
+	// Presence is what alerts read; the row is for after a restart, so a
+	// failed write is logged rather than failing the heartbeat.
+	if s.duty != nil {
+		var lat, lng *float64
+		if at != nil {
+			lat, lng = &at.Lat, &at.Lng
+		}
+		if err := s.duty.SaveDuty(ctx, driverID, s.now(), lat, lng); err != nil {
+			slog.WarnContext(ctx, "duty: saving on duty failed", "driverId", driverID, "error", err)
+		}
 	}
 	return nil
 }
+
+// SetDutyStore has SetDuty keep duty in PostgreSQL as well as in presence.
+func (s *DriverRideService) SetDutyStore(d DutyStore) { s.duty = d }
 
 func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string, from, to domain.RideStatus) (domain.DriverRide, error) {
 	rb, err := s.store.Advance(ctx, rideID, driverID, from, to, s.now())

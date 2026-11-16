@@ -84,6 +84,19 @@ void main() {
       check(repo.duty).deepEquals([true, false]);
     });
 
+    test('taken off duty by the backend: offline, without telling it '
+        'again', () async {
+      await vm.setOnline(true);
+      vm.markOffDuty();
+
+      check(vm.isOnline).isFalse();
+      check(vm.requests).isEmpty();
+      check(repo.duty).deepEquals([true]);
+      // Polls stop: a refresh while offline reads nothing.
+      await vm.refresh(locate: true);
+      check(repo.duty).deepEquals([true]);
+    });
+
     test('accepting hands the ride over and drops it from the feed', () async {
       await vm.setOnline(true);
       final error = await vm.accept(vm.requests.first);

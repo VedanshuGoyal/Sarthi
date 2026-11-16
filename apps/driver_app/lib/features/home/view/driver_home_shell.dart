@@ -78,15 +78,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
       ref.read(locationShareViewModelProvider);
       unawaited(ref.read(pushRegistrationProvider).start());
       final launchedBy = await push.takeLaunchTap();
-      if (launchedBy != null && mounted) {
-        if (launchedBy.type == 'ride_cancelled') {
-          _openCancelledRide(launchedBy.rideId);
-        } else if (launchedBy.type == _paymentReceived) {
-          _openEarnings();
-        } else {
-          _openRequests();
-        }
-      }
+      if (launchedBy != null && mounted) _onPushTap(launchedBy);
     });
   }
 
@@ -121,12 +113,23 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _reloadMoney();
   }
 
-  /// A push arrived while the app was open: a cancelled ride needs the
-  /// rides list re-read so it shows up as cancelled, a payment the earnings;
-  /// anything else is a new request, so refresh the feed as before.
+  /// Pushes about one of the driver's own rides: the customer cancelled it,
+  /// or it starts within the hour.
+  static const Set<String> _rideUpdates = {'ride_cancelled', 'ride_reminder'};
+
+  /// The push sent when the backend took a silent driver off duty.
+  static const String _dutyOff = 'duty_off';
+
+  /// A push arrived while the app was open: a ride update needs the rides
+  /// list re-read (a cancelled ride shows as cancelled; a reminder's ride
+  /// re-checks whether to share location), a payment the earnings, and a
+  /// duty-off shows the driver offline; anything else is a new request, so
+  /// refresh the feed as before.
   void _onPushArrival(PushEvent event) {
-    if (event.type == 'ride_cancelled') {
+    if (_rideUpdates.contains(event.type)) {
       ref.read(myRidesViewModelProvider).load();
+    } else if (event.type == _dutyOff) {
+      ref.read(dutyViewModelProvider).markOffDuty();
     } else if (event.type == 'kyc_decided') {
       // A reviewer revoked the driver: re-reading KYC sends them back to the
       // Document View (main.dart's gate).
@@ -139,18 +142,21 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   }
 
   void _onPushTap(PushEvent event) {
-    if (event.type == 'ride_cancelled') {
-      _openCancelledRide(event.rideId);
+    if (_rideUpdates.contains(event.type)) {
+      _openRide(event.rideId);
     } else if (event.type == _paymentReceived) {
       _openEarnings();
+    } else if (event.type == _dutyOff) {
+      ref.read(dutyViewModelProvider).markOffDuty();
+      _select(_homeTab);
     } else {
       _openRequests();
     }
   }
 
-  /// Opens the Rides tab, and the cancelled ride itself once its fresh copy
-  /// has loaded — "ideally the ride", per the push's intent.
-  Future<void> _openCancelledRide(String? rideId) async {
+  /// Opens the Rides tab, and the ride itself once its fresh copy has
+  /// loaded — "ideally the ride", per the push's intent.
+  Future<void> _openRide(String? rideId) async {
     _select(_ridesTab);
     await ref.read(myRidesViewModelProvider).load();
     if (rideId == null || !mounted) return;

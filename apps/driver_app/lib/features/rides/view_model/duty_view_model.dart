@@ -99,6 +99,18 @@ class DutyViewModel extends ChangeNotifier {
     }
   }
 
+  /// The backend took the driver off duty — their app hadn't checked in for
+  /// hours (the `duty_off` push). Stops polling and shows them offline
+  /// without telling the backend again; going on duty is theirs to do.
+  void markOffDuty() {
+    if (!_isOnline) return;
+    _timer?.cancel();
+    _timer = null;
+    _isOnline = false;
+    _requests = const [];
+    _notify();
+  }
+
   /// Re-reads the open requests. With [locate], refreshes the driver's
   /// position first and re-reports it to the backend.
   ///

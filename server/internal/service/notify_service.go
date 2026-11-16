@@ -40,6 +40,7 @@ const (
 	pushTypeNoDriverYet    = "no_driver_yet"
 	pushTypeRideExpired    = "ride_expired"
 	pushTypeRideReminder   = "ride_reminder"
+	pushTypeDutyOff        = "duty_off"
 )
 
 const (
@@ -588,6 +589,35 @@ func (s *NotifyService) RideReminder(ctx context.Context, b domain.Booking, plan
 		customerBody := fmt.Sprintf("%s is driving for you at %s. You can follow them on the map in the app from now.",
 			name, formatClock(plan.ScheduledAt))
 		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeRideReminder, title, customerBody, ttl)
+	})
+}
+
+// DutyEnded tells driverID the server took them off duty because their app
+// had gone silent, and how to get ride requests again.
+func (s *NotifyService) DutyEnded(ctx context.Context, driverID string) {
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		body := fmt.Sprintf("MOJUD Driver hasn't checked in for %d hours, so we've taken you off duty. "+
+			"Open the app and go on duty to get ride requests near you again.", int(dutySilence.Hours()))
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "You're off duty",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "duty",
+				Data:    map[string]string{"type": pushTypeDutyOff},
+				TTL:     12 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeDutyOff, "driverId", driverID, "devices", sent)
 	})
 }
 

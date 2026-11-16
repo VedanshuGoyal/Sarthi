@@ -129,6 +129,47 @@ func (t *DriverTracker) UpdateLocation(driverID string, loc domain.Location) err
 	return nil
 }
 
+// Restore puts a driver back as they were before a restart: available, last
+// heard from at seenAt and, with a position, indexed there as of seenAt.
+// Unlike Register and UpdateLocation it keeps those times rather than
+// stamping now, so a driver whose app had gone quiet before the restart
+// still counts as quiet. An entry newer than seenAt is left alone.
+func (t *DriverTracker) Restore(driverID string, loc *domain.Location, seenAt time.Time) error {
+	var cell geo.Cell
+	if loc != nil {
+		var err error
+		if cell, err = geo.CellAt(loc.Lat, loc.Lng, t.resolution); err != nil {
+			return err
+		}
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if prev, ok := t.seen[driverID]; ok && prev.After(seenAt) {
+		return nil
+	}
+	t.seen[driverID] = seenAt
+	d, ok := t.drivers[driverID]
+	if !ok {
+		d = &domain.Driver{ID: driverID, Status: domain.DriverStatusAvailable}
+		t.drivers[driverID] = d
+	}
+	if loc == nil {
+		return nil
+	}
+	d.Location = *loc
+	d.Location.UpdatedAt = seenAt
+	if prev, indexed := t.driverCell[driverID]; indexed {
+		if prev == cell {
+			return nil
+		}
+		t.removeFromCell(prev, driverID)
+	}
+	t.addToCell(cell, driverID)
+	t.driverCell[driverID] = cell
+	return nil
+}
+
 // SetStatus updates a driver's availability (e.g. on_trip while serving a ride).
 // Returns false if the driver is unknown.
 func (t *DriverTracker) SetStatus(driverID string, status domain.DriverStatus) bool {
