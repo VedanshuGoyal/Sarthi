@@ -76,16 +76,20 @@ class RidesRepository {
       },
     );
     if (body.isEmpty) return null;
-    final decoded = jsonDecode(body);
-    return decoded is Map<String, dynamic>
-        ? Ride.tryParse(decoded['ride'])
-        : null;
+    return _parse(body, (decoded) {
+      return decoded is Map<String, dynamic>
+          ? Ride.tryParse(decoded['ride'])
+          : null;
+    });
   }
 
   /// The driver's earnings summary.
   Future<Earnings> earnings() async {
     final body = await _send('GET', '/driver/earnings');
-    return Earnings.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _parse(
+      body,
+      (decoded) => Earnings.fromJson(decoded as Map<String, dynamic>),
+    );
   }
 
   /// Tells the backend the driver is online (optionally where) or offline.
@@ -109,20 +113,29 @@ class RidesRepository {
   }) => _send(
     'PUT',
     '/driver/location',
-    payload: {
-      'lat': lat,
-      'lng': lng,
-      if (heading != null) 'heading': heading,
-    },
+    payload: {'lat': lat, 'lng': lng, if (heading != null) 'heading': heading},
   );
 
-  static List<Ride> _rides(String body) {
-    final decoded = jsonDecode(body);
+  static List<Ride> _rides(String body) => _parse(body, (decoded) {
     final list = decoded is Map<String, dynamic> ? decoded['rides'] : null;
     return [
       for (final item in list as List<dynamic>? ?? const [])
         ?Ride.tryParse(item),
     ];
+  });
+
+  /// Decodes a 2xx [body] with [read]. A body that isn't the expected shape
+  /// (a proxy's HTML page, say) is a [RidesException] like any other
+  /// failure — a raw parse error would skip every view model's error
+  /// handling, so the driver would see nothing happen.
+  static T _parse<T>(String body, T Function(Object? decoded) read) {
+    try {
+      return read(jsonDecode(body));
+    } catch (_) {
+      throw const RidesException(
+        'The server sent an unexpected reply. Please try again.',
+      );
+    }
   }
 
   Future<String> _send(
@@ -161,7 +174,8 @@ class RidesRepository {
       final String m when m.isNotEmpty => _sentence(m),
       _ => 'Something went wrong. Please try again.',
     };
-    throw RidesException(message, code: body['code'] as String?);
+    final code = body['code'];
+    throw RidesException(message, code: code is String ? code : null);
   }
 
   /// The backend's errors are lower-case fragments; show them as sentences.

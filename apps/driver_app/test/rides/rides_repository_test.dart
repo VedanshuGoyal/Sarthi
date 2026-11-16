@@ -48,6 +48,19 @@ void main() {
     check(ride.customer).isNull();
   });
 
+  test('an unreadable 2xx body is a RidesException, not a raw error', () async {
+    RidesRepository html() => RidesRepository(
+      baseUrl: 'http://api',
+      client: MockClient((_) async => http.Response('<html>ok</html>', 200)),
+    );
+
+    await check(html().myRides()).throws<RidesException>();
+    await check(html().requests()).throws<RidesException>();
+    await check(html().act('r1', RideAction.arrive)).throws<RidesException>();
+    await check(html().earnings()).throws<RidesException>();
+    await check(repo({'rides': 'nope'}).myRides()).throws<RidesException>();
+  });
+
   test('act posts the action and returns the updated ride', () async {
     late http.Request sent;
     final updated = await repo({
@@ -78,12 +91,15 @@ void main() {
 
   test('rate sends stars and note, and reads back myRating', () async {
     late http.Request sent;
-    final updated = await repo({
-      'ride': rideJson(
-        status: 'completed',
-        myRating: {'stars': 4, 'note': 'Great customer'},
-      ),
-    }, onRequest: (r) => sent = r).act('r1', RideAction.rate, stars: 4, note: 'Great customer');
+    final updated = await repo(
+      {
+        'ride': rideJson(
+          status: 'completed',
+          myRating: {'stars': 4, 'note': 'Great customer'},
+        ),
+      },
+      onRequest: (r) => sent = r,
+    ).act('r1', RideAction.rate, stars: 4, note: 'Great customer');
 
     check(sent.url.path).equals('/driver/rides/r1/rate');
     check(
