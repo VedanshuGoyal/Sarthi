@@ -178,6 +178,27 @@ func (r *DriverRideRepository) Advance(ctx context.Context, id, driverID string,
 	return rb, nil
 }
 
+// NoShow closes driverID's ride as a customer no-show at at, with reason:
+// cancelled by "no_show", the start code cleared. Only a ride the driver is
+// waiting at the pickup of; [ErrRideStateConflict] otherwise — including
+// when the customer cancelled or the trip started first.
+func (r *DriverRideRepository) NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error) {
+	q := `
+		WITH b AS (
+		    UPDATE bookings
+		    SET status = 'cancelled', cancelled_at = $3, cancelled_by = $4,
+		        cancel_reason = nullif($5, ''), start_otp = NULL
+		    WHERE id = $1 AND driver_id = $2 AND status = 'arrived'
+		    RETURNING *)
+		SELECT ` + rideColumns + `
+		FROM b JOIN users u ON u.id = b.user_id`
+	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at, domain.CancelledByNoShow, reason))
+	if err != nil {
+		return domain.RideBooking{}, rideErr(err, ErrRideStateConflict, "closing a no-show")
+	}
+	return rb, nil
+}
+
 // Release hands an accepted (not yet started) ride back to the open pool and
 // hides it from driverID's own feed, in one transaction.
 func (r *DriverRideRepository) Release(ctx context.Context, id, driverID string) error {

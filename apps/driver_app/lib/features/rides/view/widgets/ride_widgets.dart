@@ -365,9 +365,7 @@ class RideCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     [
-                      ride.cancelledBy == 'customer'
-                          ? 'Cancelled by customer'
-                          : 'Cancelled',
+                      ride.cancelLabel,
                       if (ride.cancelReason?.isNotEmpty ?? false)
                         ride.cancelReason!,
                     ].join(' · '),

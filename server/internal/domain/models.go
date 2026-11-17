@@ -335,6 +335,10 @@ func (b Booking) PaymentStatus() RidePaymentStatus {
 // CancelledByCustomer is the cancelled_by of a ride the customer cancelled.
 const CancelledByCustomer = "customer"
 
+// CancelledByNoShow is the cancelled_by of a ride the driver closed because
+// the customer never came to the pickup.
+const CancelledByNoShow = "no_show"
+
 // RideRating is the stars (1–5) one side of a completed ride gave the other,
 // with an optional note.
 type RideRating struct {
@@ -477,6 +481,11 @@ type DriverRide struct {
 	CancelledAt      *time.Time    `json:"cancelledAt,omitempty"`
 	CancelledBy      string        `json:"cancelledBy,omitempty"`
 	CancelReason     string        `json:"cancelReason,omitempty"`
+
+	// NoShowAt is when, waiting at the pickup, the driver may close the ride
+	// as a no-show (POST /driver/rides/{id}/no_show). Set only while they're
+	// at the pickup.
+	NoShowAt *time.Time `json:"noShowAt,omitempty"`
 
 	// MyRating is what this driver rated the customer, once they have.
 	MyRating *RideRating `json:"myRating,omitempty"`

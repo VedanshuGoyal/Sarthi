@@ -208,6 +208,7 @@ class MyRidesViewModel extends ChangeNotifier {
     RideAction.arrive: RideStatus.arrived,
     RideAction.start: RideStatus.inProgress,
     RideAction.complete: RideStatus.completed,
+    RideAction.noShow: RideStatus.cancelled,
   };
 
   static List<Ride> _sorted(Iterable<Ride> rides, Comparator<Ride> compare) =>

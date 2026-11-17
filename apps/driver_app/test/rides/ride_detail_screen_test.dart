@@ -66,6 +66,49 @@ void main() {
     },
   );
 
+  testWidgets('waiting at the pickup: no-show waits for its time', (
+    tester,
+  ) async {
+    final soon = DateTime.now().add(const Duration(minutes: 10));
+    final waiting = ride(
+      id: 'r',
+      status: 'arrived',
+      noShowAt: soon.toUtc().toIso8601String(),
+    );
+    repo.mine = [waiting];
+
+    await pump(tester, waiting);
+
+    check(find.text('Customer not here?').evaluate()).isNotEmpty();
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'No-show'),
+    );
+    check(button.onPressed).isNull();
+  });
+
+  testWidgets('after the wait, the driver can close the ride as a no-show', (
+    tester,
+  ) async {
+    final past = DateTime.now().subtract(const Duration(minutes: 1));
+    final waiting = ride(
+      id: 'r',
+      status: 'arrived',
+      noShowAt: past.toUtc().toIso8601String(),
+    );
+    repo.mine = [waiting];
+
+    await pump(tester, waiting);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'No-show'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close ride'));
+    await tester.pumpAndSettle();
+
+    check(repo.acted.last).equals(('r', RideAction.noShow));
+    check(find.text("Customer didn't come").evaluate()).isNotEmpty();
+    check(find.text('Customer not here?').evaluate()).isEmpty();
+  });
+
   testWidgets('a cancelled ride shows the notice and no action bar', (
     tester,
   ) async {

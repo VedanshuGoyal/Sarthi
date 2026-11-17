@@ -225,6 +225,7 @@ class Ride {
     this.cancelledAt,
     this.cancelledBy,
     this.cancelReason,
+    this.noShowAt,
     this.myRating,
     this.paymentStatus = RidePaymentStatus.none,
     this.paidAt,
@@ -280,12 +281,31 @@ class Ride {
   /// When the customer cancelled this ride, if they did.
   final DateTime? cancelledAt;
 
-  /// Who cancelled — currently only ever `"customer"`, since that's the
-  /// only side that can cancel.
+  /// Who cancelled: `"customer"`, or `"no_show"` when the driver closed
+  /// the ride because the customer never came to the pickup.
   final String? cancelledBy;
 
-  /// The reason the customer picked (or typed), if any.
+  /// The reason the customer picked (or typed), or what the server wrote
+  /// for a no-show, if any.
   final String? cancelReason;
+
+  /// While the driver waits at the pickup: when they may close the ride as
+  /// a no-show ([RideAction.noShow]). The backend sets it 15 minutes after
+  /// the later of their arrival and the booked start.
+  final DateTime? noShowAt;
+
+  /// "Cancelled by customer", "Customer didn't come" or "Cancelled".
+  String get cancelLabel => switch (cancelledBy) {
+    'customer' => 'Cancelled by customer',
+    'no_show' => "Customer didn't come",
+    _ => 'Cancelled',
+  };
+
+  /// Whether, at [now], the driver may close this ride as a no-show.
+  bool canCloseAsNoShowAt(DateTime now) =>
+      status == RideStatus.arrived &&
+      noShowAt != null &&
+      !now.isBefore(noShowAt!);
 
   /// What this driver gave the customer, once they've rated them.
   final RideRating? myRating;
@@ -345,6 +365,7 @@ class Ride {
     cancelledAt: cancelledAt,
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
+    noShowAt: noShowAt,
     myRating: myRating,
     paymentStatus: paymentStatus,
     paidAt: paidAt,
@@ -398,6 +419,7 @@ class Ride {
       cancelledAt: _time(json['cancelledAt']),
       cancelledBy: json['cancelledBy'] as String?,
       cancelReason: json['cancelReason'] as String?,
+      noShowAt: _time(json['noShowAt']),
       myRating: RideRating.tryParse(json['myRating']),
       paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
       paidAt: _time(json['paidAt']),
@@ -415,6 +437,10 @@ enum RideAction {
   start('start'),
   complete('complete'),
   release('release'),
+
+  /// The customer never came to the pickup: closes the ride without the
+  /// driver counting as the one who cancelled.
+  noShow('no_show'),
   rate('rate');
 
   const RideAction(this.wireName);

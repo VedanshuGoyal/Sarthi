@@ -254,6 +254,8 @@ class MyBooking {
     null || '' => null,
     'customer' => 'Cancelled by you',
     'driver' => 'Cancelled by your driver',
+    // The driver waited at the pickup and the customer never came.
+    'no_show' => 'Closed as a no-show',
     _ => 'Cancelled',
   };
 

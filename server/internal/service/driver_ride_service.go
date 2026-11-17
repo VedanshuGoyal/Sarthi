@@ -65,6 +65,28 @@ func (e *StartLockedError) Error() string {
 // Is makes errors.Is(err, ErrStartLocked) true.
 func (e *StartLockedError) Is(target error) bool { return target == ErrStartLocked }
 
+// ErrNoShowTooEarly is matched (errors.Is) by a [*NoShowTooEarlyError]: the
+// driver hasn't waited at the pickup long enough to call a no-show.
+var ErrNoShowTooEarly = errors.New("wait a little longer for the customer")
+
+// NoShowTooEarlyError says when the driver may close the ride as a no-show.
+type NoShowTooEarlyError struct {
+	At   time.Time
+	Wait time.Duration
+}
+
+func (e *NoShowTooEarlyError) Error() string {
+	return fmt.Sprintf("give the customer until %s before closing the ride as a no-show", formatClock(e.At))
+}
+
+// Is makes errors.Is(err, ErrNoShowTooEarly) true.
+func (e *NoShowTooEarlyError) Is(target error) bool { return target == ErrNoShowTooEarly }
+
+// noShowWait is how long a driver waits at the pickup — from the later of
+// arriving and the booked start — before they may close the ride as a
+// no-show.
+const noShowWait = 15 * time.Minute
+
 const (
 	// requestRadiusM is how far from the driver an open ride may start and
 	// still appear in their feed — roughly a metro area, since rides are
@@ -89,6 +111,7 @@ type DriverRideStore interface {
 	SetStartOTP(ctx context.Context, id, driverID, startOTP string) error
 	Advance(ctx context.Context, id, driverID string, from, to domain.RideStatus, at time.Time) (domain.RideBooking, error)
 	Release(ctx context.Context, id, driverID string) error
+	NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error)
 	Decline(ctx context.Context, id, driverID string) error
 	RateCustomer(ctx context.Context, id, driverID string, rating domain.RideRating) error
 	Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error)
@@ -132,6 +155,7 @@ type RideAlerter interface {
 	DriverArrived(ctx context.Context, userID, driverID string, ride domain.DriverRide)
 	DriverReleased(ctx context.Context, b domain.Booking, plan tripPlan, driverID string)
 	RideCompleted(ctx context.Context, userID string, ride domain.DriverRide)
+	CustomerNoShow(ctx context.Context, userID string, ride domain.DriverRide)
 }
 
 // LatLng is a point the driver app reports.
@@ -389,6 +413,59 @@ func (s *DriverRideService) Complete(ctx context.Context, driverID, rideID strin
 	return s.advance(ctx, driverID, rideID, domain.RideStatusInProgress, domain.RideStatusCompleted)
 }
 
+// NoShow closes the ride driverID is waiting at the pickup of because the
+// customer never came: cancelled by "no_show", so the driver isn't the one
+// who cancelled. Allowed from noShowWait after the later of their arrival
+// and the booked start ([*NoShowTooEarlyError] before then). The customer
+// is told. Asking again once it's closed returns the ride.
+func (s *DriverRideService) NoShow(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
+	rb, err := s.store.FindByID(ctx, rideID)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	b := rb.Booking
+	if b.DriverID != driverID {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	if b.Status == domain.RideStatusCancelled && b.CancelledBy == domain.CancelledByNoShow {
+		ride, _, _ := toDriverRide(rb, true)
+		return ride, nil
+	}
+	if b.Status != domain.RideStatusArrived {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	now := s.now()
+	if at := noShowAt(b); at != nil && now.Before(*at) {
+		return domain.DriverRide{}, &NoShowTooEarlyError{At: *at, Wait: at.Sub(now)}
+	}
+	reason := "The driver waited at the pickup until " + formatClock(now)
+	rb, err = s.store.NoShow(ctx, rideID, driverID, now, reason)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	slog.InfoContext(ctx, "ride closed as a no-show", "driverId", driverID, "rideId", rideID)
+	ride, _, _ := toDriverRide(rb, true)
+	if s.alerts != nil {
+		s.alerts.CustomerNoShow(ctx, b.UserID, ride)
+	}
+	return ride, nil
+}
+
+// noShowAt is when the driver of arrived booking b may call a no-show:
+// noShowWait after the later of arriving and the booked start. Nil for a
+// booking not at the pickup.
+func noShowAt(b domain.Booking) *time.Time {
+	if b.Status != domain.RideStatusArrived || b.ArrivedAt == nil || b.ScheduledAt == nil {
+		return nil
+	}
+	from := *b.ArrivedAt
+	if b.ScheduledAt.After(from) {
+		from = *b.ScheduledAt
+	}
+	at := from.Add(noShowWait)
+	return &at
+}
+
 // Release hands an accepted ride back to the open pool, before it starts.
 // The customer is told, and — while the ride is still open to drivers — the
 // other drivers near it are alerted again.
@@ -626,6 +703,7 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 		CancelledAt:      b.CancelledAt,
 		CancelledBy:      b.CancelledBy,
 		CancelReason:     b.CancelReason,
+		NoShowAt:         noShowAt(b),
 		MyRating:         b.CustomerRating,
 		PaymentStatus:    b.PaymentStatus(),
 		PaidAt:           b.PaidAt,

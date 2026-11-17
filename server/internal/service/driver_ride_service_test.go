@@ -108,6 +108,27 @@ func (f *fakeRideStore) Advance(_ context.Context, id, driverID string, from, to
 		return domain.RideBooking{}, repository.ErrRideStateConflict
 	}
 	rb.Booking.Status = to
+	switch to {
+	case domain.RideStatusArrived:
+		rb.Booking.ArrivedAt = &at
+	case domain.RideStatusInProgress:
+		rb.Booking.StartedAt = &at
+	case domain.RideStatusCompleted:
+		rb.Booking.CompletedAt = &at
+	}
+	return *rb, nil
+}
+
+func (f *fakeRideStore) NoShow(_ context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rb, ok := f.rides[id]
+	if !ok || rb.Booking.DriverID != driverID || rb.Booking.Status != domain.RideStatusArrived {
+		return domain.RideBooking{}, repository.ErrRideStateConflict
+	}
+	rb.Booking.Status, rb.Booking.CancelledAt = domain.RideStatusCancelled, &at
+	rb.Booking.CancelledBy, rb.Booking.CancelReason = domain.CancelledByNoShow, reason
+	rb.Booking.StartOTP = ""
 	return *rb, nil
 }
 
@@ -776,6 +797,82 @@ func (r *recordingAlerts) DriverReleased(_ context.Context, b domain.Booking, _ 
 
 func (r *recordingAlerts) RideCompleted(_ context.Context, userID string, ride domain.DriverRide) {
 	r.add("completed " + userID + " " + ride.ID)
+}
+
+func (r *recordingAlerts) CustomerNoShow(_ context.Context, userID string, ride domain.DriverRide) {
+	r.add("no-show " + userID + " " + ride.ID)
+}
+
+// A driver waiting at the pickup can close the ride as a no-show 15 minutes
+// after the later of arriving and the booked start — not before, and not
+// for a ride that isn't theirs or that started.
+func TestNoShow(t *testing.T) {
+	start := testNow.Add(time.Hour)
+	ride := openRide("r1", start, 2, "automatic")
+	ride.Booking.UserID = "u1"
+	store := newFakeRideStore(ride)
+	svc := newRideService(store)
+	alerts := &recordingAlerts{}
+	svc.alerts = alerts
+	ctx := context.Background()
+	clock := testNow
+	svc.now = func() time.Time { return clock }
+
+	if _, err := svc.Accept(ctx, "auto", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.NoShow(ctx, "auto", "r1"); !errors.Is(err, repository.ErrRideStateConflict) {
+		t.Errorf("no-show before arriving: err = %v, want ErrRideStateConflict", err)
+	}
+	// Early: arrived 20 minutes before the start. The wait runs from the start.
+	clock = start.Add(-20 * time.Minute)
+	arrived, err := svc.Arrive(ctx, "auto", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := start.Add(noShowWait); arrived.NoShowAt == nil || !arrived.NoShowAt.Equal(want) {
+		t.Errorf("noShowAt = %v, want %v", arrived.NoShowAt, want)
+	}
+	clock = start.Add(14 * time.Minute)
+	_, err = svc.NoShow(ctx, "auto", "r1")
+	early, ok := errors.AsType[*NoShowTooEarlyError](err)
+	if !errors.Is(err, ErrNoShowTooEarly) || !ok || early.Wait != time.Minute {
+		t.Fatalf("at T+14m: err = %v, want too early by a minute", err)
+	}
+	if _, err := svc.NoShow(ctx, "both", "r1"); !errors.Is(err, repository.ErrRideStateConflict) {
+		t.Errorf("another driver: err = %v, want ErrRideStateConflict", err)
+	}
+
+	clock = start.Add(noShowWait)
+	got, err := svc.NoShow(ctx, "auto", "r1")
+	if err != nil {
+		t.Fatalf("NoShow: %v", err)
+	}
+	if got.Status != domain.RideStatusCancelled || got.CancelledBy != domain.CancelledByNoShow ||
+		got.CancelReason != "The driver waited at the pickup until 10:15 AM" || got.NoShowAt != nil {
+		t.Errorf("ride = %+v", got)
+	}
+	if store.rides["r1"].Booking.StartOTP != "" {
+		t.Error("the start code survived the no-show")
+	}
+	// Replayed: the closed ride, and the customer told once.
+	if again, err := svc.NoShow(ctx, "auto", "r1"); err != nil || again.CancelledBy != domain.CancelledByNoShow {
+		t.Errorf("repeated NoShow = %+v, %v", again, err)
+	}
+	if want := "assigned u1 r1|arrived u1 auto r1|no-show u1 r1"; strings.Join(alerts.events, "|") != want {
+		t.Errorf("alerts = %q, want %q", alerts.events, want)
+	}
+
+	// Late: arrived 10 minutes after the start. The wait runs from arrival.
+	late := openRide("r2", testNow.Add(6*time.Hour), 1, "automatic")
+	store.rides["r2"] = &late
+	if _, err := svc.Accept(ctx, "auto", "r2"); err != nil {
+		t.Fatal(err)
+	}
+	clock = late.Booking.ScheduledAt.Add(10 * time.Minute)
+	if r, _ := svc.Arrive(ctx, "auto", "r2"); r.NoShowAt == nil || !r.NoShowAt.Equal(clock.Add(noShowWait)) {
+		t.Errorf("late arrival: noShowAt = %v, want arrival + 15 min", r.NoShowAt)
+	}
 }
 
 func TestRideAlerts_acceptArriveRelease(t *testing.T) {

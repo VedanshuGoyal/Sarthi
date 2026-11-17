@@ -26,6 +26,33 @@ void main() {
     });
   });
 
+  group('Ride — no-show', () {
+    test('reads noShowAt and opens the no-show from then', () {
+      final waiting = Ride.tryParse(
+        rideJson(status: 'arrived', noShowAt: '2026-10-26T09:15:00+05:30'),
+      )!;
+      final at = DateTime.parse('2026-10-26T09:15:00+05:30');
+      check(waiting.noShowAt).equals(at.toLocal());
+      check(
+        waiting.canCloseAsNoShowAt(at.subtract(const Duration(seconds: 1))),
+      ).isFalse();
+      check(waiting.canCloseAsNoShowAt(at)).isTrue();
+      // Not at the pickup, or no time from the backend: never.
+      check(
+        Ride.tryParse(rideJson(status: 'accepted'))!.canCloseAsNoShowAt(at),
+      ).isFalse();
+    });
+
+    test('names who ended a cancelled ride', () {
+      String label(String? by) => Ride.tryParse(
+        rideJson(status: 'cancelled', cancelledBy: by),
+      )!.cancelLabel;
+      check(label('customer')).equals('Cancelled by customer');
+      check(label('no_show')).equals("Customer didn't come");
+      check(label(null)).equals('Cancelled');
+    });
+  });
+
   group('Ride.tryParse — cancellation', () {
     test('reads cancelledAt, cancelledBy and cancelReason', () {
       final parsed = Ride.tryParse(

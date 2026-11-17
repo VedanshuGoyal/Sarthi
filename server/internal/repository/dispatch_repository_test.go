@@ -43,6 +43,42 @@ func TestPushTokenRepository_VerifiedDriversWithTokens_Integration(t *testing.T)
 	}
 }
 
+// Only a ride its driver is waiting at the pickup of can be closed as a
+// no-show, and it lands cancelled by "no_show" with no start code left.
+func TestDriverRideRepository_NoShow_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	repo := NewDriverRideRepository(tx)
+	user, driver, other := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx), newTestDriver(t, ctx, tx)
+	start := time.Date(2099, 1, 1, 10, 0, 0, 0, time.UTC)
+	ride := openBooking(t, ctx, tx, user, start)
+
+	if _, err := repo.Accept(ctx, ride, driver, start.Add(-2*time.Hour), "1234"); err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if _, err := repo.NoShow(ctx, ride, driver, start, "x"); err != ErrRideStateConflict {
+		t.Errorf("no-show before arriving: err = %v, want ErrRideStateConflict", err)
+	}
+	if _, err := repo.Advance(ctx, ride, driver, "accepted", "arrived", start); err != nil {
+		t.Fatalf("Advance: %v", err)
+	}
+	if _, err := repo.NoShow(ctx, ride, other, start, "x"); err != ErrRideStateConflict {
+		t.Errorf("another driver: err = %v, want ErrRideStateConflict", err)
+	}
+	at := start.Add(15 * time.Minute)
+	rb, err := repo.NoShow(ctx, ride, driver, at, "The driver waited at the pickup until 10:15 AM")
+	if err != nil {
+		t.Fatalf("NoShow: %v", err)
+	}
+	b := rb.Booking
+	if b.Status != "cancelled" || b.CancelledBy != "no_show" || b.StartOTP != "" ||
+		b.CancelledAt == nil || !b.CancelledAt.Equal(at) || b.DriverID != driver || rb.Customer.Name == "" {
+		t.Errorf("booking = %+v", rb)
+	}
+	if _, err := repo.NoShow(ctx, ride, driver, at, "x"); err != ErrRideStateConflict {
+		t.Errorf("second no-show: err = %v, want ErrRideStateConflict", err)
+	}
+}
+
 func TestDriverRideRepository_DeclinedBy_Integration(t *testing.T) {
 	ctx, tx := rollbackTx(t)
 	repo := NewDriverRideRepository(tx)

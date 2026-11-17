@@ -81,10 +81,10 @@ type locationRequest struct {
 }
 
 // Act handles POST /driver/rides/{id}/{action}, where action is accept,
-// decline, arrive, start, complete, release or rate. Start takes a
+// decline, arrive, start, complete, release, no_show or rate. Start takes a
 // {"otp": "1234"} body, rate a {"stars": 4, "note": "…"} one. Accept, the
-// three steps and rate answer with the updated ride; decline and release
-// with 204.
+// three steps, no_show and rate answer with the updated ride; decline and
+// release with 204.
 func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	driverID, rideID := userIDFrom(ctx), r.PathValue("id")
@@ -111,6 +111,8 @@ func (h *DriverRideHandler) Act(w http.ResponseWriter, r *http.Request) {
 		err = h.svc.Decline(ctx, driverID, rideID)
 	case "release":
 		err = h.svc.Release(ctx, driverID, rideID)
+	case "no_show":
+		ride, err = h.svc.NoShow(ctx, driverID, rideID)
 	case "rate":
 		var req ratingRequest
 		if err := decodeJSON(r, &req); err != nil {
@@ -227,6 +229,12 @@ func writeRideError(w http.ResponseWriter, err error, fallback string) {
 			retry = int(math.Ceil(locked.RetryAfter.Seconds()))
 		}
 		writeErrorCode(w, http.StatusTooManyRequests, "start_locked", err.Error(), retry)
+	case errors.Is(err, service.ErrNoShowTooEarly):
+		retry := 0
+		if early, ok := errors.AsType[*service.NoShowTooEarlyError](err); ok {
+			retry = int(math.Ceil(early.Wait.Seconds()))
+		}
+		writeErrorCode(w, http.StatusConflict, "no_show_too_early", err.Error(), retry)
 	case errors.Is(err, repository.ErrDriverNotFound):
 		writeError(w, http.StatusNotFound, "driver not found")
 	default:

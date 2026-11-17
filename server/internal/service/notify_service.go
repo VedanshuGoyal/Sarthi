@@ -41,6 +41,7 @@ const (
 	pushTypeRideExpired    = "ride_expired"
 	pushTypeRideReminder   = "ride_reminder"
 	pushTypeDutyOff        = "duty_off"
+	pushTypeRideNoShow     = "ride_no_show"
 )
 
 const (
@@ -386,6 +387,16 @@ func (s *NotifyService) RideCompleted(ctx context.Context, userID string, ride d
 			body = fmt.Sprintf("Pay %s by UPI in the app.", formatFare(ride.FarePaise, false))
 		}
 		s.tellCustomer(ctx, userID, ride.ID, pushTypeRideCompleted, "Trip complete", body, 24*time.Hour)
+	})
+}
+
+// CustomerNoShow tells customer userID their driver waited at the pickup
+// and closed the ride because they never came.
+func (s *NotifyService) CustomerNoShow(ctx context.Context, userID string, ride domain.DriverRide) {
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("Your driver waited at the pickup for your ride on %s, but you didn't arrive, "+
+			"so it was closed as a no-show. Book again when you're ready.", formatWhen(ride.ScheduledAt))
+		s.tellCustomer(ctx, userID, ride.ID, pushTypeRideNoShow, "Ride closed: no-show", body, 24*time.Hour)
 	})
 }
 

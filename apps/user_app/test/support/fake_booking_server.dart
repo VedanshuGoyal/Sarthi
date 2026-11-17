@@ -18,6 +18,7 @@ Map<String, dynamic> bookingJson({
   Map<String, dynamic>? myRating,
   String? completedAt,
   String? cancelReason,
+  String cancelledBy = 'customer',
   String? paymentStatus,
 }) => {
   'id': id,
@@ -65,7 +66,7 @@ Map<String, dynamic> bookingJson({
   'completedAt': ?completedAt,
   if (status == 'cancelled') ...{
     'cancelledAt': '2030-10-25T06:00:00Z',
-    'cancelledBy': 'customer',
+    'cancelledBy': cancelledBy,
     'cancelReason': ?cancelReason,
   },
   'myRating': ?myRating,
