@@ -109,6 +109,20 @@ void main() {
     check(find.text('Customer not here?').evaluate()).isEmpty();
   });
 
+  testWidgets("once the backend hides the customer's number, there's no "
+      'call button', (tester) async {
+    final json = rideJson(id: 'r', status: 'completed', withCustomer: true);
+    (json['customer'] as Map<String, dynamic>)['phoneE164'] = '';
+    final done = Ride.tryParse(json)!;
+    repo.mine = [done];
+
+    await pump(tester, done);
+
+    check(find.text('Asha Kumari').evaluate()).isNotEmpty();
+    check(find.text('Number hidden after the ride').evaluate()).isNotEmpty();
+    check(find.byTooltip('Call customer').evaluate()).isEmpty();
+  });
+
   testWidgets('a cancelled ride shows the notice and no action bar', (
     tester,
   ) async {

@@ -537,6 +537,8 @@ class _CustomerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
     final initial = customer.name.isEmpty ? '?' : customer.name[0];
+    // The backend blanks the number two hours after the ride ends.
+    final hasPhone = customer.phoneE164.isNotEmpty;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Row(
@@ -556,7 +558,9 @@ class _CustomerCard extends StatelessWidget {
               children: [
                 Text(customer.name, style: t.title(15)),
                 Text(
-                  RideFormat.phone(customer.phoneE164),
+                  hasPhone
+                      ? RideFormat.phone(customer.phoneE164)
+                      : 'Number hidden after the ride',
                   style: t.body(size: 13),
                 ),
                 Text(
@@ -569,24 +573,25 @@ class _CustomerCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton.filled(
-            tooltip: 'Call customer',
-            style: IconButton.styleFrom(
-              backgroundColor: t.primarySoft,
-              foregroundColor: t.primaryText,
-            ),
-            onPressed: () async {
-              final ok = await launchUrl(
-                Uri(scheme: 'tel', path: customer.phoneE164),
-              );
-              if (!ok && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Couldn't start a call.")),
+          if (hasPhone)
+            IconButton.filled(
+              tooltip: 'Call customer',
+              style: IconButton.styleFrom(
+                backgroundColor: t.primarySoft,
+                foregroundColor: t.primaryText,
+              ),
+              onPressed: () async {
+                final ok = await launchUrl(
+                  Uri(scheme: 'tel', path: customer.phoneE164),
                 );
-              }
-            },
-            icon: const Icon(Icons.call_rounded),
-          ),
+                if (!ok && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Couldn't start a call.")),
+                  );
+                }
+              },
+              icon: const Icon(Icons.call_rounded),
+            ),
         ],
       ),
     );

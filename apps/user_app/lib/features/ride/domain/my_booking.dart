@@ -368,7 +368,10 @@ class MyBooking {
           ? _byName(Transmission.values, car['transmission'])
           : null,
       driverName: driver is Map ? driver['name'] as String? : null,
-      driverPhone: driver is Map ? driver['phoneE164'] as String? : null,
+      // Blank once the ride has been over a while: the number is gone.
+      driverPhone: driver is Map
+          ? _nonEmpty(driver['phoneE164'] as String?)
+          : null,
       // The server omits the average until someone rates the driver.
       driverRating: driver is Map && ratingCount > 0
           ? (driver['rating'] as num?)?.toDouble()

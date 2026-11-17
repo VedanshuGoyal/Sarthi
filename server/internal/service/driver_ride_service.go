@@ -246,7 +246,7 @@ func (s *DriverRideService) MyRides(ctx context.Context, driverID string) ([]dom
 	}
 	out := []domain.DriverRide{}
 	for _, rb := range rows {
-		if ride, _, ok := toDriverRide(rb, true); ok {
+		if ride, ok := s.assigned(rb); ok {
 			out = append(out, ride)
 		}
 	}
@@ -272,7 +272,7 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	if held, ok := heldBy(target, driverID); ok {
+	if held, ok := s.heldBy(target, driverID); ok {
 		slog.InfoContext(ctx, "ride accept replayed", "driverId", driverID, "rideId", rideID)
 		return held, nil
 	}
@@ -314,7 +314,7 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 	if errors.Is(err, repository.ErrRideUnavailable) {
 		// Lost the race — unless to this same driver, by another path.
 		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil {
-			if held, ok := heldBy(now, driverID); ok {
+			if held, ok := s.heldBy(now, driverID); ok {
 				return held, nil
 			}
 		}
@@ -323,7 +323,7 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, err
 	}
 	slog.InfoContext(ctx, "ride accepted", "driverId", driverID, "rideId", rideID)
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	if s.alerts != nil {
 		s.alerts.DriverAssigned(ctx, rb.Booking.UserID, ride, profile.FullName)
 	}
@@ -368,7 +368,7 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 	}
 	// Already started (a retry after a lost reply): nothing to check again.
 	if target != nil && target.Booking.Status == domain.RideStatusInProgress {
-		ride, _, _ := toDriverRide(*target, true)
+		ride, _ := s.assigned(*target)
 		return ride, nil
 	}
 	if target == nil || target.Booking.Status != domain.RideStatusArrived {
@@ -428,7 +428,7 @@ func (s *DriverRideService) NoShow(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, repository.ErrRideStateConflict
 	}
 	if b.Status == domain.RideStatusCancelled && b.CancelledBy == domain.CancelledByNoShow {
-		ride, _, _ := toDriverRide(rb, true)
+		ride, _ := s.assigned(rb)
 		return ride, nil
 	}
 	if b.Status != domain.RideStatusArrived {
@@ -444,7 +444,7 @@ func (s *DriverRideService) NoShow(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, err
 	}
 	slog.InfoContext(ctx, "ride closed as a no-show", "driverId", driverID, "rideId", rideID)
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	if s.alerts != nil {
 		s.alerts.CustomerNoShow(ctx, b.UserID, ride)
 	}
@@ -503,7 +503,7 @@ func (s *DriverRideService) RateCustomer(ctx context.Context, driverID, rideID s
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	return ride, nil
 }
 
@@ -580,7 +580,7 @@ func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string
 		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil &&
 			now.Booking.DriverID == driverID && now.Booking.Status == to {
 			slog.InfoContext(ctx, "ride step replayed", "driverId", driverID, "rideId", rideID, "status", to)
-			ride, _, _ := toDriverRide(now, true)
+			ride, _ := s.assigned(now)
 			return ride, nil
 		}
 	}
@@ -588,7 +588,7 @@ func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string
 		return domain.DriverRide{}, err
 	}
 	slog.InfoContext(ctx, "ride advanced", "driverId", driverID, "rideId", rideID, "status", to)
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	if to == domain.RideStatusArrived && s.alerts != nil {
 		s.alerts.DriverArrived(ctx, rb.Booking.UserID, driverID, ride)
 	}
@@ -731,12 +731,37 @@ func canDrive(d domain.DriverTransmission, car *domain.RideCar) bool {
 
 // heldBy returns rb as its driver sees it when driverID holds it — accepted,
 // at the pickup or underway.
-func heldBy(rb domain.RideBooking, driverID string) (domain.DriverRide, bool) {
+func (s *DriverRideService) heldBy(rb domain.RideBooking, driverID string) (domain.DriverRide, bool) {
 	if rb.Booking.DriverID != driverID || !holdsDriver(rb.Booking.Status) {
 		return domain.DriverRide{}, false
 	}
+	return s.assigned(rb)
+}
+
+// assigned renders rb for the driver it's assigned to: every detail, and
+// the customer — whose number goes once the ride has been over for
+// contactLifetime. ok is false for unreadable details.
+func (s *DriverRideService) assigned(rb domain.RideBooking) (domain.DriverRide, bool) {
 	ride, _, ok := toDriverRide(rb, true)
+	if ok && ride.Customer != nil && contactExpired(rb.Booking, s.now()) {
+		ride.Customer.PhoneE164 = ""
+	}
 	return ride, ok
+}
+
+// contactLifetime is how long after a ride is completed or cancelled each
+// side still sees the other's phone number: enough for a forgotten bag or
+// a question about the bill, not for booking each other off the app.
+const contactLifetime = 2 * time.Hour
+
+// contactExpired reports whether, at now, b ended (completed or cancelled)
+// more than contactLifetime ago.
+func contactExpired(b domain.Booking, now time.Time) bool {
+	ended := b.CompletedAt
+	if ended == nil {
+		ended = b.CancelledAt
+	}
+	return ended != nil && !now.Before(ended.Add(contactLifetime))
 }
 
 // holdsDriver reports whether a ride in status s still occupies its driver.
