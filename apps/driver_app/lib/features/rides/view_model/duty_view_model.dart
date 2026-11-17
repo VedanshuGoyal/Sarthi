@@ -99,6 +99,18 @@ class DutyViewModel extends ChangeNotifier {
     }
   }
 
+  /// The backend took the driver off duty — their app hadn't checked in for
+  /// hours (the `duty_off` push). Stops polling and shows them offline
+  /// without telling the backend again; going on duty is theirs to do.
+  void markOffDuty() {
+    if (!_isOnline) return;
+    _timer?.cancel();
+    _timer = null;
+    _isOnline = false;
+    _requests = const [];
+    _notify();
+  }
+
   /// Re-reads the open requests. With [locate], refreshes the driver's
   /// position first and re-reports it to the backend.
   ///
@@ -138,6 +150,11 @@ class DutyViewModel extends ChangeNotifier {
   /// someone else got first, or that the customer cancelled in the
   /// meantime, is dropped from the feed — the backend's own message
   /// ("This ride is no longer available.") covers both.
+  ///
+  /// "No longer available" can also mean the driver already has it: an
+  /// earlier tap went through but its reply was lost. So before saying the
+  /// ride is gone, the driver's own rides are checked, and a ride they hold
+  /// is handed over as accepted.
   Future<String?> accept(Ride ride) async {
     _busy.add(ride.id);
     _notify();
@@ -150,10 +167,27 @@ class DutyViewModel extends ChangeNotifier {
       if (e.code == 'ride_unavailable' || e.code == 'ride_not_found') {
         _remove(ride.id);
       }
+      if (e.code == 'ride_unavailable') {
+        final held = await _heldRide(ride.id);
+        if (held != null) {
+          _onAccepted?.call(held);
+          return null;
+        }
+      }
       return e.message;
     } finally {
       _busy.remove(ride.id);
       _notify();
+    }
+  }
+
+  /// Ride [id] if the driver holds it — accepted, at the pickup or underway.
+  Future<Ride?> _heldRide(String id) async {
+    try {
+      final mine = await _repository.myRides();
+      return mine.where((r) => r.id == id && r.status.isActive).firstOrNull;
+    } on RidesException {
+      return null;
     }
   }
 

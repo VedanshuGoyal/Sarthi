@@ -18,22 +18,25 @@ Map<String, dynamic> rideJson({
   String? cancelledBy,
   String? cancelReason,
   Map<String, dynamic>? myRating,
+  bool approximate = false,
+  String? noShowAt,
 }) => {
   'id': id,
   'tripType': tripType,
   'status': status,
+  if (approximate) 'approximate': true,
   'scheduledAt': scheduledAt,
   'endsAt': '2026-10-26T12:00:00+05:30',
   'farePaise': farePaise,
   'fareEstimated': false,
   'pickup': {
-    'address': 'Connaught Place, New Delhi',
+    'address': approximate ? 'Saket, New Delhi' : 'Connaught Place, New Delhi',
     'lat': 28.63,
     'lng': 77.21,
   },
   'hours': 3,
   'car': {
-    'registration': 'DL01AB1234',
+    'registration': approximate ? '' : 'DL01AB1234',
     'carType': 'sedan',
     'transmission': 'automatic',
   },
@@ -48,6 +51,7 @@ Map<String, dynamic> rideJson({
   if (cancelledAt != null) 'cancelledAt': cancelledAt,
   if (cancelledBy != null) 'cancelledBy': cancelledBy,
   if (cancelReason != null) 'cancelReason': cancelReason,
+  if (noShowAt != null) 'noShowAt': noShowAt,
   if (myRating != null) 'myRating': myRating,
 };
 
@@ -59,10 +63,14 @@ Ride ride({
   String? cancelledBy,
   String? cancelReason,
   Map<String, dynamic>? myRating,
+  bool approximate = false,
+  String? noShowAt,
 }) => Ride.tryParse(
   rideJson(
     id: id,
     status: status,
+    approximate: approximate,
+    noShowAt: noShowAt,
     scheduledAt: scheduledAt,
     cancelledAt: cancelledAt,
     cancelledBy: cancelledBy,
@@ -121,6 +129,7 @@ class FakeRidesRepository implements RidesRepository {
       RideAction.start => 'in_progress',
       RideAction.complete => 'completed',
       RideAction.rate => 'completed',
+      RideAction.noShow => 'cancelled',
       _ => null,
     };
     if (status == null) return null;
@@ -129,6 +138,7 @@ class FakeRidesRepository implements RidesRepository {
         id: id,
         status: status,
         withCustomer: true,
+        cancelledBy: action == RideAction.noShow ? 'no_show' : null,
         myRating: action == RideAction.rate
             ? {'stars': stars ?? 0, if (note != null) 'note': note}
             : null,

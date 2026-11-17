@@ -132,8 +132,17 @@ func run() error {
 	cars := service.NewCarService(repository.NewCarRepository(pool))
 
 	// Who is online right now, bucketed by H3 cell: the driver feed and the
-	// "new ride request" pushes both search it.
+	// "new ride request" pushes both search it. Duty is also kept on the
+	// drivers' rows, so a restart puts back whoever was on duty, as of when
+	// their app last reported in.
 	presence := memstore.NewDriverTracker(geo.DefaultResolution)
+	dutyStore := repository.NewDriverDutyRepository(pool)
+	if n, err := service.RestorePresence(ctx, dutyStore, presence, time.Now()); err != nil {
+		slog.Warn("presence: restoring drivers on duty failed; they reappear as their apps report in",
+			"error", err)
+	} else {
+		slog.Info("presence: restored drivers on duty", "count", n)
+	}
 	// Where each driver is while on a ride, for the customer's live map.
 	liveLocations := memstore.NewLiveLocations()
 	driverProfiles := repository.NewDriverKYCRepository(pool)
@@ -192,8 +201,11 @@ func run() error {
 
 	// Driver rides: bookings move through accept → arrive → start → complete
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
+	driverRideStore := repository.NewDriverRideRepository(pool)
+	// Re-alerts skip the drivers who declined a ride or handed it back.
+	notify.SetDeclines(driverRideStore)
 	driverRides := service.NewDriverRideService(
-		repository.NewDriverRideRepository(pool),
+		driverRideStore,
 		driverProfiles,
 		presence,
 		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new
@@ -204,6 +216,7 @@ func run() error {
 	)
 	// A driver a reviewer rejects hands back the rides they hold.
 	driverKYC.SetRideReleaser(driverRides)
+	driverRides.SetDutyStore(dutyStore)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
 	// apps short-lived tokens (GET /maps/token).
@@ -253,6 +266,14 @@ func run() error {
 	}
 	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
 	go payments.RunSweeper(ctx)
+	// Every minute: re-alert drivers about rides nobody has taken, tell the
+	// customer when no driver has turned up, remind both sides an hour
+	// ahead, and log an ERROR for ops when a driver is late or a ride runs
+	// hours over. Idempotent through booking_events. It also takes drivers
+	// off duty, with a push, once their app has been silent for hours.
+	watchdog := service.NewRideWatchdog(repository.NewRideWatchRepository(pool), notify)
+	watchdog.WatchDuty(dutyStore, presence, notify)
+	go watchdog.Run(ctx)
 	payouts := service.NewPayoutService(paymentStore, documentCipher)
 	if cfg.AdminToken == "" {
 		slog.Warn("admin: no ADMIN_TOKEN set; GET /users and /admin/* are off")

@@ -179,7 +179,16 @@ class MyRidesViewModel extends ChangeNotifier {
       if (action == RideAction.complete) _onCompleted?.call();
       return null;
     } on RidesException catch (e) {
-      if (e.code == 'ride_state') await load();
+      if (e.code == 'ride_state') {
+        await load();
+        // The step had already happened — an earlier tap went through but
+        // its reply was lost — so there's nothing to report.
+        final reached = _reachedBy[action];
+        if (reached != null && byId(ride.id)?.status == reached) {
+          if (action == RideAction.complete) _onCompleted?.call();
+          return null;
+        }
+      }
       if (action == RideAction.rate) {
         return switch (e.code) {
           'invalid_rating' => 'Pick 1 to 5 stars for the customer.',
@@ -193,6 +202,14 @@ class MyRidesViewModel extends ChangeNotifier {
       _notify();
     }
   }
+
+  /// The status each step moves a ride to.
+  static const Map<RideAction, RideStatus> _reachedBy = {
+    RideAction.arrive: RideStatus.arrived,
+    RideAction.start: RideStatus.inProgress,
+    RideAction.complete: RideStatus.completed,
+    RideAction.noShow: RideStatus.cancelled,
+  };
 
   static List<Ride> _sorted(Iterable<Ride> rides, Comparator<Ride> compare) =>
       rides.toList()..sort(compare);

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -64,6 +65,31 @@ func (f *fakeTokens) ForDrivers(_ context.Context, ids []string) (map[string][]s
 	return out, nil
 }
 
+// VerifiedDriversWithTokens lists every driver with a token, by id; the
+// service still checks each one's KYC.
+func (f *fakeTokens) VerifiedDriversWithTokens(_ context.Context, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for id, t := range f.drivers {
+		if len(t) > 0 {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// fakeDeclines is a DeclineReader: ride id → drivers who passed on it.
+type fakeDeclines map[string][]string
+
+func (f fakeDeclines) DeclinedBy(_ context.Context, rideID string) ([]string, error) {
+	return f[rideID], nil
+}
+
 // fakeSender records messages; tokens in gone answer ErrUnregistered.
 type fakeSender struct {
 	mu   sync.Mutex
@@ -121,6 +147,7 @@ func placeDriver(t *testing.T, tr *memstore.DriverTracker, id string, lat, lng f
 
 func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	svc, tokens, sender, tr := newNotifyTest(t)
+	svc.fallbackBelow = 0 // nearby drivers only; see the fallback test
 	fresh := testNow.Add(-time.Minute)
 	placeDriver(t, tr, "auto", gateLat+0.018, gateLng, fresh) // ~2 km
 	placeDriver(t, tr, "both", gateLat, gateLng+0.005, fresh)
@@ -135,6 +162,7 @@ func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	sender.gone["tok-both-2"] = true
 
 	rb := openRide("ride-1", testNow.Add(3*time.Hour), 4, "automatic")
+	rb.Booking.Details["pickup"] = place("12, Rajpath, India Gate, New Delhi, Delhi 110001, India", gateLat, gateLng)
 	plan, _ := parseTripPlan(rb.Booking.TripType, rb.Booking.Details)
 	plan.ScheduledAt = *rb.Booking.ScheduledAt
 	svc.RideRequested(context.Background(), rb.Booking, plan)
@@ -151,8 +179,11 @@ func TestRideRequested_alertsEligibleNearbyDrivers(t *testing.T) {
 	if !strings.HasPrefix(m.Title, "New ride request · ₹") {
 		t.Errorf("title = %q", m.Title)
 	}
-	if !strings.Contains(m.Body, "Round trip, 4 h") || !strings.Contains(m.Body, "2.0 km away") ||
-		!strings.Contains(m.Body, "12:00 PM") {
+	// The distance is to the rounded pickup (28.61, 77.23), and the lock
+	// screen shows the area, never the house.
+	if !strings.Contains(m.Body, "Round trip, 4 h") || !strings.Contains(m.Body, "2.2 km away") ||
+		!strings.Contains(m.Body, "12:00 PM") || !strings.HasSuffix(m.Body, "\nPickup area: India Gate, New Delhi") ||
+		strings.Contains(m.Body, "Rajpath") {
 		t.Errorf("body = %q", m.Body)
 	}
 	// Worth delivering only until the ride closes to drivers.
@@ -183,6 +214,43 @@ func TestRideRequested_capCountsOnlyEligibleDrivers(t *testing.T) {
 
 	if got := sender.byToken(); len(got) != 1 || got["tok-auto"].Token == "" {
 		t.Fatalf("alerted %v, want the one eligible driver", keys(got))
+	}
+}
+
+// With few drivers online near a ride, every verified driver with the app
+// installed hears about it too — but never one who passed on it, can't
+// drive its gearbox, or isn't cleared.
+func TestRideRequested_fallsBackToEveryVerifiedDriverWhenFewAreNear(t *testing.T) {
+	svc, tokens, sender, tr := newNotifyTest(t)
+	svc.SetDeclines(fakeDeclines{"ride-fb": {"far"}})
+	placeDriver(t, tr, "auto", gateLat, gateLng+0.005, testNow) // the one fresh driver nearby
+	for _, id := range []string{"auto", "both", "stale", "far", "manual", "pending"} {
+		_ = tokens.SaveForDriver(context.Background(), id, "tok-"+id)
+	}
+
+	rb := openRide("ride-fb", testNow.Add(3*time.Hour), 4, "automatic")
+	plan, _ := planOf(rb.Booking)
+	svc.RideRequested(context.Background(), rb.Booking, plan)
+	svc.Wait()
+
+	got := sender.byToken()
+	if len(got) != 3 || got["tok-auto"].Token == "" || got["tok-both"].Token == "" || got["tok-stale"].Token == "" {
+		t.Fatalf("alerted %v, want auto (nearby) plus both and stale (fallback)", keys(got))
+	}
+	if b := got["tok-auto"].Body; !strings.Contains(b, " away") || strings.Contains(b, "Go on duty") {
+		t.Errorf("nearby driver's body = %q", b)
+	}
+	if b := got["tok-both"].Body; strings.Contains(b, " away") || !strings.HasSuffix(b, "\nGo on duty in the app to see it.") {
+		t.Errorf("fallback driver's body = %q", b)
+	}
+
+	// Enough drivers near: no fallback.
+	sender.sent = nil
+	svc.fallbackBelow = 1
+	svc.RideRequested(context.Background(), rb.Booking, plan)
+	svc.Wait()
+	if got := sender.byToken(); len(got) != 1 || got["tok-auto"].Token == "" {
+		t.Errorf("with enough drivers near, alerted %v, want only auto", keys(got))
 	}
 }
 

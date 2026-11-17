@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -71,11 +70,11 @@ var timestampColumn = map[domain.RideStatus]string{
 // lifecycle. Every state change is a single conditional UPDATE, so two
 // drivers racing for the same ride can't both win.
 type DriverRideRepository struct {
-	pool *pgxpool.Pool
+	pool DB
 }
 
-// NewDriverRideRepository wires the repository to a connection pool.
-func NewDriverRideRepository(pool *pgxpool.Pool) *DriverRideRepository {
+// NewDriverRideRepository wires the repository to a pool (or a transaction).
+func NewDriverRideRepository(pool DB) *DriverRideRepository {
 	return &DriverRideRepository{pool: pool}
 }
 
@@ -175,6 +174,27 @@ func (r *DriverRideRepository) Advance(ctx context.Context, id, driverID string,
 	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, from, to, at))
 	if err != nil {
 		return domain.RideBooking{}, rideErr(err, ErrRideStateConflict, "advancing ride")
+	}
+	return rb, nil
+}
+
+// NoShow closes driverID's ride as a customer no-show at at, with reason:
+// cancelled by "no_show", the start code cleared. Only a ride the driver is
+// waiting at the pickup of; [ErrRideStateConflict] otherwise — including
+// when the customer cancelled or the trip started first.
+func (r *DriverRideRepository) NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error) {
+	q := `
+		WITH b AS (
+		    UPDATE bookings
+		    SET status = 'cancelled', cancelled_at = $3, cancelled_by = $4,
+		        cancel_reason = nullif($5, ''), start_otp = NULL
+		    WHERE id = $1 AND driver_id = $2 AND status = 'arrived'
+		    RETURNING *)
+		SELECT ` + rideColumns + `
+		FROM b JOIN users u ON u.id = b.user_id`
+	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at, domain.CancelledByNoShow, reason))
+	if err != nil {
+		return domain.RideBooking{}, rideErr(err, ErrRideStateConflict, "closing a no-show")
 	}
 	return rb, nil
 }
@@ -281,6 +301,20 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		e.Rating = &domain.RatingSummary{Average: *average, Count: rated}
 	}
 	return e, nil
+}
+
+// DeclinedBy lists the drivers who declined ride id or handed it back.
+func (r *DriverRideRepository) DeclinedBy(ctx context.Context, id string) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT driver_id::text FROM booking_declines WHERE booking_id = $1`, id)
+	if err != nil {
+		return nil, rideErr(err, ErrRideNotFound, "listing who declined a ride")
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, rideErr(err, ErrRideNotFound, "listing who declined a ride")
+	}
+	return ids, nil
 }
 
 // execer is what insertDecline needs from a pool or a transaction.

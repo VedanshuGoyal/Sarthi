@@ -14,7 +14,11 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'fakes.dart';
 
-const _driver = Driver(id: 'd1', phoneE164: '+919800000001', name: 'Ravi Kumar');
+const _driver = Driver(
+  id: 'd1',
+  phoneE164: '+919800000001',
+  name: 'Ravi Kumar',
+);
 
 void main() {
   late FakeRidesRepository repo;
@@ -45,6 +49,78 @@ void main() {
 
   setUp(() {
     repo = FakeRidesRepository();
+  });
+
+  testWidgets(
+    'an open request shows only the area, and no plate, until accepted',
+    (tester) async {
+      final request = ride(id: 'r', approximate: true);
+      repo.openRides = [request];
+
+      await pump(tester, request);
+
+      check(find.text('Saket, New Delhi').evaluate()).isNotEmpty();
+      check(find.text('DL01AB1234').evaluate()).isEmpty();
+      check(find.textContaining('The exact address').evaluate()).isNotEmpty();
+      check(find.text('Accept ride').evaluate()).isNotEmpty();
+    },
+  );
+
+  testWidgets('waiting at the pickup: no-show waits for its time', (
+    tester,
+  ) async {
+    final soon = DateTime.now().add(const Duration(minutes: 10));
+    final waiting = ride(
+      id: 'r',
+      status: 'arrived',
+      noShowAt: soon.toUtc().toIso8601String(),
+    );
+    repo.mine = [waiting];
+
+    await pump(tester, waiting);
+
+    check(find.text('Customer not here?').evaluate()).isNotEmpty();
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'No-show'),
+    );
+    check(button.onPressed).isNull();
+  });
+
+  testWidgets('after the wait, the driver can close the ride as a no-show', (
+    tester,
+  ) async {
+    final past = DateTime.now().subtract(const Duration(minutes: 1));
+    final waiting = ride(
+      id: 'r',
+      status: 'arrived',
+      noShowAt: past.toUtc().toIso8601String(),
+    );
+    repo.mine = [waiting];
+
+    await pump(tester, waiting);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'No-show'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close ride'));
+    await tester.pumpAndSettle();
+
+    check(repo.acted.last).equals(('r', RideAction.noShow));
+    check(find.text("Customer didn't come").evaluate()).isNotEmpty();
+    check(find.text('Customer not here?').evaluate()).isEmpty();
+  });
+
+  testWidgets("once the backend hides the customer's number, there's no "
+      'call button', (tester) async {
+    final json = rideJson(id: 'r', status: 'completed', withCustomer: true);
+    (json['customer'] as Map<String, dynamic>)['phoneE164'] = '';
+    final done = Ride.tryParse(json)!;
+    repo.mine = [done];
+
+    await pump(tester, done);
+
+    check(find.text('Asha Kumari').evaluate()).isNotEmpty();
+    check(find.text('Number hidden after the ride').evaluate()).isNotEmpty();
+    check(find.byTooltip('Call customer').evaluate()).isEmpty();
   });
 
   testWidgets('a cancelled ride shows the notice and no action bar', (

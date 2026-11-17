@@ -106,6 +106,50 @@ func TestDriverTracker_StalePresenceFades(t *testing.T) {
 	}
 }
 
+// A driver restored after a restart keeps the time they were last heard
+// from: one who'd gone quiet before it doesn't look freshly online.
+func TestRestore_keepsWhenTheDriverWasLastHeardFrom(t *testing.T) {
+	tr := NewDriverTracker(geo.DefaultResolution)
+	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
+	tr.now = func() time.Time { return now }
+
+	at := &domain.Location{Lat: baseLat, Lng: baseLng}
+	for id, seen := range map[string]time.Time{
+		"fresh": now.Add(-2 * time.Minute),
+		"quiet": now.Add(-40 * time.Minute),
+	} {
+		if err := tr.Restore(id, at, seen); err != nil {
+			t.Fatalf("Restore(%s): %v", id, err)
+		}
+	}
+	if err := tr.Restore("no-gps", nil, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("Restore(no-gps): %v", err)
+	}
+
+	got, err := tr.FindNearbyDrivers(baseLat, baseLng, 1000, now.Add(-10*time.Minute), 0)
+	if err != nil {
+		t.Fatalf("FindNearbyDrivers: %v", err)
+	}
+	if len(got) != 1 || got[0].Driver.ID != "fresh" {
+		t.Errorf("fresh drivers near = %+v, want only fresh", got)
+	}
+	if n := tr.CountSeenSince(now.Add(-10 * time.Minute)); n != 2 {
+		t.Errorf("seen in the last 10 min = %d, want 2 (fresh, no-gps)", n)
+	}
+	if d, ok := tr.Get("no-gps"); !ok || d.Status != domain.DriverStatusAvailable {
+		t.Errorf("no-gps = %+v, %v; want restored as available", d, ok)
+	}
+
+	// A report that arrived after boot wins over the older row.
+	mustUpdate(t, tr, "quiet", baseLat, baseLng+0.045)
+	if err := tr.Restore("quiet", at, now.Add(-40*time.Minute)); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if d, _ := tr.Get("quiet"); d.Location.Lng != baseLng+0.045 {
+		t.Errorf("quiet at %v, want the newer position kept", d.Location)
+	}
+}
+
 func mustUpdate(t *testing.T, tr *DriverTracker, id string, lat, lng float64) {
 	t.Helper()
 	if err := tr.UpdateLocation(id, domain.Location{Lat: lat, Lng: lng}); err != nil {

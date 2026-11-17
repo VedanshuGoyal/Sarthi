@@ -53,6 +53,33 @@ void main() {
     check(b.canCancel).isFalse();
   });
 
+  test('a ride the driver closed as a no-show says so, with why', () {
+    final b = MyBooking.tryParse(
+      bookingJson(
+        status: 'cancelled',
+        cancelledBy: 'no_show',
+        cancelReason: 'The driver waited at the pickup until 10:15 AM',
+      ),
+    )!;
+    check(b.cancellationSummary).equals(
+      'Closed as a no-show · The driver waited at the pickup until 10:15 AM',
+    );
+    final steps = rideTimeline(b);
+    check(steps.last.label).equals('Closed as a no-show');
+    check(steps.last.state).equals(MilestoneState.ended);
+  });
+
+  test("a driver's number the server has hidden is no number at all", () {
+    final json = bookingJson(status: 'completed');
+    (json['driver'] as Map<String, dynamic>)['phoneE164'] = '';
+    final b = MyBooking.tryParse(json)!;
+    check(b.driverName).equals('Ravi Kumar');
+    check(b.driverPhone).isNull();
+    check(
+      MyBooking.tryParse(bookingJson())!.driverPhone,
+    ).equals('+919800000001');
+  });
+
   test('an old payload without the new fields still parses', () {
     final b = MyBooking.tryParse({
       'id': 'old',

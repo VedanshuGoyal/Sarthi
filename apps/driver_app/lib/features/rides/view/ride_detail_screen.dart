@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,6 +67,11 @@ class RideDetailScreen extends ConsumerWidget {
                 const SizedBox(height: Skyline.s16),
                 _Progress(ride: current),
               ],
+              if (current.status == RideStatus.arrived &&
+                  current.noShowAt != null) ...[
+                const SizedBox(height: Skyline.s12),
+                _NoShowCard(ride: current, busy: busy),
+              ],
               if (current.isTrackableAt(DateTime.now()) &&
                   ref.watch(
                     locationShareViewModelProvider.select((vm) => vm.isSharing),
@@ -92,7 +99,12 @@ class RideDetailScreen extends ConsumerWidget {
               if (isRequest) ...[
                 const SizedBox(height: Skyline.s16),
                 Text(
-                  "The customer's name and number appear once you accept.",
+                  current.approximate
+                      ? 'Places show their area for now. The exact address, '
+                            "the car's number plate and the customer's name "
+                            'and number appear once you accept.'
+                      : "The customer's name and number appear once you "
+                            'accept.',
                   style: t.body(size: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -348,15 +360,13 @@ class _CancelledNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  ride.cancelledBy == 'customer'
-                      ? 'Cancelled by customer'
-                      : 'Cancelled',
-                  style: t.title(15, color: t.danger),
-                ),
+                Text(ride.cancelLabel, style: t.title(15, color: t.danger)),
                 if (reason != null && reason.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text('Reason: $reason', style: t.body(size: 13)),
+                  Text(
+                    ride.cancelledBy == 'no_show' ? reason : 'Reason: $reason',
+                    style: t.body(size: 13),
+                  ),
                 ],
                 if (ride.cancelledAt != null) ...[
                   const SizedBox(height: 2),
@@ -367,6 +377,129 @@ class _CancelledNotice extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Customer not here?" — shown while the driver waits at the pickup. From
+/// [Ride.noShowAt] it lets them close the ride as a no-show, so they aren't
+/// left to hand it back and be counted as the one who cancelled; before
+/// then it says when. Rebuilds itself when that moment comes.
+class _NoShowCard extends ConsumerStatefulWidget {
+  const _NoShowCard({required this.ride, required this.busy});
+
+  final Ride ride;
+  final bool busy;
+
+  @override
+  ConsumerState<_NoShowCard> createState() => _NoShowCardState();
+}
+
+class _NoShowCardState extends ConsumerState<_NoShowCard> {
+  Timer? _opens;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_NoShowCard old) {
+    super.didUpdateWidget(old);
+    if (old.ride.noShowAt != widget.ride.noShowAt) _schedule();
+  }
+
+  /// Rebuilds once the no-show becomes possible.
+  void _schedule() {
+    _opens?.cancel();
+    final at = widget.ride.noShowAt;
+    if (at == null) return;
+    final wait = at.difference(DateTime.now());
+    if (wait > Duration.zero) {
+      _opens = Timer(wait, () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _opens?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _closeAsNoShow() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Customer didn't come?"),
+        content: const Text(
+          'This closes the ride as a no-show. The customer is told you '
+          "waited at the pickup, and it isn't counted as you cancelling.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep waiting'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Close ride'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    final error = await ref
+        .read(myRidesViewModelProvider)
+        .act(widget.ride, RideAction.noShow);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error ?? 'Ride closed as a no-show.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    final open = widget.ride.canCloseAsNoShowAt(DateTime.now());
+    return SkylineCard(
+      padding: const EdgeInsets.all(Skyline.s16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.person_off_rounded, color: t.inkMuted, size: 22),
+              const SizedBox(width: Skyline.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Customer not here?', style: t.title(15)),
+                    const SizedBox(height: 2),
+                    Text(
+                      open
+                          ? 'You can close the ride as a no-show.'
+                          : "If they still haven't come by "
+                                '${RideFormat.time(widget.ride.noShowAt!)}, '
+                                'you can close the ride as a no-show.',
+                      style: t.body(size: 12.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Skyline.s12),
+          OutlinedButton(
+            onPressed: open && !widget.busy ? _closeAsNoShow : null,
+            child: const Text('No-show'),
           ),
         ],
       ),
@@ -406,6 +539,8 @@ class _CustomerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
     final initial = customer.name.isEmpty ? '?' : customer.name[0];
+    // The backend blanks the number two hours after the ride ends.
+    final hasPhone = customer.phoneE164.isNotEmpty;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Row(
@@ -425,7 +560,9 @@ class _CustomerCard extends StatelessWidget {
               children: [
                 Text(customer.name, style: t.title(15)),
                 Text(
-                  RideFormat.phone(customer.phoneE164),
+                  hasPhone
+                      ? RideFormat.phone(customer.phoneE164)
+                      : 'Number hidden after the ride',
                   style: t.body(size: 13),
                 ),
                 Text(
@@ -438,24 +575,25 @@ class _CustomerCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton.filled(
-            tooltip: 'Call customer',
-            style: IconButton.styleFrom(
-              backgroundColor: t.primarySoft,
-              foregroundColor: t.primaryText,
-            ),
-            onPressed: () async {
-              final ok = await launchUrl(
-                Uri(scheme: 'tel', path: customer.phoneE164),
-              );
-              if (!ok && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Couldn't start a call.")),
+          if (hasPhone)
+            IconButton.filled(
+              tooltip: 'Call customer',
+              style: IconButton.styleFrom(
+                backgroundColor: t.primarySoft,
+                foregroundColor: t.primaryText,
+              ),
+              onPressed: () async {
+                final ok = await launchUrl(
+                  Uri(scheme: 'tel', path: customer.phoneE164),
                 );
-              }
-            },
-            icon: const Icon(Icons.call_rounded),
-          ),
+                if (!ok && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Couldn't start a call.")),
+                  );
+                }
+              },
+              icon: const Icon(Icons.call_rounded),
+            ),
         ],
       ),
     );
@@ -499,17 +637,19 @@ class _CarCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              border: Border.all(color: t.outline),
-              borderRadius: BorderRadius.circular(8),
+          // A request's car has no plate until the ride is accepted.
+          if (car.registration.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                border: Border.all(color: t.outline),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                car.registration,
+                style: t.figure(14, weight: FontWeight.w700),
+              ),
             ),
-            child: Text(
-              car.registration,
-              style: t.figure(14, weight: FontWeight.w700),
-            ),
-          ),
         ],
       ),
     );

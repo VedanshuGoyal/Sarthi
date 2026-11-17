@@ -84,6 +84,19 @@ void main() {
       check(repo.duty).deepEquals([true, false]);
     });
 
+    test('taken off duty by the backend: offline, without telling it '
+        'again', () async {
+      await vm.setOnline(true);
+      vm.markOffDuty();
+
+      check(vm.isOnline).isFalse();
+      check(vm.requests).isEmpty();
+      check(repo.duty).deepEquals([true]);
+      // Polls stop: a refresh while offline reads nothing.
+      await vm.refresh(locate: true);
+      check(repo.duty).deepEquals([true]);
+    });
+
     test('accepting hands the ride over and drops it from the feed', () async {
       await vm.setOnline(true);
       final error = await vm.accept(vm.requests.first);
@@ -104,6 +117,23 @@ void main() {
       check(error).equals('This ride is no longer available.');
       check(vm.requests.map((r) => r.id)).deepEquals(['b']);
       check(handedOver).isEmpty();
+    });
+
+    test('a ride "no longer available" that the driver holds counts as '
+        'accepted', () async {
+      // The first tap went through but its reply was lost; the retry hears
+      // "no longer available" from a server that isn't replay-safe.
+      repo.failures[RideAction.accept] = const RidesException(
+        'This ride is no longer available.',
+        code: 'ride_unavailable',
+      );
+      repo.mine = [ride(id: 'a', status: 'accepted')];
+      await vm.setOnline(true);
+      final error = await vm.accept(vm.requests.first);
+
+      check(error).isNull();
+      check(handedOver.single.id).equals('a');
+      check(vm.requests.map((r) => r.id)).deepEquals(['b']);
     });
 
     test('a clash keeps the ride and passes the reason on', () async {
@@ -204,6 +234,35 @@ void main() {
       check(vm.byId('r')!.status).equals(RideStatus.completed);
       check(vm.completed).length.equals(1);
       check(earningsRefreshed).equals(1);
+    });
+
+    test('a step that had already happened is not reported as an '
+        'error', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'accepted')];
+      final vm = MyRidesViewModel(repository: repo);
+      await vm.load();
+
+      // The first "I've arrived" landed; its reply didn't. The retry is
+      // refused by a server that isn't replay-safe, and the reload shows
+      // the ride already at the pickup.
+      repo
+        ..failures[RideAction.arrive] = const RidesException(
+          "This ride can't make that change right now.",
+          code: 'ride_state',
+        )
+        ..mine = [ride(id: 'r', status: 'arrived')];
+      check(await vm.act(vm.byId('r')!, RideAction.arrive)).isNull();
+      check(vm.byId('r')!.status).equals(RideStatus.arrived);
+
+      // A refusal for any other reason still says so.
+      repo.failures[RideAction.complete] = const RidesException(
+        "This ride can't make that change right now.",
+        code: 'ride_state',
+      );
+      check(
+        await vm.act(vm.byId('r')!, RideAction.complete),
+      ).equals("This ride can't make that change right now.");
     });
 
     test('starting sends the code and surfaces a wrong one', () async {

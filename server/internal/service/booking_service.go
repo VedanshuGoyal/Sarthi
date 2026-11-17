@@ -300,6 +300,17 @@ func planOf(b domain.Booking) (tripPlan, error) {
 	return plan, nil
 }
 
+// driverContact is the driver of booking b as the customer sees them at
+// now: their number goes once the ride has been over for contactLifetime.
+func driverContact(d *domain.RideDriver, b domain.Booking, now time.Time) *domain.RideDriver {
+	if d == nil || !contactExpired(b, now) {
+		return d
+	}
+	hidden := *d
+	hidden.PhoneE164 = ""
+	return &hidden
+}
+
 // toCustomerBooking renders a stored booking for the customer app. ok is
 // false for one whose details can't be read.
 func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time) (domain.CustomerBooking, bool) {
@@ -328,7 +339,7 @@ func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time
 		Hours:            plan.Hours,
 		EstimatedMinutes: plan.EstimatedMinutes,
 		Car:              plan.Car,
-		Driver:           ub.Driver,
+		Driver:           driverContact(ub.Driver, b, now),
 		CreatedAt:        b.CreatedAt,
 		AcceptedAt:       b.AcceptedAt,
 		ArrivedAt:        b.ArrivedAt,
