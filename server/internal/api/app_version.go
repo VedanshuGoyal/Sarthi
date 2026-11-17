@@ -93,7 +93,7 @@ func exemptFromBuildGate(path string) bool {
 // app's minimum. Build 0 (a debug run) is never blocked, and nor is a request
 // that doesn't identify itself; those are only counted (see legacyCounter).
 func requireMinBuild(next http.Handler, policy AppPolicy) http.Handler {
-	legacy := newLegacyCounter(time.Minute)
+	legacy := newLegacyCounter(time.Hour)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if exemptFromBuildGate(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -138,9 +138,10 @@ func writeUpdateRequired(w http.ResponseWriter, app, downloadURL string) {
 }
 
 // legacyCounter counts requests that carry no X-App/X-Build, guessing the app
-// from the path, and logs the tally at debug level at most once per interval
-// rather than a line per request. It's how the owner can tell when the last
-// pre-contract APKs have gone quiet.
+// from the path, and logs the tally at most once per interval rather than a
+// line per request. It's how the owner can tell when the last pre-contract
+// APKs have gone quiet, so it logs at info: the server runs slog's default
+// handler, which drops debug lines.
 type legacyCounter struct {
 	mu           sync.Mutex
 	every        time.Duration
@@ -170,13 +171,13 @@ func (c *legacyCounter) add(driver bool) {
 	if now.Sub(c.since) < c.every {
 		return
 	}
-	slog.Debug("app version: requests without X-App/X-Build",
+	slog.Info("app version: requests without X-App/X-Build",
 		"userApp", c.user, "driverApp", c.driver,
 		"window", now.Sub(c.since).Round(time.Second).String())
 	c.user, c.driver, c.since = 0, 0, now
 }
 
-// counts reports the tally since the last debug line.
+// counts reports the tally since the last report.
 func (c *legacyCounter) counts() (user, driver int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
