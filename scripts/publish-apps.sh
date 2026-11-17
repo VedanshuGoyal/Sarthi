@@ -39,10 +39,15 @@ cp "$USER_APK_SRC" "$DIST/$USER_APK"
 cp "$DRIVER_APK_SRC" "$DIST/$DRIVER_APK"
 cp "$REPO_ROOT/apps/user_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-icon.png"
 cp "$REPO_ROOT/apps/driver_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-driver-icon.png"
-mkdir -p "$DIST/terms" "$DIST/privacy"
-cp "$SRC/legal/terms.html" "$DIST/terms/index.html"
-cp "$SRC/legal/privacy.html" "$DIST/privacy/index.html"
-grep -q '\[\[' "$SRC"/legal/*.html && echo "⚠️  Legal pages still have [[placeholders]]: fill them before publishing." >&2
+# Terms and Privacy (linked from both apps' sign-up). Drafts still holding
+# [[placeholders]] are never published: they are skipped with a warning.
+for page in terms privacy; do
+  if grep -q '\[\[' "$SRC/legal/$page.html"; then
+    echo "⚠️  Not publishing /$page: scripts/apps-page/legal/$page.html still has [[placeholders]]." >&2
+  else
+    mkdir -p "$DIST/$page" && cp "$SRC/legal/$page.html" "$DIST/$page/index.html"
+  fi
+done
 
 QR_SVG="$(qrencode -t SVG -m 1 --foreground=0B2239 -o - "$PAGE_URL" | sed '1{/^<?xml/d}')"
 
