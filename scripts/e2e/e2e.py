@@ -237,7 +237,11 @@ def main():
     start2 = (dt.datetime.now(IST) + dt.timedelta(hours=3)).replace(second=0, microsecond=0)
     s, j, _ = req("POST", "/me/bookings", round_trip(start2, 1, car_payload), token=ta,
                   headers={"Idempotency-Key": str(uuid.uuid4())})
-    check(S, "new booking -> 409 payment_due", s == 409 and j.get("code") == "payment_due" and j.get("bookingId") == b1, (s, j))
+    check(S, "new booking while a ride is unpaid -> 202 (not blocked)", s == 202, (s, j))
+    b2 = j.get("id")
+    s, j, _ = req("GET", "/me/bookings", token=ta)
+    nb = next((b for b in j.get("bookings", []) if b["id"] == b2), {})
+    check(S, "new booking carries the unpaid fare", nb.get("carriedPaise") == bk.get("farePaise"), (nb.get("carriedPaise"), bk.get("farePaise")))
     # erasure while unpaid (step 8 check)
     s, j, _ = req("DELETE", "/me/account", token=ta)
     check("8", "erase customer with unpaid ride -> 409", s == 409 and j.get("code") == "account_busy", (s, j))
@@ -262,10 +266,9 @@ def main():
     check(S, "admin payouts/due lists driver", s == 200 and len(me) == 1, (s, j))
     if me:
         check(S, "payout amount = net share", me[0].get("amountPaise") == net, (me[0], net))
-    s, j, _ = req("POST", "/me/bookings", round_trip(start2, 1, car_payload), token=ta,
-                  headers={"Idempotency-Key": str(uuid.uuid4())})
-    check(S, "booking after paying -> 202", s == 202, (s, j))
-    b2 = j.get("id")
+    s, j, _ = req("GET", "/me/bookings", token=ta)
+    nb = next((b for b in j.get("bookings", []) if b["id"] == b2), {})
+    check(S, "after paying, nothing carried", not nb.get("carriedPaise"), nb.get("carriedPaise"))
 
     # ---- 7. ops
     S = "7"
@@ -347,16 +350,11 @@ def main():
     start3 = (dt.datetime.now(IST) + dt.timedelta(hours=5)).replace(second=0, microsecond=0)
     s, j, _ = req("POST", "/me/bookings", round_trip(start3, 1, car_payload), token=ta,
                   headers={"Idempotency-Key": str(uuid.uuid4())})
-    check(S, "unpaid fee blocks the next booking -> 409 payment_due",
-          s == 409 and j.get("code") == "payment_due" and j.get("bookingId") == c1, (s, j))
-    s, j, _ = req("POST", f"/me/bookings/{c1}/payment", token=ta)
-    check(S, "fee checkout is for 5000", s == 200 and j.get("checkout", {}).get("amountPaise") == 5000, (s, j))
-    s, j, _ = req("POST", f"/me/bookings/{c1}/payment/sync", token=ta)
-    check(S, "fee sync -> paid", s == 200 and j.get("booking", {}).get("paymentStatus") == "paid", (s, j))
-    s, j, _ = req("GET", f"/driver/rides", token=td)
-    dr = next((r for r in (j.get("rides", []) if isinstance(j, dict) else []) if r.get("id") == c1), {})
-    check(S, "driver sees the fee and their share", dr.get("cancellationFeePaise") == 5000
-          and dr.get("paymentStatus") == "paid" and dr.get("sharePaise") == 4350, dr)
+    nxt = j.get("id")
+    check(S, "unpaid fee doesn't block the next booking -> 202", s == 202, (s, j))
+    check(S, "next booking carries the fee", mine(nxt).get("carriedPaise") == 5000, mine(nxt).get("carriedPaise"))
+    # (The fake gateway completes any order it's asked about, so the fee is
+    # paid below, carried into the next trip's payment.)
 
     e1 = at_pickup(3, 58)
     booked = mine(e1).get("farePaise")
@@ -372,10 +370,34 @@ def main():
     check(S, "end early -> completed, charged one started hour, booked fare kept",
           s == 200 and eb.get("status") == "completed" and eb.get("farePaise") == want
           and eb.get("bookedFarePaise") == booked and eb.get("paymentStatus") == "due", (s, j, want, booked))
+    check(S, "ended trip carries the unpaid fee", eb.get("carriedPaise") == 5000, eb.get("carriedPaise"))
     s, j, _ = req("POST", f"/me/bookings/{e1}/payment", token=ta)
-    check(S, "ended trip checkout is the charge", s == 200 and j.get("checkout", {}).get("amountPaise") == want, (s, j))
+    check(S, "ended trip checkout = its charge + the carried fee",
+          s == 200 and j.get("checkout", {}).get("amountPaise") == want + 5000, (s, j, want))
     s, j, _ = req("POST", f"/me/bookings/{e1}/payment/sync", token=ta)
     check(S, "ended trip paid", s == 200 and j.get("booking", {}).get("paymentStatus") == "paid", (s, j))
+    check(S, "the carried fee is paid by the same payment", mine(c1).get("paymentStatus") == "paid", mine(c1))
+    s, j, _ = req("GET", f"/driver/rides", token=td)
+    dr = next((r for r in (j.get("rides", []) if isinstance(j, dict) else []) if r.get("id") == c1), {})
+    check(S, "driver sees the fee and their share", dr.get("cancellationFeePaise") == 5000
+          and dr.get("paymentStatus") == "paid" and dr.get("sharePaise") == 4350, dr)
+    check(S, "nothing carried any more", not mine(nxt).get("carriedPaise"), mine(nxt).get("carriedPaise"))
+
+    # Overtime: a 1 h trip that has run 1 h 30 min (start moved back in the
+    # DB) is charged two started hours when the driver completes it.
+    o1 = at_pickup(1, 64)
+    booked = mine(o1).get("farePaise")
+    s, j, _ = req("POST", f"/driver/rides/{o1}/start", {"otp": mine(o1).get("startOtp")}, token=td)
+    check(S, "1 h trip started", s == 200, (s, j))
+    psql(f"UPDATE bookings SET started_at = now() - interval '90 minutes' WHERE id = '{o1}'")
+    started = dt.datetime.now(IST) - dt.timedelta(minutes=90)
+    s, j, _ = req("POST", f"/driver/rides/{o1}/complete", token=td)
+    ride = j.get("ride", {}) if isinstance(j, dict) else {}
+    want = max(booked, (tariff(2) + night(started, 2)) * 100)
+    check(S, "overtime: driver completes -> two started hours charged, booked fare kept",
+          s == 200 and ride.get("farePaise") == want and ride.get("bookedFarePaise") == booked, (s, j, want, booked))
+    check(S, "customer sees the overtime fare due", mine(o1).get("farePaise") == want
+          and mine(o1).get("paymentStatus") == "due", mine(o1))
 
 
 if __name__ == "__main__":

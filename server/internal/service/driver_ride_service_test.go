@@ -119,6 +119,20 @@ func (f *fakeRideStore) Advance(_ context.Context, id, driverID string, from, to
 	return *rb, nil
 }
 
+func (f *fakeRideStore) Complete(_ context.Context, id, driverID string, farePaise int64, at time.Time) (domain.RideBooking, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rb, ok := f.rides[id]
+	if !ok || rb.Booking.DriverID != driverID || rb.Booking.Status != domain.RideStatusInProgress {
+		return domain.RideBooking{}, repository.ErrRideStateConflict
+	}
+	if farePaise != rb.Booking.FarePaise {
+		rb.Booking.BookedFarePaise = rb.Booking.FarePaise
+	}
+	rb.Booking.Status, rb.Booking.CompletedAt, rb.Booking.FarePaise = domain.RideStatusCompleted, &at, farePaise
+	return *rb, nil
+}
+
 func (f *fakeRideStore) NoShow(_ context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

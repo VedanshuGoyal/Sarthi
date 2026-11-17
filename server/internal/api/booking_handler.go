@@ -40,14 +40,6 @@ type bookingResponse struct {
 	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
-// paymentDueResponse is the 409 for a customer who must pay for a completed
-// ride (BookingID) before booking another.
-type paymentDueResponse struct {
-	Error     string `json:"error"`
-	Code      string `json:"code"`
-	BookingID string `json:"bookingId"`
-}
-
 // bookingsResponse is the customer's bookings list.
 type bookingsResponse struct {
 	Bookings []domain.CustomerBooking `json:"bookings"`
@@ -101,8 +93,8 @@ func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Submit handles POST /me/bookings. An Idempotency-Key header (the app's,
 // per booking attempt) makes a retry return the booking the first try made:
-// 202 for a new booking, 200 with "duplicate": true for a repeat. A
-// customer with an unpaid ride gets 409 payment_due naming it.
+// 202 for a new booking, 200 with "duplicate": true for a repeat. What the
+// customer still owes is collected with their next payment, not here.
 func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	var req bookingRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -112,12 +104,6 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 
 	booking, duplicate, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details,
 		r.Header.Get("Idempotency-Key"))
-	if due, ok := errors.AsType[*service.PaymentDueError](err); ok {
-		writeJSON(w, http.StatusConflict, paymentDueResponse{
-			Error: due.Error(), Code: "payment_due", BookingID: due.BookingID,
-		})
-		return
-	}
 	if errors.Is(err, service.ErrFareMismatch) {
 		writeErrorCode(w, http.StatusBadRequest, "fare_mismatch", err.Error(), 0)
 		return

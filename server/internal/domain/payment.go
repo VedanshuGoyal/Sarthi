@@ -31,18 +31,46 @@ type PaymentOrder struct {
 	UTR           string
 	ExpiresAt     time.Time
 	CreatedAt     time.Time
+
+	// Items are the bookings the order pays and each one's part of
+	// AmountPaise: the booking tapped (BookingID) and any other the customer
+	// still owes for, carried into this payment. Empty on an order read
+	// back from the store; the store fills it in where it needs it.
+	Items []PaymentItem
 }
 
-// SettleOutcome is what recording a completed order did to its booking.
+// PaymentItem is one booking a payment order pays, and how much of it.
+type PaymentItem struct {
+	BookingID   string
+	AmountPaise int64
+}
+
+// Due is one thing a customer still owes for: an unpaid completed ride or
+// cancellation fee.
+type Due struct {
+	BookingID   string
+	AmountPaise int64
+}
+
+// SettleResult is what recording a completed order did: its outcome, the
+// bookings this call marked paid, and the ids of bookings it covered that
+// something else had paid first — money to refund by hand.
+type SettleResult struct {
+	Outcome     SettleOutcome
+	Paid        []Booking
+	AlreadyPaid []string
+}
+
+// SettleOutcome is what recording a completed order did to its bookings.
 type SettleOutcome int
 
 const (
-	// SettledNow: the order completed and paid its booking.
+	// SettledNow: the order completed and paid its bookings.
 	SettledNow SettleOutcome = iota
 	// SettledAlready: another call had already recorded this order.
 	SettledAlready
-	// SettledPaidTwice: the order completed, but another order had already
-	// paid the booking — money to refund by hand.
+	// SettledPaidTwice: the order completed, but something else had already
+	// paid one or more of its bookings — money to refund by hand.
 	SettledPaidTwice
 )
 

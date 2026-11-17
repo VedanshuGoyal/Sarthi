@@ -63,16 +63,18 @@ type PaymentGateway interface {
 type PaymentStore interface {
 	InsertOrder(ctx context.Context, o domain.PaymentOrder) error
 	FindOrder(ctx context.Context, merchantOrderID string) (domain.PaymentOrder, error)
-	PendingForBooking(ctx context.Context, bookingID string) ([]domain.PaymentOrder, error)
+	OrderItems(ctx context.Context, merchantOrderID string) ([]domain.PaymentItem, error)
+	PendingForBookings(ctx context.Context, bookingIDs []string) ([]domain.PaymentOrder, error)
 	PendingSince(ctx context.Context, from, to time.Time) ([]domain.PaymentOrder, error)
 	FailOrder(ctx context.Context, merchantOrderID string, st domain.GatewayOrderStatus, at time.Time) error
-	CompleteOrder(ctx context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commissionPaise int64, at time.Time) (domain.SettleOutcome, domain.Booking, error)
+	CompleteOrder(ctx context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commissionBP int64, at time.Time) (domain.SettleResult, error)
 }
 
-// CustomerBookingFinder reads one of a customer's bookings
-// (repository.BookingRepository).
+// CustomerBookingFinder reads one of a customer's bookings and what they
+// still owe for (repository.BookingRepository).
 type CustomerBookingFinder interface {
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
+	UnpaidDues(ctx context.Context, userID string) ([]domain.Due, error)
 }
 
 // PaymentAlerter tells a driver their customer paid (NotifyService).
@@ -115,11 +117,15 @@ func (s *PaymentService) Enabled() bool { return s.gateway != nil }
 
 // Checkout opens a UPI checkout for userID's completed booking — or the fee
 // of one cancelled at the pickup — and returns what the app hands the
-// gateway's SDK. A checkout the customer already paid through is found
-// first, so paying twice is refused with
-// [ErrAlreadyPaid] rather than charged; one still open at the gateway (a
-// collect request waiting on the customer's UPI app, say) is handed out
-// again instead of opening a second payable order.
+// gateway's SDK. Everything else the customer still owes for (an unpaid
+// ride or fee) is carried into the same payment: the order pays each of
+// those bookings its own part.
+//
+// Checkouts from earlier taps are found first: one that went through means
+// paying again is refused with [ErrAlreadyPaid] (or what is left is totalled again);
+// one still open at the gateway for exactly the same bookings (a collect
+// request waiting on the customer's UPI app, say) is handed out again
+// instead of opening a second payable order.
 func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string) (domain.PaymentCheckout, error) {
 	if s.gateway == nil {
 		return domain.PaymentCheckout{}, ErrPaymentsOff
@@ -132,24 +138,40 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 	if b.PaymentStatus() == "" {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}
-	paid := b.PaidAt != nil
-	var open []domain.PaymentOrder
-	if !paid {
-		// A checkout from an earlier tap may have gone through meanwhile.
-		if paid, open, err = s.syncBooking(ctx, b.ID); err != nil {
+	if b.PaidAt != nil {
+		return domain.PaymentCheckout{}, ErrAlreadyPaid
+	}
+	dues, err := s.bookings.UnpaidDues(ctx, userID)
+	if err != nil {
+		return domain.PaymentCheckout{}, err
+	}
+	// A checkout from an earlier tap may have gone through meanwhile.
+	paid, open, err := s.syncOrders(ctx, dueIDs(b.ID, dues))
+	if err != nil {
+		return domain.PaymentCheckout{}, err
+	}
+	if paid {
+		if ub, err = s.bookings.FindForUser(ctx, bookingID, userID); err != nil {
+			return domain.PaymentCheckout{}, err
+		}
+		if b = ub.Booking; b.PaidAt != nil {
+			return domain.PaymentCheckout{}, ErrAlreadyPaid
+		}
+		if dues, err = s.bookings.UnpaidDues(ctx, userID); err != nil {
 			return domain.PaymentCheckout{}, err
 		}
 	}
-	if paid {
-		return domain.PaymentCheckout{}, ErrAlreadyPaid
+	items := checkoutItems(b, dues)
+	var amount int64
+	for _, it := range items {
+		amount += it.AmountPaise
 	}
-	amount := b.AmountDue()
-	if amount < minPaymentPaise {
+	if b.AmountDue() <= 0 || amount < minPaymentPaise {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}
 
 	now := s.now()
-	if o, ok := reusableCheckout(open, amount, now); ok {
+	if o, ok := reusableCheckout(open, items, now); ok {
 		slog.InfoContext(ctx, "payment: checkout reopened",
 			"bookingId", b.ID, "userId", userID, "merchantOrderId", o.MerchantOrderID, "amountPaise", amount)
 		return s.checkoutFor(o), nil
@@ -167,13 +189,38 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 		ProviderOrderID: order.ProviderOrderID,
 		CheckoutToken:   order.Token,
 		ExpiresAt:       order.ExpiresAt,
+		Items:           items,
 	}
 	if err := s.store.InsertOrder(ctx, o); err != nil {
 		return domain.PaymentCheckout{}, err
 	}
 	slog.InfoContext(ctx, "payment: checkout opened",
-		"bookingId", b.ID, "userId", userID, "merchantOrderId", merchantOrderID, "amountPaise", amount)
+		"bookingId", b.ID, "userId", userID, "merchantOrderId", merchantOrderID, "amountPaise", amount,
+		"carriedBookings", len(items)-1)
 	return s.checkoutFor(o), nil
+}
+
+// dueIDs is bookingID and every booking in dues, once each.
+func dueIDs(bookingID string, dues []domain.Due) []string {
+	ids := []string{bookingID}
+	for _, d := range dues {
+		if d.BookingID != bookingID {
+			ids = append(ids, d.BookingID)
+		}
+	}
+	return ids
+}
+
+// checkoutItems is what a payment for b collects: b's own amount first,
+// then everything else in dues, oldest first.
+func checkoutItems(b domain.Booking, dues []domain.Due) []domain.PaymentItem {
+	items := []domain.PaymentItem{{BookingID: b.ID, AmountPaise: b.AmountDue()}}
+	for _, d := range dues {
+		if d.BookingID != b.ID && d.AmountPaise > 0 {
+			items = append(items, domain.PaymentItem{BookingID: d.BookingID, AmountPaise: d.AmountPaise})
+		}
+	}
+	return items
 }
 
 // checkoutFor is what the app needs to open order o.
@@ -191,13 +238,13 @@ func (s *PaymentService) checkoutFor(o domain.PaymentOrder) domain.PaymentChecko
 }
 
 // reusableCheckout picks, from orders the gateway says are still open, the
-// one to hand out again: for amount, with its token on file and at least
-// checkoutReuseMargin to run. The latest-expiring wins.
-func reusableCheckout(open []domain.PaymentOrder, amount int64, now time.Time) (domain.PaymentOrder, bool) {
+// one to hand out again: paying exactly items, with its token on file and
+// at least checkoutReuseMargin to run. The latest-expiring wins.
+func reusableCheckout(open []domain.PaymentOrder, items []domain.PaymentItem, now time.Time) (domain.PaymentOrder, bool) {
 	var best domain.PaymentOrder
 	found := false
 	for _, o := range open {
-		if o.AmountPaise != amount || o.CheckoutToken == "" || o.ExpiresAt.Before(now.Add(checkoutReuseMargin)) {
+		if !sameItems(o.Items, items) || o.CheckoutToken == "" || o.ExpiresAt.Before(now.Add(checkoutReuseMargin)) {
 			continue
 		}
 		if !found || o.ExpiresAt.After(best.ExpiresAt) {
@@ -205,6 +252,24 @@ func reusableCheckout(open []domain.PaymentOrder, amount int64, now time.Time) (
 		}
 	}
 	return best, found
+}
+
+// sameItems reports whether a and b pay the same bookings the same amounts,
+// in any order.
+func sameItems(a, b []domain.PaymentItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	want := make(map[string]int64, len(b))
+	for _, it := range b {
+		want[it.BookingID] = it.AmountPaise
+	}
+	for _, it := range a {
+		if amount, ok := want[it.BookingID]; !ok || amount != it.AmountPaise {
+			return false
+		}
+	}
+	return true
 }
 
 // Sync re-checks userID's booking's open checkouts with the gateway — the
@@ -220,7 +285,7 @@ func (s *PaymentService) Sync(ctx context.Context, userID, bookingID string) err
 	if ub.Booking.PaidAt != nil {
 		return nil
 	}
-	_, _, err = s.syncBooking(ctx, bookingID)
+	_, _, err = s.syncOrders(ctx, []string{bookingID})
 	return err
 }
 
@@ -232,7 +297,7 @@ func (s *PaymentService) SyncBooking(ctx context.Context, bookingID string) erro
 	if s.gateway == nil {
 		return nil
 	}
-	_, _, err := s.syncBooking(ctx, bookingID)
+	_, _, err := s.syncOrders(ctx, []string{bookingID})
 	return err
 }
 
@@ -301,10 +366,11 @@ func (s *PaymentService) RunSweeper(ctx context.Context) {
 	}
 }
 
-// syncBooking settles bookingID's pending orders and reports whether one of
-// them paid it, and which are still open at the gateway.
-func (s *PaymentService) syncBooking(ctx context.Context, bookingID string) (bool, []domain.PaymentOrder, error) {
-	orders, err := s.store.PendingForBooking(ctx, bookingID)
+// syncOrders settles the pending orders that pay any of bookingIDs and
+// reports whether one of them completed, and which are still open at the
+// gateway — with their items, for reuse.
+func (s *PaymentService) syncOrders(ctx context.Context, bookingIDs []string) (bool, []domain.PaymentOrder, error) {
+	orders, err := s.store.PendingForBookings(ctx, bookingIDs)
 	if err != nil {
 		return false, nil, err
 	}
@@ -317,6 +383,12 @@ func (s *PaymentService) syncBooking(ctx context.Context, bookingID string) (boo
 		}
 		paid = paid || state == domain.PaymentCompleted
 		if stillOpen {
+			if o.Items, err = s.store.OrderItems(ctx, o.MerchantOrderID); err != nil {
+				return paid, nil, err
+			}
+			if len(o.Items) == 0 {
+				o.Items = []domain.PaymentItem{{BookingID: o.BookingID, AmountPaise: o.AmountPaise}}
+			}
 			open = append(open, o)
 		}
 	}
@@ -348,19 +420,19 @@ func (s *PaymentService) settle(ctx context.Context, o domain.PaymentOrder) (dom
 			"merchantOrderId", o.MerchantOrderID, "want", o.AmountPaise, "got", st.AmountPaise)
 		return domain.PaymentPending, false, nil
 	}
-	outcome, b, err := s.store.CompleteOrder(ctx, o, st, s.commission(st.AmountPaise), now)
+	res, err := s.store.CompleteOrder(ctx, o, st, s.commissionBP, now)
 	if err != nil {
 		return domain.PaymentPending, false, err
 	}
-	switch outcome {
-	case domain.SettledPaidTwice:
-		slog.ErrorContext(ctx, "payment: ride paid twice; refund this order by hand",
-			"merchantOrderId", o.MerchantOrderID, "bookingId", o.BookingID,
+	if res.Outcome == domain.SettledPaidTwice {
+		slog.ErrorContext(ctx, "payment: ride paid twice; refund this order's part for them by hand",
+			"merchantOrderId", o.MerchantOrderID, "bookingId", o.BookingID, "alreadyPaid", res.AlreadyPaid,
 			"transactionId", st.TransactionID, "utr", st.UTR, "amountPaise", st.AmountPaise)
-	case domain.SettledNow:
+	}
+	for _, b := range res.Paid {
 		slog.InfoContext(ctx, "payment: ride paid",
-			"bookingId", b.ID, "merchantOrderId", o.MerchantOrderID, "amountPaise", st.AmountPaise,
-			"mode", st.PaymentMode, "utr", st.UTR)
+			"bookingId", b.ID, "merchantOrderId", o.MerchantOrderID, "amountPaise", b.PaidPaise,
+			"orderAmountPaise", st.AmountPaise, "mode", st.PaymentMode, "utr", st.UTR)
 		if s.alerts != nil && b.DriverID != "" {
 			s.alerts.PaymentReceived(ctx, b)
 		}

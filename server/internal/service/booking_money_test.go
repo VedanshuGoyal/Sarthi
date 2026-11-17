@@ -19,41 +19,49 @@ func (a *requestAlerts) RideRequested(_ context.Context, b domain.Booking, _ tri
 func (a *requestAlerts) RideCancelled(context.Context, domain.Booking, tripPlan)  {}
 func (a *requestAlerts) RideEndedEarly(context.Context, domain.Booking, tripPlan) {}
 
-// A customer with a completed ride still to pay is refused before anything
-// is read or stored, with the ride to pay named.
-func TestBookingService_Record_refusedWhileARideIsUnpaid(t *testing.T) {
-	store := &fakeBookingStore{unpaid: "done-1"}
+// HUMAN REVIEW REQUIRED: payments. A customer who owes for a ride or fee
+// can still book; what they owe shows as carried on the new booking and on
+// the one still due, to be collected with the next payment.
+func TestBookingService_unpaidRideIsCarriedNotBlocking(t *testing.T) {
+	due := customerRide("done-1", domain.RideStatusCompleted, "d1")
+	due.Booking.FarePaise = 44000
+	fee := customerRide("fee-1", domain.RideStatusCancelled, "d1")
+	fee.Booking.CancellationFeePaise = domain.CancellationFeePaise
+	store := &fakeBookingStore{
+		listed: []domain.UserBooking{due, fee, customerRide("next", domain.RideStatusAccepted, "d2"),
+			customerRide("gone", domain.RideStatusCancelled, "")},
+		dues: []domain.Due{{BookingID: "done-1", AmountPaise: 44000}, {BookingID: "fee-1", AmountPaise: 5000}},
+	}
 	svc := newTestBookingService(store)
+	ctx := context.Background()
 
-	_, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "k1")
-	if !errors.Is(err, ErrPaymentDue) {
-		t.Fatalf("err = %v, want ErrPaymentDue", err)
+	if _, _, err := svc.Record(ctx, "u1", TripRoundTrip, roundTripDetails(), "k1"); err != nil || !store.insertHit {
+		t.Fatalf("Record: %v (stored %v), want the booking stored", err, store.insertHit)
 	}
-	due, ok := errors.AsType[*PaymentDueError](err)
-	if !ok || due.BookingID != "done-1" {
-		t.Errorf("err = %#v, want a PaymentDueError naming done-1", err)
+	got, err := svc.ListMine(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if store.insertHit {
-		t.Error("a booking was stored for a customer who owes a ride")
+	carried := map[string]int64{}
+	for _, b := range got {
+		carried[b.ID] = b.CarriedPaise
 	}
-	// Rides under the gateway's minimum can't be paid, so can't block.
-	if store.unpaidMin != minPaymentPaise {
-		t.Errorf("unpaid check used minimum %d, want %d", store.unpaidMin, minPaymentPaise)
+	// Each due booking carries the other; the upcoming ride carries both;
+	// a free cancellation carries nothing.
+	want := map[string]int64{"done-1": 5000, "fee-1": 44000, "next": 49000, "gone": 0}
+	for id, w := range want {
+		if carried[id] != w {
+			t.Errorf("%s: carriedPaise = %d, want %d", id, carried[id], w)
+		}
 	}
-}
+	if one, _ := svc.mine(ctx, "u1", "next"); one.CarriedPaise != 49000 {
+		t.Errorf("one booking: carriedPaise = %d, want 49000", one.CarriedPaise)
+	}
 
-// With no payment gateway the customer can't pay in the app, so an unpaid
-// ride doesn't stop them booking again.
-func TestBookingService_Record_paymentsOffSkipsTheUnpaidCheck(t *testing.T) {
-	store := &fakeBookingStore{unpaid: "done-1"}
-	svc := newTestBookingService(store)
+	// Payments off: nothing can be paid, so nothing is carried.
 	svc.SetPaymentsEnabled(false)
-
-	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "k1"); err != nil {
-		t.Fatalf("Record: %v, want the booking stored", err)
-	}
-	if !store.insertHit {
-		t.Error("the booking was not stored")
+	if one, _ := svc.mine(ctx, "u1", "next"); one.CarriedPaise != 0 {
+		t.Errorf("payments off: carriedPaise = %d, want 0", one.CarriedPaise)
 	}
 }
 

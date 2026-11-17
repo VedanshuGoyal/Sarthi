@@ -219,15 +219,49 @@ func roundTripFareRupees(start time.Time, hours int, luxury bool) int {
 	return hourlyTariffRupees(hours, luxury) + nightSurchargeRupees(start, hours)
 }
 
-// chargeForTimeUsed is what a trip the customer ended early costs: the
-// hourly tariff, with the night surcharge, for the time from started to
-// ended — each started hour counting as a whole one, at least one — and
-// never more than booked, the fare as booked. One-way and multi-stop trips
-// are charged the same way: their fares are hourly estimates too.
-func chargeForTimeUsed(p tripPlan, booked int64, started, ended time.Time) int64 {
+// overtimeGrace is how far past its booked hours a trip may run before the
+// extra time is charged (my pick; the owner decided overtime is charged).
+const overtimeGrace = 15 * time.Minute
+
+// billedHours is the hours a trip's booked fare pays for: a round trip's
+// hired hours, or the others' duration rounded up, as [tripPlan.Fare]
+// estimates them.
+func (p tripPlan) billedHours() int {
+	if p.Hours > 0 {
+		return p.Hours
+	}
+	return int(math.Ceil(p.Duration().Hours()))
+}
+
+// hourlyCharge is the hourly tariff, with the night surcharge, for a trip
+// from started to ended: each started hour counts as a whole one, at least
+// one.
+func hourlyCharge(p tripPlan, started, ended time.Time) int64 {
 	minutes := max(int(ended.Sub(started)/time.Minute), 0)
 	hours := min(max((minutes+59)/60, 1), maxHireHours)
-	return min(int64(roundTripFareRupees(started, hours, p.luxury()))*100, booked)
+	return int64(roundTripFareRupees(started, hours, p.luxury())) * 100
+}
+
+// finalFare is what a trip that ran from started to ended costs, booked
+// being its fare as booked:
+//
+//   - run past its booked hours plus overtimeGrace: the hourly charge for
+//     the time used, never less than booked — extra time is billed;
+//   - otherwise, ended early by the customer: the hourly charge for the time
+//     used, never more than booked;
+//   - otherwise (the driver completed it within its time): as booked.
+//
+// One-way and multi-stop trips are charged the same way: their fares are
+// hourly estimates too.
+func finalFare(p tripPlan, booked int64, started, ended time.Time, byCustomer bool) int64 {
+	charge := hourlyCharge(p, started, ended)
+	if ended.Sub(started) > time.Duration(p.billedHours())*time.Hour+overtimeGrace {
+		return max(charge, booked)
+	}
+	if byCustomer {
+		return min(charge, booked)
+	}
+	return booked
 }
 
 // nightSurchargeRupees is the customer app's nightSurchargeFor: nothing

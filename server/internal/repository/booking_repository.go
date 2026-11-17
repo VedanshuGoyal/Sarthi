@@ -115,30 +115,30 @@ func findRepeat(ctx context.Context, tx pgx.Tx, p InsertBookingParams) (domain.B
 	return b, true, nil
 }
 
-// UnpaidRide returns the id of userID's longest-unpaid booking — a
-// completed ride, or a cancellation that charged a fee — owing at least
-// minPaise (smaller sums can't be paid through the gateway), or "" when
-// everything they owe is paid.
-func (r *BookingRepository) UnpaidRide(ctx context.Context, userID string, minPaise int64) (string, error) {
-	var id string
-	err := r.db.QueryRow(ctx, `
-		SELECT id::text FROM (
-		    SELECT id, completed_at AS owed_since, created_at FROM bookings
-		    WHERE user_id = $1 AND status = 'completed' AND paid_at IS NULL AND fare_paise >= $2
-		    UNION ALL
-		    SELECT id, cancelled_at, created_at FROM bookings
-		    WHERE user_id = $1 AND status = 'cancelled' AND cancellation_fee_paise IS NOT NULL
-		      AND paid_at IS NULL AND cancellation_fee_paise >= $2
-		) owed
-		ORDER BY owed_since NULLS FIRST, created_at
-		LIMIT 1`, userID, minPaise).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
+// UnpaidDues lists what userID still owes for — completed rides and
+// cancellation fees not yet paid — oldest first. Each is collected with the
+// customer's next payment.
+func (r *BookingRepository) UnpaidDues(ctx context.Context, userID string) ([]domain.Due, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id::text, `+owedPaise+`
+		FROM bookings
+		WHERE user_id = $1 AND paid_at IS NULL
+		  AND ((status = 'completed' AND fare_paise > 0)
+		       OR (status = 'cancelled' AND cancellation_fee_paise IS NOT NULL))
+		ORDER BY coalesce(completed_at, cancelled_at) NULLS FIRST, created_at, id`, userID)
 	if err != nil {
-		return "", fmt.Errorf("checking for an unpaid ride: %w", err)
+		return nil, fmt.Errorf("listing unpaid dues: %w", err)
 	}
-	return id, nil
+	defer rows.Close()
+	var out []domain.Due
+	for rows.Next() {
+		var d domain.Due
+		if err := rows.Scan(&d.BookingID, &d.AmountPaise); err != nil {
+			return nil, fmt.Errorf("listing unpaid dues: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // DriverBusyElsewhere reports whether driverID is at the pickup of, or

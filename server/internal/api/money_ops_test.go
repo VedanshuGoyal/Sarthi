@@ -14,7 +14,7 @@ import (
 	"github.com/sarthi/server/internal/service"
 )
 
-// --- POST /me/bookings: payment due and repeats ---
+// --- POST /me/bookings: unpaid rides and repeats ---
 
 // submitStore is a BookingStore for the submit route: an optional unpaid
 // ride, and an optional booking a submit repeats.
@@ -34,8 +34,11 @@ func (s *submitStore) Insert(_ context.Context, p repository.InsertBookingParams
 	return domain.Booking{ID: "bk-new", UserID: p.UserID, TripType: p.TripType, Details: p.Details}, false, nil
 }
 
-func (s *submitStore) UnpaidRide(context.Context, string, int64) (string, error) {
-	return s.unpaid, nil
+func (s *submitStore) UnpaidDues(context.Context, string) ([]domain.Due, error) {
+	if s.unpaid == "" {
+		return nil, nil
+	}
+	return []domain.Due{{BookingID: s.unpaid, AmountPaise: 24000}}, nil
 }
 func (s *submitStore) ListForUser(context.Context, string, int) ([]domain.UserBooking, error) {
 	return nil, nil
@@ -75,21 +78,13 @@ func submitBooking(t *testing.T, store *submitStore, key string) *httptest.Respo
 	return rec
 }
 
-func TestSubmitBooking_paymentDueNamesTheRide(t *testing.T) {
+// HUMAN REVIEW REQUIRED: payments. What a customer owes doesn't stop them
+// booking: it is collected with their next payment.
+func TestSubmitBooking_unpaidRideDoesNotBlock(t *testing.T) {
 	store := &submitStore{unpaid: "bk-unpaid"}
 	rec := submitBooking(t, store, "")
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status %d, want 409: %s", rec.Code, rec.Body)
-	}
-	var body struct{ Error, Code, BookingID string }
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if body.Code != "payment_due" || body.BookingID != "bk-unpaid" || body.Error == "" {
-		t.Errorf("body = %s", rec.Body)
-	}
-	if store.inserts != 0 {
-		t.Error("a booking was stored")
+	if rec.Code != http.StatusAccepted || store.inserts != 1 {
+		t.Fatalf("status %d (inserts %d), want 202 and the booking stored: %s", rec.Code, store.inserts, rec.Body)
 	}
 }
 

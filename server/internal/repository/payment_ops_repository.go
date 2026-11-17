@@ -45,7 +45,10 @@ func (r *PaymentRepository) SettleByHand(
 		WHERE id = $1 AND paid_at IS NULL
 		  AND (status = 'completed' OR (status = 'cancelled' AND cancellation_fee_paise IS NOT NULL))
 		  AND NOT EXISTS (SELECT 1 FROM payment_orders po
-		                  WHERE po.booking_id = bookings.id AND po.state IN ('pending', 'completed'))
+		                  WHERE po.state IN ('pending', 'completed')
+		                    AND (po.booking_id = bookings.id
+		                         OR po.merchant_order_id IN (SELECT merchant_order_id FROM payment_order_items
+		                                                     WHERE booking_id = bookings.id)))
 		RETURNING `+bookingColumns,
 		id, at, string(mode), note, commissionBP))
 	if err != nil {
@@ -53,7 +56,10 @@ func (r *PaymentRepository) SettleByHand(
 		if errors.Is(err, ErrBookingStateConflict) {
 			var open bool
 			if qerr := r.db.QueryRow(ctx, `
-				SELECT EXISTS (SELECT 1 FROM payment_orders po JOIN bookings b ON b.id = po.booking_id
+				SELECT EXISTS (SELECT 1 FROM payment_orders po JOIN bookings b
+				                 ON b.id = po.booking_id
+				                 OR b.id IN (SELECT booking_id FROM payment_order_items i
+				                             WHERE i.merchant_order_id = po.merchant_order_id)
 				               WHERE b.id = $1 AND b.paid_at IS NULL
 				                 AND (b.status = 'completed' OR b.cancellation_fee_paise IS NOT NULL)
 				                 AND po.state IN ('pending', 'completed'))`, id).Scan(&open); qerr == nil && open {
@@ -89,11 +95,19 @@ func (r *PaymentRepository) PaymentAttention(ctx context.Context, pendingBefore 
 		out domain.PaymentAttention
 		err error
 	)
+	// An order paying several bookings is listed once, for the first of
+	// them something else had paid.
 	out.PaidTwice, err = r.attentionOrders(ctx, `
-		SELECT `+attentionColumns+`
-		FROM payment_orders po JOIN bookings b ON b.id = po.booking_id
-		WHERE po.state = 'completed' AND po.merchant_order_id IS DISTINCT FROM b.payment_order_id
-		ORDER BY po.updated_at DESC
+		SELECT * FROM (
+		    SELECT DISTINCT ON (po.merchant_order_id) `+attentionColumns+`
+		    FROM payment_orders po JOIN bookings b
+		      ON b.id = po.booking_id
+		      OR b.id IN (SELECT booking_id FROM payment_order_items i
+		                  WHERE i.merchant_order_id = po.merchant_order_id)
+		    WHERE po.state = 'completed' AND po.merchant_order_id IS DISTINCT FROM b.payment_order_id
+		    ORDER BY po.merchant_order_id, b.id
+		) twice
+		ORDER BY updated_at DESC
 		LIMIT $1`, limit)
 	if err != nil {
 		return domain.PaymentAttention{}, err

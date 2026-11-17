@@ -23,11 +23,14 @@ func TestSchemaReady_Integration(t *testing.T) {
 	if _, err := tx.Exec(ctx, `ALTER TABLE bookings DROP COLUMN cancellation_fee_paise`); err != nil {
 		t.Fatalf("dropping column: %v", err)
 	}
+	if _, err := tx.Exec(ctx, `DROP TABLE payment_order_items`); err != nil {
+		t.Fatalf("dropping table: %v", err)
+	}
 	err := SchemaReady(ctx, tx)
 	if err == nil {
 		t.Fatal("SchemaReady passed on an un-migrated DB")
 	}
-	for _, want := range []string{"drivers.erased_at", "drivers_erased", "bookings.cancellation_fee_paise"} {
+	for _, want := range []string{"drivers.erased_at", "drivers_erased", "bookings.cancellation_fee_paise", "payment_order_items"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %s", err, want)
 		}

@@ -22,11 +22,9 @@ type fakeBookingStore struct {
 	err       error
 	listed    []domain.UserBooking
 
-	// unpaid is the customer's unpaid ride UnpaidRide reports ("" none);
-	// repeat, when set, is the booking Insert finds already made.
-	unpaid    string
-	unpaidMin int64
-	repeat    *domain.Booking
+	// dues is what UnpaidDues reports the customer owes.
+	dues   []domain.Due
+	repeat *domain.Booking
 }
 
 // DriverBusyElsewhere looks across every listed booking, whoever's it is.
@@ -124,10 +122,9 @@ func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingP
 	return f.got, false, nil
 }
 
-// UnpaidRide answers with the preset unpaid ride, recording the minimum asked.
-func (f *fakeBookingStore) UnpaidRide(_ context.Context, _ string, minPaise int64) (string, error) {
-	f.unpaidMin = minPaise
-	return f.unpaid, nil
+// UnpaidDues answers with the preset dues.
+func (f *fakeBookingStore) UnpaidDues(context.Context, string) ([]domain.Due, error) {
+	return f.dues, nil
 }
 
 // roundTripDetails is a round-trip payload as the customer app sends it.

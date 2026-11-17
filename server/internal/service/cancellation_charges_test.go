@@ -129,31 +129,43 @@ func TestBookingService_EndEarly(t *testing.T) {
 	}
 }
 
-func TestChargeForTimeUsed(t *testing.T) {
+// HUMAN REVIEW REQUIRED: payments. A trip is charged by the hour for the
+// time used when the customer ends it early (never above booked) or when it
+// runs past its booked hours plus the grace (never below booked).
+func TestFinalFare(t *testing.T) {
 	day := time.Date(2026, 10, 24, 10, 0, 0, 0, ist)
 	night := time.Date(2026, 10, 24, 21, 30, 0, 0, ist)
-	standard := tripPlan{}
-	luxury := tripPlan{Car: &domain.RideCar{CarType: string(domain.CarTypeLuxury)}}
+	four := tripPlan{Hours: 4}
+	luxury := tripPlan{Hours: 4, Car: &domain.RideCar{CarType: string(domain.CarTypeLuxury)}}
+	oneWay := tripPlan{EstimatedMinutes: 50} // billed as 1 h
+	const customer, driver = true, false
 	for _, tc := range []struct {
-		name    string
-		plan    tripPlan
-		started time.Time
-		used    time.Duration
-		booked  int64
-		want    int64
+		name       string
+		plan       tripPlan
+		started    time.Time
+		used       time.Duration
+		booked     int64
+		byCustomer bool
+		want       int64
 	}{
-		{"a few minutes is the first hour", standard, day, 5 * time.Minute, 44000, 13900},
-		{"exactly an hour", standard, day, time.Hour, 44000, 13900},
-		{"a minute over starts the second", standard, day, 61 * time.Minute, 44000, 24000},
-		{"three started hours", standard, day, 2*time.Hour + 10*time.Minute, 44000, 34000},
-		{"never more than booked", standard, day, 6 * time.Hour, 44000, 44000},
-		{"luxury tariff", luxury, day, 30 * time.Minute, 76000, 19600},
+		{"ended after a few minutes: the first hour", four, day, 5 * time.Minute, 44000, customer, 13900},
+		{"ended at exactly an hour", four, day, time.Hour, 44000, customer, 13900},
+		{"a minute over starts the second", four, day, 61 * time.Minute, 44000, customer, 24000},
+		{"three started hours", four, day, 2*time.Hour + 10*time.Minute, 44000, customer, 34000},
+		{"ended within the grace: as booked", four, day, 4*time.Hour + 10*time.Minute, 44000, customer, 44000},
+		{"ended past the grace: overtime", four, day, 4*time.Hour + 20*time.Minute, 44000, customer, 54000},
+		{"driver completes early: as booked", four, day, 2 * time.Hour, 44000, driver, 44000},
+		{"driver completes within the grace", four, day, 4*time.Hour + 14*time.Minute, 44000, driver, 44000},
+		{"driver completes past the grace", four, day, 4*time.Hour + 16*time.Minute, 44000, driver, 54000},
+		{"two hours over", four, day, 6 * time.Hour, 44000, driver, 64000},
+		{"luxury tariff", luxury, day, 30 * time.Minute, 76000, customer, 19600},
 		// 21:30 for 2 started hours: 22:00–23:30 is night, two part hours —
 		// ₹240 + ₹50 + 2 × ₹24.
-		{"night surcharge for the hours used", standard, night, 100 * time.Minute, 60000, 33800},
-		{"clock skew counts as the first hour", standard, day, -time.Minute, 44000, 13900},
+		{"night surcharge for the hours used", four, night, 100 * time.Minute, 60000, customer, 33800},
+		{"one-way past its hour", oneWay, day, 80 * time.Minute, 13900, driver, 24000},
+		{"clock skew counts as the first hour", four, day, -time.Minute, 44000, customer, 13900},
 	} {
-		got := chargeForTimeUsed(tc.plan, tc.booked, tc.started, tc.started.Add(tc.used))
+		got := finalFare(tc.plan, tc.booked, tc.started, tc.started.Add(tc.used), tc.byCustomer)
 		if got != tc.want {
 			t.Errorf("%s: got %d, want %d", tc.name, got, tc.want)
 		}

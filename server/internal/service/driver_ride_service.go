@@ -110,6 +110,7 @@ type DriverRideStore interface {
 	Accept(ctx context.Context, id, driverID string, at time.Time, startOTP string) (domain.RideBooking, error)
 	SetStartOTP(ctx context.Context, id, driverID, startOTP string) error
 	Advance(ctx context.Context, id, driverID string, from, to domain.RideStatus, at time.Time) (domain.RideBooking, error)
+	Complete(ctx context.Context, id, driverID string, farePaise int64, at time.Time) (domain.RideBooking, error)
 	Release(ctx context.Context, id, driverID string) error
 	NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error)
 	Decline(ctx context.Context, id, driverID string) error
@@ -409,8 +410,55 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 }
 
 // Complete finishes a ride that is underway.
+//
+// A trip that ran past its booked hours (plus a grace) is charged for the
+// time used on the hourly tariff (see [finalFare]); the ride returned
+// carries the final fare and, then, the booked one.
 func (s *DriverRideService) Complete(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
-	return s.advance(ctx, driverID, rideID, domain.RideStatusInProgress, domain.RideStatusCompleted)
+	rb, err := s.store.FindByID(ctx, rideID)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	b := rb.Booking
+	if b.DriverID != driverID {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	if b.Status == domain.RideStatusCompleted {
+		slog.InfoContext(ctx, "ride step replayed", "driverId", driverID, "rideId", rideID, "status", b.Status)
+		ride, _ := s.assigned(rb)
+		return ride, nil
+	}
+	if b.Status != domain.RideStatusInProgress {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	fare := b.FarePaise
+	plan, err := planOf(b)
+	if err == nil && fare == 0 {
+		fare, _ = plan.Fare()
+	}
+	now := s.now()
+	if err == nil && b.StartedAt != nil {
+		fare = finalFare(plan, fare, *b.StartedAt, now, false)
+	}
+	done, err := s.store.Complete(ctx, rideID, driverID, fare, now)
+	if errors.Is(err, repository.ErrRideStateConflict) {
+		// Completed (or ended by the customer) a moment ago: hand that back.
+		if cur, ferr := s.store.FindByID(ctx, rideID); ferr == nil &&
+			cur.Booking.DriverID == driverID && cur.Booking.Status == domain.RideStatusCompleted {
+			ride, _ := s.assigned(cur)
+			return ride, nil
+		}
+	}
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	slog.InfoContext(ctx, "ride advanced", "driverId", driverID, "rideId", rideID, "status", domain.RideStatusCompleted,
+		"farePaise", done.Booking.FarePaise, "bookedFarePaise", done.Booking.BookedFarePaise)
+	ride, _ := s.assigned(done)
+	if s.alerts != nil {
+		s.alerts.RideCompleted(ctx, done.Booking.UserID, ride)
+	}
+	return ride, nil
 }
 
 // NoShow closes the ride driverID is waiting at the pickup of because the

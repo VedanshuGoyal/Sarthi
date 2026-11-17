@@ -52,17 +52,69 @@ func scanPaymentOrder(row pgx.Row) (domain.PaymentOrder, error) {
 	return o, err
 }
 
-// InsertOrder records a checkout the gateway just opened, as pending.
+// InsertOrder records a checkout the gateway just opened, as pending, with
+// the bookings it pays (o.Items; just its own booking for the whole amount
+// when empty) — in one transaction.
 func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrder) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO payment_orders
-		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, checkout_token, expires_at)
-		VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7)`,
-		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.CheckoutToken, o.ExpiresAt)
+	items := o.Items
+	if len(items) == 0 {
+		items = []domain.PaymentItem{{BookingID: o.BookingID, AmountPaise: o.AmountPaise}}
+	}
+	var sum int64
+	for _, it := range items {
+		sum += it.AmountPaise
+	}
+	if sum != o.AmountPaise {
+		return fmt.Errorf("inserting payment order: items add up to %d, not %d", sum, o.AmountPaise)
+	}
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("inserting payment order: %w", err)
 	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO payment_orders
+		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, checkout_token, expires_at)
+		VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7)`,
+		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.CheckoutToken, o.ExpiresAt); err != nil {
+		return fmt.Errorf("inserting payment order: %w", err)
+	}
+	for _, it := range items {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO payment_order_items (merchant_order_id, booking_id, amount_paise) VALUES ($1, $2, $3)`,
+			o.MerchantOrderID, it.BookingID, it.AmountPaise); err != nil {
+			return fmt.Errorf("inserting payment order item: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("inserting payment order: %w", err)
+	}
 	return nil
+}
+
+// OrderItems returns the bookings order merchantOrderID pays, ordered by
+// booking id.
+func (r *PaymentRepository) OrderItems(ctx context.Context, merchantOrderID string) ([]domain.PaymentItem, error) {
+	return orderItems(ctx, r.db, merchantOrderID)
+}
+
+func orderItems(ctx context.Context, db DB, merchantOrderID string) ([]domain.PaymentItem, error) {
+	rows, err := db.Query(ctx, `
+		SELECT booking_id::text, amount_paise FROM payment_order_items
+		WHERE merchant_order_id = $1 ORDER BY booking_id`, merchantOrderID)
+	if err != nil {
+		return nil, fmt.Errorf("listing payment order items: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.PaymentItem
+	for rows.Next() {
+		var it domain.PaymentItem
+		if err := rows.Scan(&it.BookingID, &it.AmountPaise); err != nil {
+			return nil, fmt.Errorf("listing payment order items: %w", err)
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
 
 // FindOrder returns the order merchantOrderID, or [ErrPaymentOrderNotFound].
@@ -79,12 +131,22 @@ func (r *PaymentRepository) FindOrder(ctx context.Context, merchantOrderID strin
 	return o, nil
 }
 
-// PendingForBooking returns bookingID's orders still pending, newest first.
+// PendingForBooking returns the orders still pending that pay bookingID —
+// opened on it, or carrying it — newest first.
 func (r *PaymentRepository) PendingForBooking(ctx context.Context, bookingID string) ([]domain.PaymentOrder, error) {
+	return r.PendingForBookings(ctx, []string{bookingID})
+}
+
+// PendingForBookings returns the orders still pending that pay any of
+// bookingIDs, each once, newest first.
+func (r *PaymentRepository) PendingForBookings(ctx context.Context, bookingIDs []string) ([]domain.PaymentOrder, error) {
 	return r.queryOrders(ctx, `
 		SELECT `+paymentOrderColumns+` FROM payment_orders
-		WHERE booking_id = $1 AND state = 'pending'
-		ORDER BY created_at DESC`, bookingID)
+		WHERE state = 'pending'
+		  AND (booking_id = ANY($1::uuid[])
+		       OR merchant_order_id IN (SELECT merchant_order_id FROM payment_order_items
+		                                WHERE booking_id = ANY($1::uuid[])))
+		ORDER BY created_at DESC`, bookingIDs)
 }
 
 // PendingSince returns every order still pending that was opened between
@@ -126,16 +188,20 @@ func (r *PaymentRepository) FailOrder(ctx context.Context, merchantOrderID strin
 	return nil
 }
 
-// CompleteOrder marks a pending order completed and, if its booking isn't
-// paid yet, marks the booking paid by it with commissionPaise as MOJUD's
-// cut — in one transaction. The outcome says whether this call paid the
-// booking, found the order already recorded, or found the booking paid by
-// another order. The booking is returned either way.
-func (r *PaymentRepository) CompleteOrder(ctx context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commissionPaise int64, at time.Time) (domain.SettleOutcome, domain.Booking, error) {
-	outcome := domain.SettledAlready
+// CompleteOrder marks a pending order completed and each booking it pays
+// that isn't paid yet as paid by it — its own part of the amount, and
+// MOJUD's cut of that part at commissionBP basis points (rounded as
+// PaymentService.commission rounds) — in one transaction. An order without
+// items (opened by an older server) pays its own booking in full. The
+// result says whether this call paid them, found the order already
+// recorded, or found some paid by something else first.
+func (r *PaymentRepository) CompleteOrder(
+	ctx context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commissionBP int64, at time.Time,
+) (domain.SettleResult, error) {
+	res := domain.SettleResult{Outcome: domain.SettledAlready}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return outcome, domain.Booking{}, fmt.Errorf("completing payment order: %w", err)
+		return res, fmt.Errorf("completing payment order: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -146,30 +212,41 @@ func (r *PaymentRepository) CompleteOrder(ctx context.Context, o domain.PaymentO
 		WHERE merchant_order_id = $1 AND state = 'pending'`,
 		o.MerchantOrderID, st.TransactionID, st.PaymentMode, st.UTR, at)
 	if err != nil {
-		return outcome, domain.Booking{}, fmt.Errorf("completing payment order: %w", err)
+		return res, fmt.Errorf("completing payment order: %w", err)
 	}
 	if tag.RowsAffected() == 1 {
-		tag, err = tx.Exec(ctx, `
-			UPDATE bookings
-			SET paid_at = $2, paid_paise = $3, commission_paise = $4, payment_order_id = $5
-			WHERE id = $1 AND paid_at IS NULL`,
-			o.BookingID, at, st.AmountPaise, commissionPaise, o.MerchantOrderID)
+		items, err := orderItems(ctx, tx, o.MerchantOrderID)
 		if err != nil {
-			return outcome, domain.Booking{}, fmt.Errorf("marking booking paid: %w", err)
+			return res, err
 		}
-		outcome = domain.SettledPaidTwice
-		if tag.RowsAffected() == 1 {
-			outcome = domain.SettledNow
+		if len(items) == 0 {
+			items = []domain.PaymentItem{{BookingID: o.BookingID, AmountPaise: o.AmountPaise}}
 		}
-	}
-	b, err := scanBooking(tx.QueryRow(ctx, `SELECT `+bookingColumns+` FROM bookings WHERE id = $1`, o.BookingID))
-	if err != nil {
-		return outcome, domain.Booking{}, fmt.Errorf("reading paid booking: %w", err)
+		for _, it := range items {
+			b, err := scanBooking(tx.QueryRow(ctx, `
+				UPDATE bookings
+				SET paid_at = $2, paid_paise = $3, commission_paise = $4, payment_order_id = $5
+				WHERE id = $1 AND paid_at IS NULL
+				RETURNING `+bookingColumns,
+				it.BookingID, at, it.AmountPaise, (it.AmountPaise*commissionBP+5000)/10000, o.MerchantOrderID))
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				res.AlreadyPaid = append(res.AlreadyPaid, it.BookingID)
+			case err != nil:
+				return res, fmt.Errorf("marking booking paid: %w", err)
+			default:
+				res.Paid = append(res.Paid, b)
+			}
+		}
+		res.Outcome = domain.SettledNow
+		if len(res.AlreadyPaid) > 0 {
+			res.Outcome = domain.SettledPaidTwice
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return outcome, domain.Booking{}, fmt.Errorf("completing payment order: %w", err)
+		return domain.SettleResult{Outcome: domain.SettledAlready}, fmt.Errorf("completing payment order: %w", err)
 	}
-	return outcome, b, nil
+	return res, nil
 }
 
 // DuePayouts lists, per driver, the share of every ride paid on or before

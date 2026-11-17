@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -98,8 +99,42 @@ func (s *fakePaymentStore) pending(keep func(domain.PaymentOrder) bool) []domain
 	return out
 }
 
-func (s *fakePaymentStore) PendingForBooking(_ context.Context, bookingID string) ([]domain.PaymentOrder, error) {
-	return s.pending(func(o domain.PaymentOrder) bool { return o.BookingID == bookingID }), nil
+// items is what o pays: its items, or its own booking in full.
+func items(o domain.PaymentOrder) []domain.PaymentItem {
+	if len(o.Items) > 0 {
+		return o.Items
+	}
+	return []domain.PaymentItem{{BookingID: o.BookingID, AmountPaise: o.AmountPaise}}
+}
+
+func (s *fakePaymentStore) PendingForBookings(_ context.Context, ids []string) ([]domain.PaymentOrder, error) {
+	return s.pending(func(o domain.PaymentOrder) bool {
+		for _, it := range items(o) {
+			if slices.Contains(ids, it.BookingID) {
+				return true
+			}
+		}
+		return false
+	}), nil
+}
+
+func (s *fakePaymentStore) OrderItems(_ context.Context, id string) ([]domain.PaymentItem, error) {
+	if o := s.orders[id]; o != nil {
+		return o.Items, nil
+	}
+	return nil, nil
+}
+
+// UnpaidDues lists u's unpaid completed rides and fees, in id order.
+func (s *fakePaymentStore) UnpaidDues(_ context.Context, userID string) ([]domain.Due, error) {
+	var out []domain.Due
+	for _, b := range s.bookings {
+		if b.UserID == userID && b.PaidAt == nil && b.AmountDue() > 0 {
+			out = append(out, domain.Due{BookingID: b.ID, AmountPaise: b.AmountDue()})
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Due) int { return strings.Compare(a.BookingID, b.BookingID) })
+	return out, nil
 }
 
 func (s *fakePaymentStore) PendingSince(_ context.Context, from, to time.Time) ([]domain.PaymentOrder, error) {
@@ -115,19 +150,27 @@ func (s *fakePaymentStore) FailOrder(_ context.Context, id string, _ domain.Gate
 	return nil
 }
 
-func (s *fakePaymentStore) CompleteOrder(_ context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commission int64, at time.Time) (domain.SettleOutcome, domain.Booking, error) {
-	outcome := domain.SettledAlready
+func (s *fakePaymentStore) CompleteOrder(_ context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, bp int64, at time.Time) (domain.SettleResult, error) {
+	res := domain.SettleResult{Outcome: domain.SettledAlready}
 	stored := s.orders[o.MerchantOrderID]
-	b := s.bookings[o.BookingID]
-	if stored.State == domain.PaymentPending {
-		stored.State = domain.PaymentCompleted
-		outcome = domain.SettledPaidTwice
-		if b.PaidAt == nil {
-			b.PaidAt, b.PaidPaise, b.CommissionPaise = &at, st.AmountPaise, commission
-			outcome = domain.SettledNow
-		}
+	if stored.State != domain.PaymentPending {
+		return res, nil
 	}
-	return outcome, *b, nil
+	stored.State = domain.PaymentCompleted
+	for _, it := range items(*stored) {
+		b := s.bookings[it.BookingID]
+		if b.PaidAt != nil {
+			res.AlreadyPaid = append(res.AlreadyPaid, b.ID)
+			continue
+		}
+		b.PaidAt, b.PaidPaise, b.CommissionPaise = &at, it.AmountPaise, (it.AmountPaise*bp+5000)/10000
+		res.Paid = append(res.Paid, *b)
+	}
+	res.Outcome = domain.SettledNow
+	if len(res.AlreadyPaid) > 0 {
+		res.Outcome = domain.SettledPaidTwice
+	}
+	return res, nil
 }
 
 type recordingPaymentAlerts struct{ paid []string }
@@ -329,14 +372,16 @@ func TestSettle_wrongAmountStaysPendingAndFailuresClose(t *testing.T) {
 }
 
 func TestSweep_settlesOrdersTheAppNeverCameBackFor(t *testing.T) {
-	store := newFakePaymentStore(completedBooking("b1", 20000), completedBooking("b2", 20000))
+	other := completedBooking("b2", 20000)
+	other.UserID = "u2" // another customer's, so not carried into b1's payment
+	store := newFakePaymentStore(completedBooking("b1", 20000), other)
 	gw := &fakeGateway{}
 	alerts := &recordingPaymentAlerts{}
 	svc := newPayments(store, gw, alerts, 0)
 	ctx := context.Background()
 
 	c1, _ := svc.Checkout(ctx, "u1", "b1")
-	_, _ = svc.Checkout(ctx, "u1", "b2")
+	_, _ = svc.Checkout(ctx, "u2", "b2")
 	gw.set(c1.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 20000})
 
 	// Orders younger than sweepMinAge are left alone.
@@ -349,6 +394,49 @@ func TestSweep_settlesOrdersTheAppNeverCameBackFor(t *testing.T) {
 	}
 	if store.bookings["b1"].PaidAt == nil || store.bookings["b2"].PaidAt != nil {
 		t.Errorf("paid: b1=%v b2=%v", store.bookings["b1"].PaidAt, store.bookings["b2"].PaidAt)
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. Paying one ride collects everything
+// else the customer owes in the same order; when it lands, each booking is
+// paid its own part with its own commission, and each driver hears of it.
+func TestCheckout_carriesOtherDues(t *testing.T) {
+	fee := domain.Booking{ID: "a-fee", UserID: "u1", DriverID: "d2", Status: domain.RideStatusCancelled,
+		CancellationFeePaise: domain.CancellationFeePaise}
+	store := newFakePaymentStore(completedBooking("b-ride", 24000), fee, completedBooking("c-old", 13900))
+	gw := &fakeGateway{}
+	alerts := &recordingPaymentAlerts{}
+	svc := newPayments(store, gw, alerts, 1300)
+	ctx := context.Background()
+
+	c, err := svc.Checkout(ctx, "u1", "b-ride")
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if c.AmountPaise != 24000+5000+13900 {
+		t.Fatalf("checkout amount = %d, want the ride plus what's carried (42900)", c.AmountPaise)
+	}
+	// Tapping Pay on a carried booking reopens the same order.
+	again, err := svc.Checkout(ctx, "u1", "a-fee")
+	if err != nil || again.MerchantOrderID != c.MerchantOrderID {
+		t.Errorf("Checkout(carried) = %s, %v; want the same order %s", again.MerchantOrderID, err, c.MerchantOrderID)
+	}
+
+	gw.set(c.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 42900})
+	if err := svc.Sync(ctx, "u1", "b-ride"); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	for id, want := range map[string][2]int64{"b-ride": {24000, 3120}, "a-fee": {5000, 650}, "c-old": {13900, 1807}} {
+		b := store.bookings[id]
+		if b.PaidAt == nil || b.PaidPaise != want[0] || b.CommissionPaise != want[1] {
+			t.Errorf("%s: paid %v %d commission %d, want %d / %d", id, b.PaidAt != nil, b.PaidPaise, b.CommissionPaise, want[0], want[1])
+		}
+	}
+	if len(alerts.paid) != 3 {
+		t.Errorf("drivers told = %v, want all three bookings", alerts.paid)
+	}
+	if _, err := svc.Checkout(ctx, "u1", "c-old"); !errors.Is(err, ErrAlreadyPaid) {
+		t.Errorf("paying a carried booking again: err = %v, want ErrAlreadyPaid", err)
 	}
 }
 

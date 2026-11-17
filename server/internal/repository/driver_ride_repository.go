@@ -182,6 +182,28 @@ func (r *DriverRideRepository) Advance(ctx context.Context, id, driverID string,
 	return rb, nil
 }
 
+// Complete completes driverID's trip in progress at at, at farePaise. When
+// that isn't the fare as booked (the trip ran past its booked hours), the
+// booked fare is kept in booked_fare_paise. [ErrRideStateConflict] if the
+// ride isn't theirs or isn't in progress.
+func (r *DriverRideRepository) Complete(ctx context.Context, id, driverID string, farePaise int64, at time.Time) (domain.RideBooking, error) {
+	q := `
+		WITH b AS (
+		    UPDATE bookings
+		    SET status = 'completed', completed_at = $3,
+		        booked_fare_paise = CASE WHEN fare_paise IS DISTINCT FROM $4::bigint THEN fare_paise END,
+		        fare_paise = $4
+		    WHERE id = $1 AND driver_id = $2 AND status = 'in_progress'
+		    RETURNING *)
+		SELECT ` + rideColumns + `
+		FROM b JOIN users u ON u.id = b.user_id`
+	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at, farePaise))
+	if err != nil {
+		return domain.RideBooking{}, rideErr(err, ErrRideStateConflict, "completing ride")
+	}
+	return rb, nil
+}
+
 // NoShow closes driverID's ride as a customer no-show at at, with reason:
 // cancelled by "no_show", the start code cleared. Only a ride the driver is
 // waiting at the pickup of; [ErrRideStateConflict] otherwise — including

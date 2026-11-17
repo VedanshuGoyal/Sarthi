@@ -469,6 +469,11 @@ type CustomerBooking struct {
 	// the charge for the time used.
 	CancellationFeePaise int64 `json:"cancellationFeePaise,omitempty"`
 	BookedFarePaise      int64 `json:"bookedFarePaise,omitempty"`
+
+	// CarriedPaise is what the customer owes on their other bookings (unpaid
+	// rides and cancellation fees), collected together with this booking's
+	// payment. Set on a booking still to be paid: due now, or underway.
+	CarriedPaise int64 `json:"carriedPaise,omitempty"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.

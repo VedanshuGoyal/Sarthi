@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,6 +30,88 @@ func rideIn(t *testing.T, ctx context.Context, db DB, userID, driverID string, s
 		t.Fatalf("inserting ride: %v", err)
 	}
 	return id
+}
+
+// dueIDs is the bookings userID owes for, oldest first.
+func dueIDs(t *testing.T, ctx context.Context, r *BookingRepository, userID string) []string {
+	t.Helper()
+	dues, err := r.UnpaidDues(ctx, userID)
+	if err != nil {
+		t.Fatalf("UnpaidDues: %v", err)
+	}
+	ids := []string{}
+	for _, d := range dues {
+		ids = append(ids, d.BookingID)
+	}
+	return ids
+}
+
+// HUMAN REVIEW REQUIRED: payments. One order pays several bookings: each is
+// marked paid with its own part and commission; one already paid by
+// something else is reported (and listed for a refund) instead of being
+// paid twice. Pending orders are found from any booking they carry.
+func TestPaymentRepository_OrderItems_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	payments := NewPaymentRepository(tx)
+	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
+	yesterday := time.Now().Add(-24 * time.Hour)
+	ride := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 24000)
+	old := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday.Add(-time.Hour), 13900)
+	order := func(id string, items ...domain.PaymentItem) domain.PaymentOrder {
+		var sum int64
+		for _, it := range items {
+			sum += it.AmountPaise
+		}
+		return domain.PaymentOrder{MerchantOrderID: id, BookingID: ride, UserID: user, AmountPaise: sum,
+			ProviderOrderID: "OMO-" + id, ExpiresAt: time.Now().Add(time.Hour), Items: items}
+	}
+	both := order("MOJUD_items_both", domain.PaymentItem{BookingID: ride, AmountPaise: 24000},
+		domain.PaymentItem{BookingID: old, AmountPaise: 13900})
+	if err := payments.InsertOrder(ctx, both); err != nil {
+		t.Fatalf("InsertOrder: %v", err)
+	}
+	bad := both
+	bad.MerchantOrderID, bad.AmountPaise = "MOJUD_items_bad", 1
+	if err := payments.InsertOrder(ctx, bad); err == nil {
+		t.Error("an order whose items don't add up was stored")
+	}
+	if got, err := payments.PendingForBooking(ctx, old); err != nil || len(got) != 1 || got[0].MerchantOrderID != both.MerchantOrderID {
+		t.Fatalf("pending for the carried booking = %+v, %v", got, err)
+	}
+
+	// The old ride gets paid some other way first; then the combined order lands.
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET paid_at = now(), paid_paise = 13900, payment_order_id = NULL,
+		paid_mode = 'cash' WHERE id = $1`, old); err != nil {
+		t.Fatal(err)
+	}
+	res, err := payments.CompleteOrder(ctx, both, domain.GatewayOrderStatus{State: domain.PaymentCompleted,
+		AmountPaise: 37900, TransactionID: "T1"}, 1300, time.Now())
+	if err != nil {
+		t.Fatalf("CompleteOrder: %v", err)
+	}
+	if res.Outcome != domain.SettledPaidTwice || len(res.Paid) != 1 || res.Paid[0].ID != ride ||
+		res.Paid[0].PaidPaise != 24000 || res.Paid[0].CommissionPaise != 3120 ||
+		!slices.Equal(res.AlreadyPaid, []string{old}) {
+		t.Errorf("result = %+v; want the ride paid its part, the old one reported", res)
+	}
+	att, err := payments.PaymentAttention(ctx, time.Now().Add(-48*time.Hour), 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := 0
+	for _, o := range att.PaidTwice {
+		if o.MerchantOrderID == both.MerchantOrderID {
+			listed++
+		}
+	}
+	if listed != 1 {
+		t.Errorf("the partly double-paid order is listed %d times, want once: %+v", listed, att.PaidTwice)
+	}
+	// Recorded already: a second call changes nothing.
+	if res, err := payments.CompleteOrder(ctx, both, domain.GatewayOrderStatus{State: domain.PaymentCompleted,
+		AmountPaise: 37900}, 1300, time.Now()); err != nil || res.Outcome != domain.SettledAlready || len(res.Paid) != 0 {
+		t.Errorf("second CompleteOrder = %+v, %v; want already recorded", res, err)
+	}
 }
 
 func bookingParams(userID string, start time.Time, pickup string) InsertBookingParams {
@@ -93,8 +176,9 @@ func TestBookingRepository_InsertFindsRepeats_Integration(t *testing.T) {
 	}
 }
 
-// HUMAN REVIEW REQUIRED: payments. An unpaid ride blocks the customer until
-// it's paid or settled by hand. A ride settled in cash is never owed to its
+// HUMAN REVIEW REQUIRED: payments. An unpaid ride is owed (and carried into
+// the customer's next payment) until it's paid or settled by hand. A ride
+// settled in cash is never owed to its
 // driver; a waived one is owed their usual share (MOJUD pays it). The
 // receipt says how.
 func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
@@ -103,17 +187,15 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
 	yesterday := time.Now().Add(-24 * time.Hour)
 
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != "" {
-		t.Fatalf("no rides: unpaid %q, %v", id, err)
+	if got := dueIDs(t, ctx, bookings, user); len(got) != 0 {
+		t.Fatalf("no rides: dues %v", got)
 	}
-	rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 50) // below the gateway minimum
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != "" {
-		t.Fatalf("an unpayable fare blocked the customer: %q, %v", id, err)
-	}
+	// Below the gateway's minimum on its own, but still owed: it is carried.
+	small := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 50)
 	ride := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 24000)
 	open := rideIn(t, ctx, tx, user, "", domain.RideStatusRequested, time.Now().Add(48*time.Hour), 24000)
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != ride {
-		t.Fatalf("unpaid = %q, %v; want %s", id, err, ride)
+	if got := dueIDs(t, ctx, bookings, user); !slices.Equal(got, []string{small, ride}) {
+		t.Fatalf("dues = %v; want %s then %s", got, small, ride)
 	}
 
 	b, err := payments.SettleByHand(ctx, ride, domain.SettledCash, "Paid the driver in cash", 1300, time.Now())
@@ -123,8 +205,8 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 	if b.PaidAt == nil || b.PaidPaise != 0 || b.CommissionPaise != 0 {
 		t.Errorf("settled booking = %+v, want paid with nothing received", b)
 	}
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != "" {
-		t.Errorf("after settling: unpaid %q, %v", id, err)
+	if got := dueIDs(t, ctx, bookings, user); !slices.Equal(got, []string{small}) {
+		t.Errorf("after settling: dues %v, want only %s", got, small)
 	}
 
 	for _, tc := range []struct {
@@ -234,16 +316,16 @@ func TestBookingRepository_CancellationCharges_Integration(t *testing.T) {
 		b.PaymentStatus() != domain.RidePaymentDue {
 		t.Fatalf("Cancel(arrived) = %+v, %v; want cancelled with the fee due", b, err)
 	}
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != waiting {
-		t.Errorf("unpaid = %q, %v; want the fee %s", id, err, waiting)
+	if got := dueIDs(t, ctx, bookings, user); !slices.Equal(got, []string{waiting}) {
+		t.Errorf("dues = %v; want the fee %s", got, waiting)
 	}
 
 	// Waived: the customer may book again, and MOJUD owes the driver ₹43.50.
 	if _, err := payments.SettleByHand(ctx, waiting, domain.SettledWaived, "goodwill", 1300, time.Now()); err != nil {
 		t.Fatalf("SettleByHand(fee): %v", err)
 	}
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != "" {
-		t.Errorf("after waiving: unpaid %q, %v", id, err)
+	if got := dueIDs(t, ctx, bookings, user); len(got) != 0 {
+		t.Errorf("after waiving: dues %v", got)
 	}
 	due, err := payments.DuePayouts(ctx, time.Now())
 	if err != nil {
@@ -273,8 +355,8 @@ func TestBookingRepository_CancellationCharges_Integration(t *testing.T) {
 	if _, err := bookings.EndEarly(ctx, driving, user, 13900, time.Now()); !errors.Is(err, ErrBookingStateConflict) {
 		t.Errorf("EndEarly twice: err = %v, want ErrBookingStateConflict", err)
 	}
-	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != driving {
-		t.Errorf("unpaid = %q, %v; want the ended trip %s", id, err, driving)
+	if got := dueIDs(t, ctx, bookings, user); !slices.Equal(got, []string{driving}) {
+		t.Errorf("dues = %v; want the ended trip %s", got, driving)
 	}
 }
 
@@ -298,11 +380,11 @@ func TestPaymentRepository_AttentionAndReceipt_Integration(t *testing.T) {
 	first, second, stale := order("A"), order("B"), order("C")
 	paid := domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 24000,
 		TransactionID: "T1", PaymentMode: "UPI_INTENT", UTR: "412345678901"}
-	if out, _, err := payments.CompleteOrder(ctx, first, paid, 3120, time.Now()); err != nil || out != domain.SettledNow {
-		t.Fatalf("first CompleteOrder: %v, %v", out, err)
+	if res, err := payments.CompleteOrder(ctx, first, paid, 1300, time.Now()); err != nil || res.Outcome != domain.SettledNow {
+		t.Fatalf("first CompleteOrder: %+v, %v", res, err)
 	}
-	if out, _, err := payments.CompleteOrder(ctx, second, paid, 3120, time.Now()); err != nil || out != domain.SettledPaidTwice {
-		t.Fatalf("second CompleteOrder: %v, %v", out, err)
+	if res, err := payments.CompleteOrder(ctx, second, paid, 1300, time.Now()); err != nil || res.Outcome != domain.SettledPaidTwice {
+		t.Fatalf("second CompleteOrder: %+v, %v", res, err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE payment_orders SET created_at = now() - interval '2 days' WHERE merchant_order_id = $1`,
 		stale.MerchantOrderID); err != nil {
