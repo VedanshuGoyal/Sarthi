@@ -16,6 +16,7 @@ Map<String, dynamic> bookingJson({
   int ratingCount = 12,
   String? otp,
   Map<String, dynamic>? myRating,
+  String? startedAt,
   String? completedAt,
   String? cancelReason,
   String cancelledBy = 'customer',
@@ -25,12 +26,16 @@ Map<String, dynamic> bookingJson({
   int farePaise = 64000,
   int? cancellationFeePaise,
   int? bookedFarePaise,
+  int? carriedPaise,
+  int? hours,
+  String endsAt = '2030-10-26T07:30:00Z',
 }) => {
   'id': id,
   'tripType': tripType,
   'status': status,
   'scheduledAt': scheduledAt,
-  'endsAt': '2030-10-26T07:30:00Z',
+  'endsAt': endsAt,
+  'hours': ?hours,
   'farePaise': farePaise,
   'fareEstimated': true,
   'pickup': {
@@ -68,6 +73,7 @@ Map<String, dynamic> bookingJson({
   'startOtp': ?otp,
   'createdAt': '2030-10-25T04:35:00Z',
   if (withDriver) 'acceptedAt': '2030-10-25T05:00:00Z',
+  'startedAt': ?startedAt,
   'completedAt': ?completedAt,
   if (status == 'cancelled') ...{
     'cancelledAt': '2030-10-25T06:00:00Z',
@@ -80,6 +86,7 @@ Map<String, dynamic> bookingJson({
   'fareBreakdown': ?fareBreakdown,
   'cancellationFeePaise': ?cancellationFeePaise,
   'bookedFarePaise': ?bookedFarePaise,
+  'carriedPaise': ?carriedPaise,
 };
 
 /// An in-memory stand-in for the booking endpoints, so repository, view
@@ -89,7 +96,10 @@ Map<String, dynamic> bookingJson({
 /// rewrite the stored booking like the server does — a cancel at the pickup
 /// costs the booking's `cancellationFeePaise`, refused (409
 /// `cancellation_fee`) when the app agreed to less, and ending a trip early
-/// charges [endedFarePaise]. [location] is the driver fix
+/// charges [endedFarePaise]. A checkout is for the booking's own amount plus
+/// its `carriedPaise`, and once a booking that carried dues is paid, every
+/// other due booking is paid too and nothing is carried any more — the
+/// server's carried-dues rule. [location] is the driver fix
 /// to answer with (null → `{"location": null}`), and [locationError] a
 /// `(status, code)` to fail the location call with instead.
 class FakeBookingServer {
@@ -204,20 +214,31 @@ class FakeBookingServer {
             'orderId': 'OMO1',
             'token': 'order-token',
             'merchantOrderId': 'MOJUD_b1_1',
-            // A cancelled ride's checkout is for its fee.
-            'amountPaise': bookings[index]['status'] == 'cancelled'
-                ? bookings[index]['cancellationFeePaise']
-                : bookings[index]['farePaise'],
+            // A cancelled ride's checkout is for its fee; either way, plus
+            // what's owed on other bookings.
+            'amountPaise':
+                (bookings[index]['status'] == 'cancelled'
+                    ? bookings[index]['cancellationFeePaise'] as int
+                    : bookings[index]['farePaise'] as int) +
+                (bookings[index]['carriedPaise'] as int? ?? 0),
           },
         });
       case 'payment':
         _syncs++;
         if (paidAfterSyncs case final n? when _syncs >= n) {
-          bookings[index] = {
-            ...bookings[index],
-            'paymentStatus': 'paid',
-            'paidAt': '2030-10-26T08:00:00Z',
-          };
+          // Paying a booking that carried dues pays them all.
+          final covered = (bookings[index]['carriedPaise'] as int? ?? 0) > 0;
+          for (var i = 0; i < bookings.length; i++) {
+            if (i != index && !covered) continue;
+            final pays = i == index || bookings[i]['paymentStatus'] == 'due';
+            bookings[i] = {
+              ...bookings[i],
+              if (pays) ...{
+                'paymentStatus': 'paid',
+                'paidAt': '2030-10-26T08:00:00Z',
+              },
+            }..remove('carriedPaise');
+          }
         }
         return _json({'booking': bookings[index]});
       case 'driver-location':

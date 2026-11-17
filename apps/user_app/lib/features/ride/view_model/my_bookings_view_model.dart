@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show ImageProvider;
@@ -17,6 +18,10 @@ import '../domain/my_booking.dart';
 /// finishes while the app is open, or — on opening the app — the latest
 /// finished ride if it ended within [ratingPromptWindow] and is unrated. Each
 /// ride is asked about at most once per session.
+///
+/// It also says what the customer owes on other bookings ([carriedWith],
+/// [owed]): an unpaid ride or fee doesn't stop them booking, it's added to
+/// their next payment.
 class MyBookingsViewModel extends ChangeNotifier {
   /// [initialBookings] seeds the list as if already loaded, and [now] is the
   /// clock the rating prompt measures against — seams for previews and tests.
@@ -129,6 +134,14 @@ class MyBookingsViewModel extends ChangeNotifier {
     return loading;
   }
 
+  /// Fetches the list afresh: waits for a load already running — it may
+  /// have been sent before a change the server just made — then loads again.
+  /// Used after a payment, which can mark other bookings paid too.
+  Future<void> reload() async {
+    if (_loading case final running?) await running;
+    return load();
+  }
+
   Future<void> _load() async {
     try {
       final fetched = await _repository.myBookings();
@@ -163,21 +176,70 @@ class MyBookingsViewModel extends ChangeNotifier {
     _notify();
   }
 
+  // --- Money owed on other bookings -----------------------------------------
+
+  /// What paying for [booking] also collects for the customer's other
+  /// bookings (the server's `carriedPaise`), or null when nothing.
+  EarlierDues? carriedWith(MyBooking booking) {
+    final paise = booking.carriedPaise;
+    if (paise <= 0) return null;
+    return (paise: paise, oneRide: _owedByOneRide(paise, besides: booking.id));
+  }
+
+  /// What the customer owes, as far as the list shows — what will be added
+  /// to the payment of a ride they book now — or null when nothing. The
+  /// most any one booking says (a due ride's own charge plus what it
+  /// carries, an active one's carried amount), or the due rides' charges
+  /// added up if that's more (servers that don't carry dues).
+  EarlierDues? get owed {
+    var most = 0;
+    var dueTotal = 0;
+    for (final b in _bookings) {
+      if (b.canPay) {
+        dueTotal += b.chargePaise;
+        most = max(most, b.totalDuePaise);
+      } else if (b.status.isActive) {
+        most = max(most, b.carriedPaise);
+      }
+    }
+    final paise = max(most, dueTotal);
+    return paise <= 0 ? null : (paise: paise, oneRide: _owedByOneRide(paise));
+  }
+
+  /// Whether [paise] owed is all one ride's: the list shows exactly one due
+  /// booking (other than [besides]), for exactly that amount.
+  bool _owedByOneRide(int paise, {String? besides}) {
+    final due = [
+      for (final b in _bookings)
+        if (b.canPay && b.id != besides) b,
+    ];
+    return due.length == 1 && due.single.chargePaise == paise;
+  }
+
   // --- Payments the UPI app said went through --------------------------------
 
   /// Rides being re-checked by [confirmPayment], by id.
   final Map<String, Future<void>> _confirming = {};
 
-  /// Whether ride [id]'s payment went through in the UPI app but the server
-  /// hasn't confirmed it yet. Paying again meanwhile could take the money
-  /// twice, so the ride's Pay button stays off. Lives here, not on the ride
-  /// screen, so leaving and reopening the ride doesn't turn Pay back on.
-  bool isConfirmingPayment(String id) => _confirming.containsKey(id);
+  /// Whether a payment covering ride [id] went through in the UPI app but
+  /// the server hasn't confirmed it yet: ride [id]'s own, or another ride's
+  /// that also collected what's owed on others. Paying again meanwhile
+  /// could take the money twice, so the ride's Pay button stays off. Lives
+  /// here, not on the ride screen, so leaving and reopening the ride doesn't
+  /// turn Pay back on.
+  bool isConfirmingPayment(String id) {
+    if (_confirming.containsKey(id)) return true;
+    if (_confirming.isEmpty) return false;
+    bool carries(String rideId) => (byId(rideId)?.carriedPaise ?? 0) > 0;
+    return carries(id) || _confirming.keys.any(carries);
+  }
 
   /// Keeps asking the server to check ride [id]'s payment with the gateway,
   /// waiting [first] and then twice as long each time up to [longest], until
   /// it's paid, [giveUpAfter] has passed (the server's own sweep and the
   /// list refresh carry on), or this view model is gone. One run per ride.
+  /// Once it's paid the list is reloaded: the payment may have cleared the
+  /// customer's other bookings too.
   Future<void> confirmPayment(
     String id, {
     Duration first = const Duration(seconds: 5),
@@ -211,6 +273,10 @@ class MyBookingsViewModel extends ChangeNotifier {
       try {
         final latest = await _repository.syncPayment(id);
         applyUpdate(latest);
+        if (latest.paymentStatus == RidePaymentStatus.paid) {
+          await reload();
+          return;
+        }
         if (latest.paymentStatus != RidePaymentStatus.due) return;
       } on BookingActionException {
         // A blip; try again after the next wait.

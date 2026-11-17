@@ -1,3 +1,5 @@
+import 'dart:math' show max;
+
 import 'car_type.dart';
 import 'geo_point.dart';
 import 'scheduling.dart';
@@ -71,6 +73,17 @@ const String otherCancelReason = 'Other';
 /// customer before the driver gets there; what a cancel actually costs is
 /// the server's `cancellationFeePaise` on the booking.
 const int pickupCancellationFeePaise = 5000;
+
+/// How long a trip can run past its booked hours before the extra time is
+/// charged, by the hour. Mirrors the server's over-time rule (owner's
+/// decision, 17 Nov 2026).
+const Duration overtimeGrace = Duration(minutes: 15);
+
+/// What the customer owes on bookings other than the one at hand — unpaid
+/// finished rides and cancellation fees — collected together with that
+/// one's payment: [paise], and whether it's all one ride's ([oneRide]),
+/// said only when the rides list shows it.
+typedef EarlierDues = ({int paise, bool oneRide});
 
 /// The longest cancel reason the server accepts.
 const int maxCancelReasonLength = 200;
@@ -233,6 +246,7 @@ class MyBooking {
     this.fareBreakdown,
     this.cancellationFeePaise = 0,
     this.bookedFarePaise,
+    this.carriedPaise = 0,
   });
 
   final String id;
@@ -308,9 +322,15 @@ class MyBooking {
   /// [paymentStatus]). 0 when there's none.
   final int cancellationFeePaise;
 
-  /// The fare as booked, on a trip the customer ended early — [farePaise]
-  /// is then the charge for the time used. Null on every other booking.
+  /// The fare as booked, on a trip charged for the time actually used —
+  /// ended early by the customer, or run past its booked time. [farePaise]
+  /// is then that charge. Null on every other booking.
   final int? bookedFarePaise;
+
+  /// What the customer owes on their other bookings (unpaid finished rides,
+  /// unpaid cancellation fees), collected together with this booking's
+  /// payment. Sent on unpaid bookings that are active or due; 0 otherwise.
+  final int carriedPaise;
 
   int get fareRupees => (farePaise / 100).round();
 
@@ -322,14 +342,74 @@ class MyBooking {
   /// pickup, 0 before then (and from servers without the fee).
   int get cancelFeeNowPaise => canCancel ? cancellationFeePaise : 0;
 
-  /// Whether the customer ended the trip before its booked end.
-  bool get endedEarly =>
+  /// Whether the finished trip was charged for the time actually used
+  /// instead of as booked: the customer ended it early, or it ran past its
+  /// booked time. [bookedFarePaise] is then the fare as booked.
+  bool get chargedByTime =>
       status == BookingStatus.completed && bookedFarePaise != null;
+
+  /// Whether the customer ended the trip before its booked end: charged for
+  /// the time used, at most the booked fare.
+  bool get endedEarly => chargedByTime && farePaise <= bookedFarePaise!;
+
+  /// Whether the trip ran past its booked time (and the grace), so the
+  /// extra hours were charged: more than the booked fare.
+  bool get ranOver => chargedByTime && farePaise > bookedFarePaise!;
 
   /// What the customer pays for this booking: the cancellation fee of a
   /// cancelled ride, the fare of any other.
   int get chargePaise =>
       status == BookingStatus.cancelled ? cancellationFeePaise : farePaise;
+
+  /// What paying for this booking collects: its own [chargePaise] plus what
+  /// is owed on the customer's other bookings ([carriedPaise]).
+  int get totalDuePaise => chargePaise + carriedPaise;
+
+  /// The hours the trip is booked for: a Round Trip's [hours]; for the
+  /// others, the booked window ([endsAt] − [scheduledAt]) rounded up to
+  /// whole hours, at least 1. Null when neither is known. Mirrors the
+  /// server's over-time rule.
+  int? get bookedHours {
+    if (tripType == TripType.roundTrip && (hours ?? 0) > 0) return hours;
+    final end = endsAt;
+    if (end == null) return null;
+    return max(_startedHours(end.difference(scheduledAt)), 1);
+  }
+
+  /// From when a trip in progress is past its booked time and the extra
+  /// time is charged: [startedAt] plus [bookedHours] plus [overtimeGrace].
+  /// Null when either is unknown.
+  DateTime? get overtimeFrom {
+    final started = startedAt;
+    final booked = bookedHours;
+    if (started == null || booked == null) return null;
+    return started.add(Duration(hours: booked) + overtimeGrace);
+  }
+
+  /// Whether the trip is in progress and, at [now], past its booked time —
+  /// extra time is being charged by the hour.
+  bool isPastBookedTime(DateTime now) {
+    final from = overtimeFrom;
+    return status == BookingStatus.inProgress &&
+        from != null &&
+        now.isAfter(from);
+  }
+
+  /// The hours a finished trip took, each started hour counted as a whole
+  /// one, at least 1: what a trip that [ranOver] was charged for. Null when
+  /// the start or end time is missing.
+  int? get hoursUsed {
+    final started = startedAt;
+    final ended = completedAt;
+    if (started == null || ended == null || ended.isBefore(started)) {
+      return null;
+    }
+    return max(_startedHours(ended.difference(started)), 1);
+  }
+
+  /// Each started hour of [d] counted as a whole one.
+  static int _startedHours(Duration d) =>
+      (d.inMicroseconds / Duration.microsecondsPerHour).ceil();
 
   /// The driver's first name, for friendlier lines ("Ravi is 2 km away").
   String? get driverFirstName {
@@ -528,6 +608,7 @@ class MyBooking {
       fareBreakdown: FareBreakdown.tryParse(json['fareBreakdown']),
       cancellationFeePaise: _paise(json['cancellationFeePaise']) ?? 0,
       bookedFarePaise: _paise(json['bookedFarePaise']),
+      carriedPaise: _paise(json['carriedPaise']) ?? 0,
     );
   }
 }

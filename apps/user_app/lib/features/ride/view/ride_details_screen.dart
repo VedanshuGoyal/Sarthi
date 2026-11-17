@@ -14,6 +14,7 @@ import 'widgets/help_safety_row.dart';
 import 'widgets/live_ride_map.dart';
 import 'widgets/receipt_card.dart';
 import 'widgets/ride_format.dart';
+import 'widgets/ride_note.dart';
 import 'widgets/star_rating.dart';
 import 'widgets/start_code_panel.dart';
 
@@ -22,7 +23,9 @@ import 'widgets/start_code_panel.dart';
 /// the full route and plan, a timeline of what happened when — and the
 /// actions that fit: cancel before the trip starts (free until the driver
 /// reaches the pickup), end it early while it's on, pay for it — or for its
-/// cancellation fee — by UPI, and rate it once it's done.
+/// cancellation fee — by UPI, and rate it once it's done. Calm notes say
+/// when a trip is past its booked time, and when money owed on earlier rides
+/// will be added to this one's payment.
 ///
 /// State lives in [rideDetailsViewModelProvider] for [bookingId]; this view
 /// renders it and tells the view model when it's visible, so the driver's
@@ -148,8 +151,14 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
       );
     }
 
+    final carried = vm.carriedDues;
     final live = <Widget>[
       _StatusHeader(booking: booking),
+      if (vm.isPastBookedTime)
+        const RideNote(
+          text: RideFormat.pastBookedTime,
+          icon: Icons.schedule_rounded,
+        ),
       if (vm.isTracking)
         _TrackingCard(
           line: vm.trackingLine,
@@ -177,9 +186,16 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
       if ((booking.status == BookingStatus.completed ||
               booking.hasCancellationFee) &&
           booking.paymentStatus != RidePaymentStatus.none)
-        _PaymentCard(vm: vm, booking: booking, onPay: () => _pay(vm)),
+        _PaymentCard(
+          vm: vm,
+          booking: booking,
+          carried: carried,
+          onPay: () => _pay(vm),
+        ),
       if (booking.status == BookingStatus.completed)
         _RatingCard(vm: vm, booking: booking, onSubmit: () => _rate(vm)),
+      if (carried != null && booking.status.isActive)
+        RideNote(text: RideFormat.carriedNote(carried)),
       RideHelpSafety(booking: booking),
     ];
     final plan = <Widget>[
@@ -302,6 +318,7 @@ class _StatusHeader extends StatelessWidget {
       BookingStatus.completed => (
         b.endedEarly ? 'Trip ended early' : 'Trip completed',
         RideFormat.endedEarly(b) ??
+            RideFormat.ranOver(b) ??
             RideFormat.when(context, b.completedAt ?? b.scheduledAt),
       ),
       BookingStatus.cancelled => (
@@ -384,22 +401,26 @@ class _TrackingCard extends StatelessWidget {
 }
 
 /// Paying for a completed trip, or for the fee of a ride cancelled at the
-/// pickup: a UPI button while it's due, the receipt once it's paid.
+/// pickup: a UPI button while it's due — for that plus whatever is
+/// [carried] from the customer's other bookings — and the receipt once it's
+/// paid.
 class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
     required this.vm,
     required this.booking,
     required this.onPay,
+    this.carried,
   });
 
   final RideDetailsViewModel vm;
   final MyBooking booking;
+  final EarlierDues? carried;
   final VoidCallback onPay;
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
-    final amount = RideFormat.rupees(booking.chargePaise);
+    final amount = RideFormat.rupees(booking.totalDuePaise);
     if (booking.paymentStatus == RidePaymentStatus.paid) {
       return ReceiptCard(booking: booking);
     }
@@ -426,6 +447,10 @@ class _PaymentCard extends StatelessWidget {
               vm.isPaying ? 'Waiting for UPI…' : 'Pay $amount by UPI',
             ),
           ),
+          if (carried case final dues?) ...[
+            const SizedBox(height: Skyline.s8),
+            Text(RideFormat.carriedIncluded(dues), style: t.body(size: 13)),
+          ],
           if (error != null) ...[
             const SizedBox(height: Skyline.s8),
             Text(error, style: t.body(size: 13, color: t.danger)),
@@ -643,7 +668,7 @@ class _TripInfoCard extends StatelessWidget {
             : ('Est. duration', '≈ ${RideFormat.duration(duration)}'),
       if (car != null) ('Car', car),
       ('Fare', RideFormat.fare(b)),
-      if (b.bookedFarePaise case final booked? when b.endedEarly)
+      if (b.bookedFarePaise case final booked? when b.chargedByTime)
         ('Booked fare', RideFormat.rupees(booked)),
       if (b.hasCancellationFee)
         ('Cancellation fee', RideFormat.rupees(b.cancellationFeePaise)),

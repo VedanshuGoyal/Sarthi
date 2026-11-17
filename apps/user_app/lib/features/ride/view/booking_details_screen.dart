@@ -12,6 +12,8 @@ import 'pickup_location_screen.dart';
 import 'widgets/add_car_sheet.dart';
 import 'widgets/car_selector_field.dart';
 import 'widgets/fare_summary.dart';
+import 'widgets/ride_format.dart';
+import 'widgets/ride_note.dart';
 import 'widgets/ride_theme.dart';
 import 'widgets/hours_selector.dart';
 import 'widgets/schedule_field.dart';
@@ -24,8 +26,10 @@ import 'widgets/trip_start_row.dart';
 /// ([tripStartViewModelProvider], shared with One-Way's "From" row); tapping
 /// it opens the pickup search to change it. Below, the customer picks the hire
 /// duration, a start date/time, and one of their saved cars from the same
-/// dropdown One-Way uses (adding a car inline when needed). On confirm the
-/// assembled [RoundTripBooking] is handed back via [onConfirmed]. Form state
+/// dropdown One-Way uses (adding a car inline when needed). Money still owed
+/// on earlier rides doesn't stop the booking: a note above the CTA says it
+/// will be added to this trip's payment. On confirm the assembled
+/// [RoundTripBooking] is handed back via [onConfirmed]. Form state
 /// lives in [bookingDetailsViewModelProvider]; this view only renders it and
 /// drives the pickers.
 class BookingDetailsScreen extends ConsumerWidget {
@@ -89,7 +93,7 @@ class BookingDetailsScreen extends ConsumerWidget {
         title: const Text('Estimated fare'),
         content: const Text(
           'Prices may vary based on the final pickup or drop location and the '
-          'time taken.',
+          'time taken. Time past your booked hours is charged by the hour.',
         ),
         actions: [
           TextButton(
@@ -113,6 +117,7 @@ class BookingDetailsScreen extends ConsumerWidget {
     final vm = ref.watch(bookingDetailsViewModelProvider);
     final start = ref.watch(tripStartViewModelProvider);
     final savedCars = ref.watch(savedCarsViewModelProvider);
+    final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
     final pickup = start.start;
     final booking = pickup == null ? null : vm.bookingFrom(pickup);
@@ -210,6 +215,11 @@ class BookingDetailsScreen extends ConsumerWidget {
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
+                          ),
+                        if (owed != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: RideNote(text: RideFormat.carriedNote(owed)),
                           ),
                         SarthiPrimaryButton(
                           label: 'Confirm booking',

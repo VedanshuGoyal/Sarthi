@@ -192,6 +192,19 @@ class RideDetailsViewModel extends ChangeNotifier {
   /// Pull-to-refresh: re-reads the customer's rides, this one included.
   Future<void> refresh() => _bookings.load();
 
+  /// What paying for this ride also collects for the customer's other
+  /// bookings, or null when nothing: on a ride that's due, part of the
+  /// amount to pay; on an upcoming or ongoing one, what will be added when
+  /// the customer pays for it.
+  EarlierDues? get carriedDues {
+    final b = _booking;
+    return b == null ? null : _bookings.carriedWith(b);
+  }
+
+  /// Whether the trip is on and past its booked time (and the grace): the
+  /// extra time is charged by the hour. Re-read on every tracking tick.
+  bool get isPastBookedTime => _booking?.isPastBookedTime(_now()) ?? false;
+
   void _onBookingsChanged() {
     final latest = _bookings.byId(bookingId);
     final confirming = _bookings.isConfirmingPayment(bookingId);
@@ -438,8 +451,9 @@ class RideDetailsViewModel extends ChangeNotifier {
   bool get canEndTrip => _booking?.canEndTrip ?? false;
 
   /// Ends the trip now; true once it's ended. The customer then pays by the
-  /// hour for the time used, never more than the booked fare: the list
-  /// holds the completed ride, due for payment, and reloads.
+  /// hour for the time used — at most the booked fare within the booked
+  /// time, the extra hours too past it: the list holds the completed ride,
+  /// due for payment, and reloads.
   Future<bool> endTrip() async {
     final b = _booking;
     if (b == null || !b.canEndTrip || _isEnding) return false;
@@ -560,8 +574,10 @@ class RideDetailsViewModel extends ChangeNotifier {
       (_booking?.canPay ?? false) && _checkout != null && !_confirming;
 
   /// Opens the UPI payment page for the completed ride (or the cancelled
-  /// ride's fee — the server sets the amount), then has the server check
-  /// with the gateway; true once it's paid. Whatever the page says when it
+  /// ride's fee), plus what's owed on the customer's other bookings — the
+  /// server sets the amount — then has the server check with the gateway;
+  /// true once it's paid, with the rides list reloaded so the other
+  /// bookings it covered show as paid too. Whatever the page says when it
   /// closes, only the server's check counts.
   Future<bool> pay() async {
     var b = _booking;
@@ -628,6 +644,8 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   /// Asks the server to re-check the payment up to [attempts] times,
   /// [paySyncEvery] apart, until it's paid; puts each reply in the list.
+  /// Once it's paid, reloads the list: the payment may have covered the
+  /// customer's other bookings too.
   ///
   /// Keeps going if the customer leaves the screen meanwhile: the payment
   /// has already gone through at the gateway, and until the server has
@@ -644,6 +662,9 @@ class RideDetailsViewModel extends ChangeNotifier {
         // A blip; the next attempt (or the list's own refresh) catches up.
       }
       if (latest?.paymentStatus == RidePaymentStatus.paid) break;
+    }
+    if (latest?.paymentStatus == RidePaymentStatus.paid) {
+      await _bookings.reload();
     }
     return latest;
   }

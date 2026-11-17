@@ -8,6 +8,8 @@ import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/multi_stop_planner_view_model.dart';
 import 'pickup_location_screen.dart';
+import 'widgets/ride_format.dart';
+import 'widgets/ride_note.dart';
 import 'widgets/schedule_field.dart';
 import 'widgets/stop_card.dart';
 import 'widgets/ride_theme.dart';
@@ -17,8 +19,10 @@ import 'widgets/time_slot_picker.dart';
 ///
 /// Given the confirmed [start], the customer sets a start time and builds an
 /// ordered list of stops — each with a location, a task in their own words,
-/// and a leave-by deadline. On confirm the assembled [MultiStopTrip] is handed
-/// back via [onConfirmed]. State lives in [multiStopPlannerViewModelProvider],
+/// and a leave-by deadline. Money still owed on earlier rides doesn't stop the
+/// booking: a note above the CTA says it will be added to this trip's
+/// payment. On confirm the assembled [MultiStopTrip] is handed back via
+/// [onConfirmed]. State lives in [multiStopPlannerViewModelProvider],
 /// keyed on the start; this view renders it, owns the per-stop text
 /// controllers, and drives the pickers.
 class MultiStopPlannerScreen extends ConsumerStatefulWidget {
@@ -137,6 +141,7 @@ class _MultiStopPlannerScreenState
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(multiStopPlannerViewModelProvider(widget.start));
+    final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
 
     return Theme(
@@ -223,6 +228,11 @@ class _MultiStopPlannerScreenState
                           padding: const EdgeInsets.only(bottom: 10),
                           child: _planSummaryText(context, vm, theme),
                         ),
+                        if (owed != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: RideNote(text: RideFormat.carriedNote(owed)),
+                          ),
                         SarthiPrimaryButton(
                           label: 'Confirm trip',
                           onPressed: vm.canConfirm

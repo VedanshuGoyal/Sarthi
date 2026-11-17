@@ -648,7 +648,15 @@ void main() {
             .textContaining('Each started hour counts as a full hour')
             .evaluate(),
       ).isNotEmpty();
-      check(_shows('Never more than your booked fare of ≈ ₹640.')).isTrue();
+      // No cap on the fare any more: past the booked time, extra hours
+      // count too.
+      check(find.textContaining('Never more than').evaluate()).isEmpty();
+      check(
+        _shows(
+          "If you're past your booked time, the extra hours are charged "
+          'too, after a 15-minute grace.',
+        ),
+      ).isTrue();
 
       await tester.tap(find.text('Keep going'));
       await tester.pumpAndSettle();
@@ -720,6 +728,228 @@ void main() {
       check(_onReceipt('Booked fare')).isTrue();
       check(_onReceipt('₹640')).isTrue();
       check(_onReceipt('Base fare')).isFalse();
+    });
+  });
+
+  group('past the booked time', () {
+    /// A trip booked for 3 h that started [ago].
+    Map<String, dynamic> onTrip(Duration ago) => bookingJson(
+      status: 'in_progress',
+      startedAt: DateTime.now().toUtc().subtract(ago).toIso8601String(),
+    );
+    const note =
+        "You're past your booked time. Extra time is charged by the hour.";
+
+    testWidgets('a trip on the road past its booked time says extra time '
+        'is charged', (tester) async {
+      await _pump(
+        tester,
+        FakeBookingServer([onTrip(const Duration(hours: 3, minutes: 20))]),
+      );
+      check(_shows('On your trip')).isTrue();
+      check(_shows(note)).isTrue();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('within the booked time and the grace, nothing is said', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([onTrip(const Duration(hours: 3, minutes: 10))]),
+      );
+      check(_shows('On your trip')).isTrue();
+      check(_shows(note)).isFalse();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    Map<String, dynamic> ranOver({String paymentStatus = 'due'}) => bookingJson(
+      status: 'completed',
+      farePaise: 96000,
+      bookedFarePaise: 64000,
+      startedAt: '2030-10-26T05:00:00Z',
+      completedAt: '2030-10-26T08:40:00Z',
+      paymentStatus: paymentStatus,
+      payment: paymentStatus == 'paid' ? {'mode': 'UPI_INTENT'} : null,
+    );
+    const overLine =
+        'Ran past the booked time. Charged ₹960 for 4 h (booked ₹640).';
+
+    testWidgets('a trip that ran over reads as that, not as ended early', (
+      tester,
+    ) async {
+      await _pump(tester, FakeBookingServer([ranOver()]), settle: false);
+      check(_shows('Trip completed')).isTrue();
+      check(_shows('Trip ended early')).isFalse();
+      check(_shows(overLine)).isTrue();
+      check(find.textContaining('for the time used').evaluate()).isEmpty();
+      check(_shows('Booked fare')).isTrue();
+      check(_shows('Pay ₹960 by UPI')).isTrue();
+      // The timeline ends at Completed, not Ended early.
+      check(_shows('Ended early')).isFalse();
+    });
+
+    testWidgets('its receipt shows the charge beside the booked fare', (
+      tester,
+    ) async {
+      await _pump(tester, FakeBookingServer([ranOver(paymentStatus: 'paid')]));
+      await tester.ensureVisible(find.text('Receipt'));
+      await tester.pump();
+      check(_onReceipt('Fare for the time used')).isTrue();
+      check(_onReceipt('₹960')).isTrue();
+      check(_onReceipt('Booked fare')).isTrue();
+      check(_onReceipt('₹640')).isTrue();
+    });
+
+    testWidgets('Activity tells a trip that ran over from one ended early', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          ranOver(),
+          bookingJson(
+            id: 'b2',
+            status: 'completed',
+            farePaise: 24000,
+            bookedFarePaise: 64000,
+            scheduledAt: '2030-10-20T05:00:00Z',
+          ),
+        ]),
+        home: const ActivityPanel(),
+      );
+      await tester.tap(find.text('Completed · 2'));
+      await tester.pumpAndSettle();
+      check(_shows(overLine)).isTrue();
+      check(
+        _shows('Ended early. Charged ₹240 for the time used (booked ₹640).'),
+      ).isTrue();
+    });
+  });
+
+  group('dues carried from other rides', () {
+    /// A trip due for ₹640 that also collects the ₹50 fee still unpaid on
+    /// another ride (and that fee, which would collect the trip).
+    List<Map<String, dynamic>> owing() => [
+      bookingJson(
+        status: 'completed',
+        paymentStatus: 'due',
+        carriedPaise: 5000,
+      ),
+      bookingJson(
+        id: 'fee',
+        status: 'cancelled',
+        cancellationFeePaise: 5000,
+        paymentStatus: 'due',
+        carriedPaise: 64000,
+        scheduledAt: '2030-10-20T05:00:00Z',
+      ),
+    ];
+
+    testWidgets('Pay is for the total, and says what is from another ride', (
+      tester,
+    ) async {
+      await _pump(tester, FakeBookingServer(owing()), settle: false);
+      check(_shows('Pay ₹690 by UPI')).isTrue();
+      check(_shows('Includes ₹50 from another ride.')).isTrue();
+      check(_shows('Pay ₹640 by UPI')).isFalse();
+    });
+
+    testWidgets('a fee due with another ride carried pays both', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer(owing()),
+        home: const RideDetailsScreen(bookingId: 'fee'),
+        settle: false,
+      );
+      check(_shows('Pay the cancellation fee')).isTrue();
+      check(_shows('Pay ₹690 by UPI')).isTrue();
+      check(_shows('Includes ₹640 from another ride.')).isTrue();
+    });
+
+    testWidgets('an amount the list can not account for is from other rides', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'completed',
+            paymentStatus: 'due',
+            carriedPaise: 12000,
+          ),
+        ]),
+        settle: false,
+      );
+      check(_shows('Pay ₹760 by UPI')).isTrue();
+      check(_shows('Includes ₹120 from other rides.')).isTrue();
+    });
+
+    const upcomingNote =
+        '₹50 unpaid from an earlier ride will be added when you pay for '
+        'this trip.';
+
+    List<Map<String, dynamic>> upcoming() => [
+      bookingJson(otp: '4821', carriedPaise: 5000),
+      bookingJson(
+        id: 'fee',
+        status: 'cancelled',
+        cancellationFeePaise: 5000,
+        paymentStatus: 'due',
+        scheduledAt: '2030-10-20T05:00:00Z',
+      ),
+    ];
+
+    testWidgets('an upcoming ride says the earlier ride will be added to '
+        'its payment', (tester) async {
+      await _pump(tester, FakeBookingServer(upcoming()));
+      check(_shows('Ravi is your driver')).isTrue();
+      check(_shows(upcomingNote)).isTrue();
+      // Nothing to pay on this one yet; it can still be cancelled.
+      check(find.textContaining('by UPI').evaluate()).isEmpty();
+      check(_shows('Cancel ride')).isTrue();
+    });
+
+    testWidgets('a ride with nothing carried says nothing about it', (
+      tester,
+    ) async {
+      await _pump(tester, FakeBookingServer([bookingJson(otp: '4821')]));
+      check(find.textContaining('will be added').evaluate()).isEmpty();
+    });
+
+    testWidgets('an Activity card for an upcoming ride has the note too', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer(upcoming()),
+        home: const ActivityPanel(),
+      );
+      check(_shows('Upcoming · 1')).isTrue();
+      check(_shows(upcomingNote)).isTrue();
+
+      // The fee itself is paid on its own, for just the fee.
+      await tester.tap(find.text('Completed · 1'));
+      await tester.pumpAndSettle();
+      check(_shows('Pay ₹50 by UPI')).isTrue();
+      check(find.textContaining('Includes').evaluate()).isEmpty();
+    });
+
+    testWidgets('Activity cards of rides due together each pay the total', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer(owing()),
+        home: const ActivityPanel(),
+      );
+      await tester.tap(find.text('Completed · 2'));
+      await tester.pumpAndSettle();
+      check(find.text('Pay ₹690 by UPI').evaluate()).length.equals(2);
+      check(_shows('Includes ₹50 from another ride.')).isTrue();
+      check(_shows('Includes ₹640 from another ride.')).isTrue();
     });
   });
 

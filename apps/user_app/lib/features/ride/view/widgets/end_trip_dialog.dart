@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../domain/my_booking.dart';
-import 'ride_format.dart';
 
 /// Asks whether to end [booking]'s trip now; resolves true when the
 /// customer confirms, false when they keep going.
@@ -14,10 +13,10 @@ Future<bool> showEndTripDialog(BuildContext context, MyBooking booking) async {
   return confirmed ?? false;
 }
 
-/// "End trip now?": what ending early costs — by the hour for the time
-/// used, each started hour counted as a full one, never more than the
-/// booked fare — and a choice between ending and keeping going. Pops with
-/// true on confirm; the caller ends the trip.
+/// "End trip now?": what ending now costs — by the hour for the time used,
+/// each started hour counted as a full one, and past the booked time (after
+/// [overtimeGrace]) the extra hours too — and a choice between ending and
+/// keeping going. Pops with true on confirm; the caller ends the trip.
 class EndTripDialog extends StatelessWidget {
   const EndTripDialog({super.key, required this.booking});
 
@@ -39,8 +38,8 @@ class EndTripDialog extends StatelessWidget {
           ),
           const SizedBox(height: Skyline.s8),
           Text(
-            'Never more than your booked fare of '
-            '${RideFormat.fare(booking)}.',
+            "If you're past your booked time, the extra hours are charged "
+            'too, after a ${overtimeGrace.inMinutes}-minute grace.',
             style: t.body(),
           ),
         ],

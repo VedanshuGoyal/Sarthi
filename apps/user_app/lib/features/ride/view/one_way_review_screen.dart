@@ -6,6 +6,8 @@ import '../domain/one_way_trip.dart';
 import '../ride_providers.dart';
 import '../view_model/one_way_review_view_model.dart';
 import 'widgets/car_selector_field.dart';
+import 'widgets/ride_format.dart';
+import 'widgets/ride_note.dart';
 import 'widgets/route_summary.dart';
 import 'widgets/ride_theme.dart';
 import 'widgets/vast_quiet/vast_quiet.dart';
@@ -16,9 +18,11 @@ import 'widgets/vast_quiet/vast_quiet.dart';
 /// it read-only, fetches the route's traffic-aware drive time once for the
 /// chosen departure, and lets the customer confirm. Changing any choice means
 /// going back — which is what keeps the estimate to a single API call per
-/// visit. On confirm the assembled [OneWayTrip] is handed back via
-/// [onConfirmed]. State lives in [oneWayReviewViewModelProvider], keyed on the
-/// draft; this view only renders it.
+/// visit. Money still owed on earlier rides doesn't stop the booking: a note
+/// above the CTA says it will be added to this trip's payment. On confirm
+/// the assembled [OneWayTrip] is handed back via [onConfirmed]. State lives
+/// in [oneWayReviewViewModelProvider], keyed on the draft; this view only
+/// renders it.
 class OneWayReviewScreen extends ConsumerWidget {
   const OneWayReviewScreen({super.key, required this.draft, this.onConfirmed});
 
@@ -50,6 +54,7 @@ class OneWayReviewScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(oneWayReviewViewModelProvider(draft));
+    final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
     final l10n = MaterialLocalizations.of(context);
 
@@ -124,6 +129,11 @@ class OneWayReviewScreen extends ConsumerWidget {
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
+                          ),
+                        if (owed != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: RideNote(text: RideFormat.carriedNote(owed)),
                           ),
                         SarthiPrimaryButton(
                           label: 'Confirm booking',

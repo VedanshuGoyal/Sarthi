@@ -59,6 +59,34 @@ abstract final class RideFormat {
         '(booked ${rupees(booked)}).';
   }
 
+  /// "Ran past the booked time. Charged ₹960 for 4 h (booked ₹640).", for
+  /// a trip that went over its booked hours; null for any other.
+  static String? ranOver(MyBooking b) {
+    final booked = b.bookedFarePaise;
+    if (!b.ranOver || booked == null) return null;
+    final hours = b.hoursUsed;
+    return 'Ran past the booked time. Charged ${rupees(b.farePaise)}'
+        '${hours == null ? '' : ' for $hours h'} (booked ${rupees(booked)}).';
+  }
+
+  /// The ride screen's note while a trip is past its booked time.
+  static const String pastBookedTime =
+      "You're past your booked time. Extra time is charged by the hour.";
+
+  /// "₹50 unpaid from an earlier ride will be added when you pay for this
+  /// trip.": on an upcoming or ongoing ride — or one about to be booked —
+  /// while the customer owes on earlier ones.
+  static String carriedNote(EarlierDues dues) =>
+      '${rupees(dues.paise)} unpaid from '
+      '${dues.oneRide ? 'an earlier ride' : 'earlier rides'} '
+      'will be added when you pay for this trip.';
+
+  /// "Includes ₹50 from another ride.", by the Pay button of a ride whose
+  /// payment also clears what's owed on the customer's other bookings.
+  static String carriedIncluded(EarlierDues dues) =>
+      'Includes ${rupees(dues.paise)} from '
+      '${dues.oneRide ? 'another ride' : 'other rides'}.';
+
   /// "4 h", "1 h 30 min", "45 min".
   static String duration(Duration d) {
     final hours = d.inHours;

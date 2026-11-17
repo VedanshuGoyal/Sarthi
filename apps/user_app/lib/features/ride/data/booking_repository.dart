@@ -157,7 +157,8 @@ class BookingRepository {
   /// same key when retrying the same booking, so a submit that landed but
   /// whose reply was lost isn't booked twice. Throws
   /// [BookingSubmitException] — [BookingSubmitException.isPaymentDue] while
-  /// a finished ride is still unpaid.
+  /// a finished ride is still unpaid, from servers before unpaid rides were
+  /// added to the next payment instead.
   Future<void> submitRoundTrip(
     RoundTripBooking booking, {
     String? idempotencyKey,
