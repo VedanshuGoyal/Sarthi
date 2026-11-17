@@ -215,6 +215,91 @@ void main() {
       check(parsed.sharePaise).isNull();
     });
 
+    test('a ride the customer cancelled at the pickup carries its fee and '
+        'payment', () {
+      final parsed = Ride.tryParse(
+        rideJson(
+          status: 'cancelled',
+          cancelledBy: 'customer',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'paid',
+          sharePaise: 4350,
+        ),
+      )!;
+      check(parsed.cancellationFeePaise).equals(5000);
+      check(parsed.hasCancellationFee).isTrue();
+      check(parsed.paymentStatus).equals(RidePaymentStatus.paid);
+      check(parsed.sharePaise).equals(4350);
+      check(parsed.cancelLabel).equals('Customer cancelled at the pickup');
+      check(parsed.endedEarly).isFalse();
+    });
+
+    test('a free cancellation has no fee and keeps its label', () {
+      final parsed = Ride.tryParse(
+        rideJson(status: 'cancelled', cancelledBy: 'customer'),
+      )!;
+      check(parsed.cancellationFeePaise).isNull();
+      check(parsed.hasCancellationFee).isFalse();
+      check(parsed.paymentStatus).equals(RidePaymentStatus.none);
+      check(parsed.cancelLabel).equals('Cancelled by customer');
+      // A zero fee, or a fee on a ride that wasn't cancelled, is no fee.
+      check(
+        Ride.tryParse(
+          rideJson(status: 'cancelled', cancellationFeePaise: 0),
+        )!.hasCancellationFee,
+      ).isFalse();
+      check(
+        Ride.tryParse(
+          rideJson(status: 'arrived', cancellationFeePaise: 5000),
+        )!.hasCancellationFee,
+      ).isFalse();
+    });
+
+    test('a trip the customer ended early carries the booked fare', () {
+      final parsed = Ride.tryParse(
+        rideJson(
+          status: 'completed',
+          farePaise: 20000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      )!;
+      check(parsed.farePaise).equals(20000);
+      check(parsed.bookedFarePaise).equals(34000);
+      check(parsed.endedEarly).isTrue();
+      check(parsed.paymentStatus).equals(RidePaymentStatus.due);
+      check(Ride.tryParse(rideJson(status: 'completed'))!.endedEarly).isFalse();
+    });
+
+    test('a merged update keeps the fee and booked fare', () {
+      final before = Ride.tryParse(
+        rideJson(status: 'arrived', withCustomer: true),
+      )!;
+      final update = Ride.tryParse(
+        rideJson(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+      )!;
+      final merged = before.mergedWith(update);
+      check(merged.customer).isNotNull();
+      check(merged.cancellationFeePaise).equals(5000);
+      check(merged.paymentStatus).equals(RidePaymentStatus.due);
+
+      final ended = before.mergedWith(
+        Ride.tryParse(
+          rideJson(
+            status: 'completed',
+            farePaise: 20000,
+            bookedFarePaise: 34000,
+          ),
+        )!,
+      );
+      check(ended.bookedFarePaise).equals(34000);
+      check(ended.farePaise).equals(20000);
+    });
+
     test('earnings read the money summary, or zeros without one', () {
       final e = Earnings.fromJson({
         'payments': {

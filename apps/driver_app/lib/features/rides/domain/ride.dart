@@ -166,12 +166,13 @@ class RideRating {
   }
 }
 
-/// Where the money for a completed ride stands.
+/// Where the money for a completed ride — or a cancelled one with a
+/// [Ride.cancellationFeePaise] — stands.
 enum RidePaymentStatus {
-  /// Not completed yet — nothing to pay.
+  /// Nothing to pay: not completed yet, or cancelled free.
   none(''),
 
-  /// Completed; the customer hasn't paid yet.
+  /// Completed (or cancelled with a fee); the customer hasn't paid yet.
   due('due'),
 
   /// The customer paid MOJUD; the driver's share comes in the next payout.
@@ -189,7 +190,8 @@ enum RidePaymentStatus {
     orElse: () => none,
   );
 
-  /// "Awaiting payment", "Paid", "Paid out" — empty before completion.
+  /// "Awaiting payment", "Paid", "Paid out" — empty when there's nothing to
+  /// pay.
   String get label => switch (this) {
     none => '',
     due => 'Awaiting payment',
@@ -230,6 +232,8 @@ class Ride {
     this.paymentStatus = RidePaymentStatus.none,
     this.paidAt,
     this.sharePaise,
+    this.cancellationFeePaise,
+    this.bookedFarePaise,
   });
 
   final String id;
@@ -294,8 +298,10 @@ class Ride {
   /// the later of their arrival and the booked start.
   final DateTime? noShowAt;
 
-  /// "Cancelled by customer", "Customer didn't come" or "Cancelled".
+  /// "Cancelled by customer" ("Customer cancelled at the pickup" when that
+  /// cost them a fee), "Customer didn't come" or "Cancelled".
   String get cancelLabel => switch (cancelledBy) {
+    'customer' when hasCancellationFee => 'Customer cancelled at the pickup',
     'customer' => 'Cancelled by customer',
     'no_show' => "Customer didn't come",
     _ => 'Cancelled',
@@ -310,12 +316,30 @@ class Ride {
   /// What this driver gave the customer, once they've rated them.
   final RideRating? myRating;
 
-  /// Whether the customer has paid for the completed ride, and when.
+  /// Whether the customer has paid for the completed ride (or the
+  /// cancellation fee), and when.
   final RidePaymentStatus paymentStatus;
   final DateTime? paidAt;
 
   /// The driver's part of a paid ride: the payment less MOJUD's commission.
   final int? sharePaise;
+
+  /// On a ride the customer cancelled after the driver reached the pickup:
+  /// the fee they're charged, which the driver gets like a fare (less
+  /// MOJUD's commission). The backend omits it when there's none.
+  final int? cancellationFeePaise;
+
+  /// On a ride the customer ended early: the fare as booked. [farePaise] is
+  /// then what they're charged for the time used.
+  final int? bookedFarePaise;
+
+  /// The customer cancelled at the pickup and owes the driver a fee.
+  bool get hasCancellationFee =>
+      status == RideStatus.cancelled && (cancellationFeePaise ?? 0) > 0;
+
+  /// The customer ended the trip before its booked time was up.
+  bool get endedEarly =>
+      status == RideStatus.completed && bookedFarePaise != null;
 
   /// The fare in whole rupees, for display.
   int get fareRupees => (farePaise / 100).round();
@@ -370,6 +394,8 @@ class Ride {
     paymentStatus: paymentStatus,
     paidAt: paidAt,
     sharePaise: sharePaise,
+    cancellationFeePaise: cancellationFeePaise,
+    bookedFarePaise: bookedFarePaise,
   );
 
   /// Parses the backend's ride, or returns null for one this app version
@@ -424,6 +450,8 @@ class Ride {
       paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
       paidAt: _time(json['paidAt']),
       sharePaise: (json['sharePaise'] as num?)?.toInt(),
+      cancellationFeePaise: (json['cancellationFeePaise'] as num?)?.toInt(),
+      bookedFarePaise: (json['bookedFarePaise'] as num?)?.toInt(),
     );
   }
 }

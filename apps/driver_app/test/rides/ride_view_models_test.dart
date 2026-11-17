@@ -531,5 +531,36 @@ void main() {
         RideFormat.driverRating(const EarningsRating(average: 5, count: 1)),
       ).equals('Your rating ★ 5.0 from 1 trip');
     });
+
+    test('reads a cancellation fee and its payment', () {
+      String fee({String? status, int? share}) => RideFormat.cancellationFee(
+        ride(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: status,
+          sharePaise: share,
+        ),
+      );
+      check(
+        fee(status: 'due'),
+      ).equals('₹50 cancellation fee · Awaiting payment');
+      check(
+        fee(status: 'paid', share: 4350),
+      ).equals('₹50 cancellation fee · Paid · your share ₹44 after commission');
+      check(
+        fee(status: 'paid_out', share: 4350),
+      ).equals('₹50 cancellation fee · Paid out');
+      // No payment fields: just the fee.
+      check(fee()).equals('₹50 cancellation fee');
+      check(RideFormat.paise(5000)).equals('₹50');
+    });
+
+    test('reads a trip the customer ended early', () {
+      check(
+        RideFormat.endedEarly(
+          ride(status: 'completed', farePaise: 20000, bookedFarePaise: 34000),
+        ),
+      ).equals('Charged ₹200 for the time used (booked ₹340)');
+    });
   });
 }
