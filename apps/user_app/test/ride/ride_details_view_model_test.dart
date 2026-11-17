@@ -270,6 +270,18 @@ void main() {
       check(vm.canEndTrip).isFalse();
     });
 
+    test('says when the trip is past its booked time, by the clock', () {
+      var now = DateTime.utc(2030, 10, 26, 8);
+      // Booked 3 h from 05:00, plus the 15-minute grace.
+      final server = FakeBookingServer([
+        bookingJson(status: 'in_progress', startedAt: '2030-10-26T05:00:00Z'),
+      ]);
+      final vm = _vm(server, now: () => now);
+      check(vm.isPastBookedTime).isFalse();
+      now = DateTime.utc(2030, 10, 26, 8, 16);
+      check(vm.isPastBookedTime).isTrue();
+    });
+
     test('only a trip in progress can be ended', () async {
       for (final status in ['accepted', 'arrived', 'completed', 'cancelled']) {
         final server = FakeBookingServer([bookingJson(status: status)]);
@@ -300,6 +312,7 @@ void main() {
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
       check(vm.payError).isNull();
       check(vm.canPay).isFalse();
+      // Then the list is re-read: a payment can clear other rides too.
       check(
         server.requests.map((r) => '${r.method} ${r.url.path}'),
       ).deepEquals([
@@ -307,6 +320,7 @@ void main() {
         'POST /me/bookings/b1/payment',
         'POST /me/bookings/b1/payment/sync',
         'POST /me/bookings/b1/payment/sync',
+        'GET /me/bookings',
       ]);
     });
 
@@ -389,9 +403,10 @@ void main() {
         check(reopened.payError).isNull();
         check(reopened.canPay).isFalse();
 
-        // Nothing left running.
+        // The list was re-read once it landed, and nothing is left running.
+        check(server.requests.last.url.path).equals('/me/bookings');
         async.elapse(const Duration(minutes: 15));
-        check(server.requests.length).equals(syncsBefore + 2);
+        check(server.requests.length).equals(syncsBefore + 3);
         reopened.dispose();
       });
     });
@@ -513,9 +528,176 @@ void main() {
           'POST /me/bookings/b1/payment/sync',
           'POST /me/bookings/b1/payment',
           'POST /me/bookings/b1/payment/sync',
+          'GET /me/bookings',
         ]);
       },
     );
+
+    group('with dues carried from other rides', () {
+      /// A trip due for ₹640 that also collects a ₹50 fee still unpaid on
+      /// another ride, which in turn would collect the trip's ₹640, and an
+      /// upcoming ride that will collect both.
+      List<Map<String, dynamic>> owing() => [
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'due',
+          carriedPaise: 5000,
+        ),
+        bookingJson(
+          id: 'fee',
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+          carriedPaise: 64000,
+          scheduledAt: '2030-10-20T05:00:00Z',
+        ),
+        bookingJson(
+          id: 'next',
+          status: 'accepted',
+          carriedPaise: 69000,
+          scheduledAt: '2030-11-01T05:00:00Z',
+        ),
+      ];
+
+      test('one payment for the total, and every ride it covered then '
+          'shows as paid', () async {
+        final server = FakeBookingServer(owing())..paidAfterSyncs = 2;
+        final repo = server.repository();
+        final bookings = MyBookingsViewModel(repository: repo);
+        await bookings.load();
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, bookings: bookings, checkout: checkout);
+        check(vm.booking!.totalDuePaise).equals(69000);
+        check(vm.carriedDues).equals((paise: 5000, oneRide: true));
+
+        check(await vm.pay()).isTrue();
+
+        check(checkout.opened.single.amountPaise).equals(69000);
+        // The list was re-read after the payment landed.
+        check(
+          server.requests.map((r) => '${r.method} ${r.url.path}'),
+        ).deepEquals([
+          'GET /me/bookings',
+          'POST /me/bookings/b1/payment/sync',
+          'POST /me/bookings/b1/payment',
+          'POST /me/bookings/b1/payment/sync',
+          'GET /me/bookings',
+        ]);
+        check(
+          bookings.byId('fee')!.paymentStatus,
+        ).equals(RidePaymentStatus.paid);
+        check(bookings.byId('next')!.carriedPaise).equals(0);
+        check(bookings.owed).isNull();
+        check(vm.carriedDues).isNull();
+      });
+
+      test('a payment being confirmed for one ride keeps Pay off on the '
+          'others it covers', () {
+        fakeAsync((async) {
+          final server = FakeBookingServer(owing());
+          final repo = server.repository();
+          final bookings = MyBookingsViewModel(
+            repository: repo,
+            initialBookings: [
+              for (final json in server.bookings) MyBooking.tryParse(json)!,
+            ],
+          );
+          final fee = RideDetailsViewModel(
+            repository: repo,
+            bookings: bookings,
+            bookingId: 'fee',
+            checkout: _FakeCheckout(CheckoutOutcome.success),
+            paySyncEvery: Duration.zero,
+          );
+          async.elapse(const Duration(milliseconds: 1));
+          check(fee.canPay).isTrue();
+
+          // The trip's payment went through in the UPI app; the bank is slow.
+          bookings.confirmPayment('b1');
+          async.elapse(const Duration(milliseconds: 1));
+          check(fee.canPay).isFalse();
+          check(fee.payError).isNotNull().startsWith("We're still");
+
+          // It lands; the list is re-read and the fee shows as paid.
+          server.paidAfterSyncs = 1;
+          async.elapse(const Duration(seconds: 5));
+          check(bookings.isConfirmingPayment('fee')).isFalse();
+          check(fee.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+          check(fee.canPay).isFalse();
+          fee.dispose();
+        });
+      });
+
+      test('the amount carried is named as one ride only when the list '
+          'shows it', () {
+        final server = FakeBookingServer(owing());
+        final bookings = MyBookingsViewModel(
+          repository: server.repository(),
+          initialBookings: [
+            for (final json in server.bookings) MyBooking.tryParse(json)!,
+          ],
+        );
+        MyBooking ride(String id) => bookings.byId(id)!;
+        check(
+          bookings.carriedWith(ride('b1')),
+        ).equals((paise: 5000, oneRide: true));
+        check(
+          bookings.carriedWith(ride('fee')),
+        ).equals((paise: 64000, oneRide: true));
+        // Two rides owe what the upcoming one carries.
+        check(
+          bookings.carriedWith(ride('next')),
+        ).equals((paise: 69000, oneRide: false));
+        check(bookings.owed).equals((paise: 69000, oneRide: false));
+
+        // A carried amount the list can't account for: "other rides".
+        final unknown = MyBookingsViewModel(
+          repository: server.repository(),
+          initialBookings: [
+            MyBooking.tryParse(
+              bookingJson(status: 'accepted', carriedPaise: 5000),
+            )!,
+          ],
+        );
+        check(
+          unknown.carriedWith(unknown.byId('b1')!),
+        ).equals((paise: 5000, oneRide: false));
+        check(unknown.owed).equals((paise: 5000, oneRide: false));
+      });
+
+      test('what a new booking will collect, from what the list knows', () {
+        MyBookingsViewModel list(List<Map<String, dynamic>> rides) =>
+            MyBookingsViewModel(
+              repository: FakeBookingServer(rides).repository(),
+              initialBookings: [
+                for (final json in rides) MyBooking.tryParse(json)!,
+              ],
+            );
+        check(list([]).owed).isNull();
+        check(list([bookingJson(status: 'completed')]).owed).isNull();
+        check(
+          list([
+            bookingJson(
+              status: 'cancelled',
+              cancellationFeePaise: 5000,
+              paymentStatus: 'due',
+            ),
+          ]).owed,
+        ).equals((paise: 5000, oneRide: true));
+        // A server that doesn't carry dues: the due rides added up.
+        check(
+          list([
+            bookingJson(status: 'completed', paymentStatus: 'due'),
+            bookingJson(
+              id: 'fee',
+              status: 'cancelled',
+              cancellationFeePaise: 5000,
+              paymentStatus: 'due',
+            ),
+          ]).owed,
+        ).equals((paise: 69000, oneRide: false));
+      });
+    });
 
     test('a ride cancelled for free has nothing to pay', () async {
       final server = FakeBookingServer([bookingJson(status: 'cancelled')]);

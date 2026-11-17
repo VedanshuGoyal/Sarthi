@@ -45,12 +45,14 @@ const _sedan = Car(
 /// [answer] (given how many have arrived so far) and lists [bookings], then
 /// books a two-hour Round Trip through the real flow. With [listLoaded] the
 /// rides list already holds [bookings], as after Activity has loaded.
+/// [beforeConfirm] runs on the booking page, just before Confirm is tapped.
 Future<void> _bookRoundTrip(
   WidgetTester tester, {
   required List<http.Request> posts,
   required http.Response Function(int count) answer,
   List<Map<String, dynamic>> bookings = const [],
   bool listLoaded = false,
+  void Function()? beforeConfirm,
 }) async {
   tester.view.physicalSize = const Size(1200, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -110,6 +112,7 @@ Future<void> _bookRoundTrip(
   await tester.pumpAndSettle();
   await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
   await tester.pumpAndSettle();
+  beforeConfirm?.call();
   await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Confirm booking'));
   await tester.pumpAndSettle();
 }
@@ -179,6 +182,62 @@ void main() {
     );
   });
 
+  testWidgets('an unpaid ride does not stop booking: the booking page says '
+      'it will be added to the next payment', (tester) async {
+    final posts = <http.Request>[];
+    var noted = false;
+    await _bookRoundTrip(
+      tester,
+      posts: posts,
+      answer: (_) => http.Response(jsonEncode({'id': 'b2'}), 201),
+      bookings: [
+        bookingJson(
+          id: 'fee-1',
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+          scheduledAt: '2030-10-20T05:00:00Z',
+        ),
+      ],
+      listLoaded: true,
+      beforeConfirm: () => noted = find
+          .text(
+            '₹50 unpaid from an earlier ride will be added when you pay for '
+            'this trip.',
+          )
+          .evaluate()
+          .isNotEmpty,
+    );
+
+    check(noted).isTrue();
+    check(posts).length.equals(1);
+    expect(
+      find.text('Round Trip booked: 2 hours, in your DL01AB1234.'),
+      findsOneWidget,
+    );
+    expect(find.text('Pay now'), findsNothing);
+  });
+
+  testWidgets('with nothing owed, the booking page has no note', (
+    tester,
+  ) async {
+    var noted = true;
+    await _bookRoundTrip(
+      tester,
+      posts: [],
+      answer: (_) => http.Response(jsonEncode({'id': 'b2'}), 201),
+      bookings: [bookingJson(status: 'completed', paymentStatus: 'paid')],
+      listLoaded: true,
+      beforeConfirm: () => noted = find
+          .textContaining('will be added when you pay')
+          .evaluate()
+          .isNotEmpty,
+    );
+    check(noted).isFalse();
+  });
+
+  // Servers from before unpaid rides were carried refused with 409
+  // `payment_due`; the app still handles that refusal.
   testWidgets('an unpaid ride blocks booking and Pay now opens that ride', (
     tester,
   ) async {

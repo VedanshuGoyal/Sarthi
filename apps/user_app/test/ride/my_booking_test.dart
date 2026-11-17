@@ -269,6 +269,159 @@ void main() {
     });
   });
 
+  group('dues carried to the next payment', () {
+    test('a due ride collects what other rides owe with its own charge', () {
+      final b = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'due',
+          carriedPaise: 5000,
+        ),
+      )!;
+      check(b.carriedPaise).equals(5000);
+      check(b.chargePaise).equals(64000);
+      check(b.totalDuePaise).equals(69000);
+      check(b.canPay).isTrue();
+
+      final fee = MyBooking.tryParse(
+        bookingJson(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+          carriedPaise: 64000,
+        ),
+      )!;
+      check(fee.totalDuePaise).equals(69000);
+    });
+
+    test('an upcoming ride carries what will be added to its payment', () {
+      final b = MyBooking.tryParse(bookingJson(carriedPaise: 5000))!;
+      check(b.carriedPaise).equals(5000);
+      check(b.canPay).isFalse();
+    });
+
+    test('nothing carried when the server leaves it out or garbles it', () {
+      check(MyBooking.tryParse(bookingJson())!.carriedPaise).equals(0);
+      for (final garbled in ['fifty', -100, null]) {
+        final b = MyBooking.tryParse({
+          ...bookingJson(status: 'completed', paymentStatus: 'due'),
+          'carriedPaise': garbled,
+        })!;
+        check(because: '$garbled', b.carriedPaise).equals(0);
+        check(b.totalDuePaise).equals(b.chargePaise);
+      }
+    });
+  });
+
+  group('booked time', () {
+    test('a trip that ran past its booked time is told from one ended '
+        'early', () {
+      final over = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          farePaise: 96000,
+          bookedFarePaise: 64000,
+          startedAt: '2030-10-26T05:00:00Z',
+          completedAt: '2030-10-26T08:40:00Z',
+        ),
+      )!;
+      check(over.chargedByTime).isTrue();
+      check(over.ranOver).isTrue();
+      check(over.endedEarly).isFalse();
+      // 3 h 40 min: four started hours.
+      check(over.hoursUsed).equals(4);
+
+      final early = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          farePaise: 24000,
+          bookedFarePaise: 64000,
+        ),
+      )!;
+      check(early.chargedByTime).isTrue();
+      check(early.endedEarly).isTrue();
+      check(early.ranOver).isFalse();
+
+      // Charged exactly the booked fare for the time used: ended early.
+      check(
+        MyBooking.tryParse(
+          bookingJson(
+            status: 'completed',
+            farePaise: 64000,
+            bookedFarePaise: 64000,
+          ),
+        )!.endedEarly,
+      ).isTrue();
+
+      final asBooked = MyBooking.tryParse(bookingJson(status: 'completed'))!;
+      check(asBooked.chargedByTime).isFalse();
+      check(asBooked.ranOver).isFalse();
+      check(asBooked.endedEarly).isFalse();
+    });
+
+    test('the hours used count each started hour, at least one', () {
+      int? used(String start, String end) => MyBooking.tryParse(
+        bookingJson(status: 'completed', startedAt: start, completedAt: end),
+      )!.hoursUsed;
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:00:00Z')).equals(3);
+      // Whole minutes, as the server counts: seconds past the hour don't
+      // start another.
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:00:59Z')).equals(3);
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:01:00Z')).equals(4);
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T05:10:00Z')).equals(1);
+      check(
+        MyBooking.tryParse(bookingJson(status: 'completed'))!.hoursUsed,
+      ).isNull();
+    });
+
+    test('a Round Trip is booked for its hours, the others for their '
+        'window rounded up', () {
+      check(
+        MyBooking.tryParse(
+          bookingJson(tripType: 'roundTrip', hours: 4),
+        )!.bookedHours,
+      ).equals(4);
+      // 05:00 to 07:30: 2 h 30 min, so 3 h.
+      check(MyBooking.tryParse(bookingJson())!.bookedHours).equals(3);
+      check(
+        MyBooking.tryParse(
+          bookingJson(tripType: 'oneWay', endsAt: '2030-10-26T05:20:00Z'),
+        )!.bookedHours,
+      ).equals(1);
+      check(
+        MyBooking.tryParse({
+          ...bookingJson(tripType: 'oneWay'),
+          'endsAt': null,
+        })!.bookedHours,
+      ).isNull();
+    });
+
+    test('a trip on the road is past its booked time after the grace', () {
+      // Booked 3 h, started 05:00: charged extra from 08:15.
+      final b = MyBooking.tryParse(
+        bookingJson(status: 'in_progress', startedAt: '2030-10-26T05:00:00Z'),
+      )!;
+      final from = DateTime.utc(2030, 10, 26, 8, 15);
+      check(b.overtimeFrom).equals(from.toLocal());
+      check(b.isPastBookedTime(DateTime.utc(2030, 10, 26, 8, 10))).isFalse();
+      check(b.isPastBookedTime(from)).isFalse();
+      check(b.isPastBookedTime(from.add(const Duration(seconds: 1)))).isTrue();
+
+      final late = DateTime.utc(2030, 10, 27);
+      // Not on the road, or no start time: never.
+      check(
+        MyBooking.tryParse(
+          bookingJson(status: 'completed', startedAt: '2030-10-26T05:00:00Z'),
+        )!.isPastBookedTime(late),
+      ).isFalse();
+      check(
+        MyBooking.tryParse(
+          bookingJson(status: 'in_progress'),
+        )!.isPastBookedTime(late),
+      ).isFalse();
+    });
+  });
+
   test('a driver nobody has rated yet has no average', () {
     final b = MyBooking.tryParse(bookingJson(ratingCount: 0))!;
     check(b.driverRating).isNull();

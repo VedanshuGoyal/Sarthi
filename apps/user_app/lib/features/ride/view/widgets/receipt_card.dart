@@ -7,8 +7,9 @@ import 'ride_format.dart';
 /// The receipt of a paid ride: the fare (with its base and night parts when
 /// the server sent them), how it was paid, the reference to quote if it's
 /// ever disputed, and when. A ride cancelled at the pickup reads as its
-/// cancellation fee, and a trip ended early as the charge for the time used
-/// beside the booked fare.
+/// cancellation fee, and a trip charged for the time actually used (ended
+/// early, or run past its booked time) as that charge beside the booked
+/// fare.
 ///
 /// Renders [booking] only; rows the server didn't send are left out, so a
 /// receipt from an older server is just the fare and the time.
@@ -23,7 +24,7 @@ class ReceiptCard extends StatelessWidget {
     final b = booking;
     final payment = b.payment;
     // The parts only explain the fare they add up to — not a cancellation
-    // fee, nor the booked fare of a trip ended early.
+    // fee, nor the booked fare of a trip charged for the time used.
     final breakdown = switch (b.fareBreakdown) {
       final parts?
           when !b.hasCancellationFee &&
@@ -43,11 +44,11 @@ class ReceiptCard extends StatelessWidget {
         )
       else ...[
         (
-          b.endedEarly ? 'Fare for the time used' : 'Fare',
+          b.chargedByTime ? 'Fare for the time used' : 'Fare',
           '₹${b.fareRupees}',
           t.title(16),
         ),
-        if (b.bookedFarePaise case final booked? when b.endedEarly)
+        if (b.bookedFarePaise case final booked? when b.chargedByTime)
           ('Booked fare', RideFormat.rupees(booked), null),
       ],
       if (breakdown != null) ...[

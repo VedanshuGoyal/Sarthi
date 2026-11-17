@@ -45,9 +45,10 @@ class HomeScreen extends ConsumerWidget {
   ///
   /// [send] carries the attempt's idempotency key, so the retry re-sends the
   /// same attempt: if the first one did land, the server answers with that
-  /// booking instead of making a second. A refusal because a finished ride
-  /// — or a cancellation fee — is unpaid offers to open that ride, where its
-  /// Pay button is.
+  /// booking instead of making a second. An unpaid ride no longer stops a
+  /// booking — the server adds what's owed to the next payment — but a
+  /// refusal for one (`payment_due`, from servers before that) still offers
+  /// to open that ride, where its Pay button is.
   Future<void> _book(
     BuildContext context,
     WidgetRef ref, {

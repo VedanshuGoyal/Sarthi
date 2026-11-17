@@ -172,6 +172,10 @@ void main() {
     await tester.tap(find.textContaining('*'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Prices may vary'), findsOneWidget);
+    expect(
+      find.textContaining('Time past your booked hours is charged by the hour'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('picking a saved car enables confirm', (tester) async {

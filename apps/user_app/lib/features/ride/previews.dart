@@ -301,6 +301,16 @@ Override _savedCars({List<Car> cars = _sampleCars}) =>
           SavedCarsViewModel(repository: CarsRepository(), initialCars: cars),
     );
 
+/// Seeds the customer's rides list — what the booking steps read to say
+/// money is owed on earlier rides — with [rides] and no network.
+Override _rides([List<MyBooking> rides = const []]) =>
+    myBookingsViewModelProvider.overrideWith(
+      (ref) => MyBookingsViewModel(
+        repository: _PreviewBookingRepository(),
+        initialBookings: rides,
+      ),
+    );
+
 // --- Booking details step --------------------------------------------------
 // The Round Trip "how long / when / which car" step. Each preview seeds the
 // view model's state directly via a family override, so states render in
@@ -317,10 +327,12 @@ Widget _booking({
   DateTime? scheduledAt,
   Car? car,
   List<Car> cars = _sampleCars,
+  List<MyBooking> rides = const [],
 }) {
   return ProviderScope(
     overrides: [
       _savedCars(cars: cars),
+      _rides(rides),
       tripStartViewModelProvider.overrideWith(
         (ref) => TripStartViewModel(
           repository: _PreviewLocationRepository(),
@@ -356,6 +368,26 @@ Widget bookingCarChosenPreview() => _booking(hours: 4, car: _carSedan);
 Widget bookingReadyPreview() =>
     _booking(hours: 6, scheduledAt: DateTime(2026, 7, 18, 9, 30), car: _carSuv);
 
+/// An unpaid cancellation fee doesn't stop the booking: a note says it's
+/// added to this trip's payment.
+@Preview(
+  name: 'Ready — earlier ride unpaid',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
+Widget bookingWithDuesPreview() => _booking(
+  hours: 6,
+  scheduledAt: DateTime(2026, 7, 18, 9, 30),
+  car: _carSuv,
+  rides: [
+    _ride(
+      status: BookingStatus.cancelled,
+      cancellationFeePaise: pickupCancellationFeePaise,
+      paymentStatus: RidePaymentStatus.due,
+    ),
+  ],
+);
+
 // --- Multi-Stop planner ----------------------------------------------------
 // The "write the driver's day" step. Each preview seeds the view model's stop
 // drafts directly via a family override, so states render in isolation.
@@ -363,6 +395,7 @@ Widget bookingReadyPreview() =>
 Widget _planner({DateTime? scheduledAt, List<StopDraft>? stops}) {
   return ProviderScope(
     overrides: [
+      _rides(),
       multiStopPlannerViewModelProvider.overrideWith(
         (ref, start) => MultiStopPlannerViewModel(
           start: start,
@@ -509,6 +542,7 @@ Widget oneWayReadyPreview() =>
 Widget _oneWayReview({Duration? travelTime, LocationRepository? repository}) {
   return ProviderScope(
     overrides: [
+      _rides(),
       oneWayReviewViewModelProvider.overrideWith(
         (ref, draft) => OneWayReviewViewModel(
           draft: draft,
@@ -690,7 +724,10 @@ MyBooking _ride({
   int farePaise = 64000,
   int cancellationFeePaise = 0,
   int? bookedFarePaise,
+  int carriedPaise = 0,
   RidePaymentStatus paymentStatus = RidePaymentStatus.none,
+  String id = 'preview-ride',
+  Duration? took,
 }) {
   final at = scheduledAt ?? DateTime.now().add(const Duration(days: 1));
   final started =
@@ -701,7 +738,7 @@ MyBooking _ride({
       status == BookingStatus.arrived ||
       (status == BookingStatus.cancelled && cancellationFeePaise > 0);
   return MyBooking(
-    id: 'preview-ride',
+    id: id,
     tripType: TripType.multiStop,
     status: status,
     scheduledAt: at,
@@ -721,6 +758,7 @@ MyBooking _ride({
       ),
     ],
     estimatedMinutes: 150,
+    endsAt: at.add(const Duration(minutes: 150)),
     farePaise: farePaise,
     fareEstimated: status != BookingStatus.completed,
     carRegistration: 'DL01AB1234',
@@ -736,7 +774,10 @@ MyBooking _ride({
     arrivedAt: arrived ? at.subtract(const Duration(minutes: 5)) : null,
     startedAt: started ? at.add(const Duration(minutes: 2)) : null,
     completedAt: status == BookingStatus.completed
-        ? at.add(const Duration(hours: 2, minutes: 40))
+        ? at.add(
+            const Duration(minutes: 2) +
+                (took ?? const Duration(hours: 2, minutes: 38)),
+          )
         : null,
     cancelledAt: status == BookingStatus.cancelled
         ? at.subtract(const Duration(hours: 3))
@@ -746,11 +787,14 @@ MyBooking _ride({
     myRating: myRating,
     cancellationFeePaise: cancellationFeePaise,
     bookedFarePaise: bookedFarePaise,
+    carriedPaise: carriedPaise,
     paymentStatus: paymentStatus,
   );
 }
 
-Widget _rideDetails(MyBooking ride) {
+/// [others] are the customer's other rides in the list, for what [ride]
+/// carries from them.
+Widget _rideDetails(MyBooking ride, {List<MyBooking> others = const []}) {
   final repository = _PreviewBookingRepository();
   return ProviderScope(
     overrides: [
@@ -758,7 +802,7 @@ Widget _rideDetails(MyBooking ride) {
       myBookingsViewModelProvider.overrideWith(
         (ref) => MyBookingsViewModel(
           repository: repository,
-          initialBookings: [ride],
+          initialBookings: [ride, ...others],
         ),
       ),
     ],
@@ -838,6 +882,85 @@ Widget rideDetailsEndedEarlyPreview() => _rideDetails(
     bookedFarePaise: 64000,
     paymentStatus: RidePaymentStatus.due,
   ),
+);
+
+/// Booked for 3 h (2 h 30 min, rounded up), on the road for 3 h 20 min:
+/// past the booked time and the grace.
+@Preview(
+  name: 'On trip — past booked time',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsPastBookedTimePreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.inProgress,
+    scheduledAt: DateTime.now().subtract(const Duration(hours: 3, minutes: 22)),
+  ),
+);
+
+/// Ran 3 h 40 min on a 3 h booking: charged for 4 h, more than booked.
+@Preview(
+  name: 'Ran past booked time — pay',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsRanOverPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.completed,
+    scheduledAt: DateTime.now().subtract(const Duration(hours: 5)),
+    farePaise: 96000,
+    bookedFarePaise: 64000,
+    took: const Duration(hours: 3, minutes: 40),
+    paymentStatus: RidePaymentStatus.due,
+  ),
+);
+
+/// A trip due for payment that also collects an unpaid cancellation fee.
+@Preview(
+  name: 'Pay — includes another ride',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsPayWithDuesPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.completed,
+    scheduledAt: DateTime.now().subtract(const Duration(hours: 4)),
+    carriedPaise: pickupCancellationFeePaise,
+    paymentStatus: RidePaymentStatus.due,
+  ),
+  others: [
+    _ride(
+      id: 'preview-fee',
+      status: BookingStatus.cancelled,
+      scheduledAt: DateTime.now().subtract(const Duration(days: 3)),
+      cancellationFeePaise: pickupCancellationFeePaise,
+      carriedPaise: 64000,
+      paymentStatus: RidePaymentStatus.due,
+    ),
+  ],
+);
+
+/// An upcoming ride that will collect an earlier ride's unpaid fee.
+@Preview(
+  name: 'Driver assigned — earlier ride unpaid',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsAcceptedWithDuesPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.accepted,
+    otp: '4821',
+    carriedPaise: pickupCancellationFeePaise,
+  ),
+  others: [
+    _ride(
+      id: 'preview-fee',
+      status: BookingStatus.cancelled,
+      scheduledAt: DateTime.now().subtract(const Duration(days: 3)),
+      cancellationFeePaise: pickupCancellationFeePaise,
+      paymentStatus: RidePaymentStatus.due,
+    ),
+  ],
 );
 
 @Preview(

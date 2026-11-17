@@ -2,16 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+import 'package:user_app/features/ride/data/booking_repository.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
+import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/one_way_trip.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/one_way_review_screen.dart';
+import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 import 'package:user_app/features/ride/view_model/one_way_review_view_model.dart';
+
+import '../support/fake_booking_server.dart';
 
 /// A repository answering every drive-time request with a settable [eta]
 /// (null fails the request), so retry can be exercised from the UI.
@@ -56,11 +61,13 @@ final _draft = (
 
 /// Pumps the review screen with the view model seeded to [travelTime], or
 /// backed by [repository] when the estimate flow itself is under test.
+/// [rides] seeds the customer's rides list.
 Future<void> _pump(
   WidgetTester tester, {
   Duration? travelTime,
   LocationRepository? repository,
   ValueChanged<OneWayTrip>? onOk,
+  List<Map<String, dynamic>> rides = const [],
 }) {
   // A tall surface so the whole form is laid out at once.
   tester.view.physicalSize = const Size(1200, 2600);
@@ -70,6 +77,12 @@ Future<void> _pump(
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
+        myBookingsViewModelProvider.overrideWith(
+          (ref) => MyBookingsViewModel(
+            repository: BookingRepository(),
+            initialBookings: [for (final b in rides) MyBooking.tryParse(b)!],
+          ),
+        ),
         oneWayReviewViewModelProvider.overrideWith(
           (ref, draft) => OneWayReviewViewModel(
             draft: draft,
@@ -89,6 +102,35 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('money owed on earlier rides is noted, and confirming still '
+      'works', (tester) async {
+    OneWayTrip? received;
+    await _pump(
+      tester,
+      travelTime: const Duration(hours: 1),
+      onOk: (t) => received = t,
+      rides: [
+        bookingJson(status: 'completed', paymentStatus: 'due'),
+        bookingJson(
+          id: 'fee',
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+      ],
+    );
+    expect(
+      find.text(
+        '₹690 unpaid from earlier rides will be added when you pay for this '
+        'trip.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Confirm booking'));
+    await tester.pump();
+    expect(received, isNotNull);
+  });
+
   testWidgets('echoes the settled plan and confirms with the estimate', (
     tester,
   ) async {

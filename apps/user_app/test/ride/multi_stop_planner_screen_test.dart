@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+import 'package:user_app/features/ride/data/booking_repository.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/multi_stop_trip.dart';
+import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/multi_stop_planner_screen.dart';
 import 'package:user_app/features/ride/view/widgets/stop_card.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
+import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
+
+import '../support/fake_booking_server.dart';
 
 const _start = PickupLocation(
   address: 'Connaught Place, New Delhi',
@@ -29,10 +34,12 @@ final _nineAm = DateTime(2026, 7, 18, 9);
 
 /// Pumps the planner with the view model seeded to [stops] (or the default
 /// single blank stop) on a surface tall enough to lay out every card at once.
+/// [rides] seeds the customer's rides list.
 Future<void> _pump(
   WidgetTester tester, {
   List<StopDraft>? stops,
   ValueChanged<MultiStopTrip>? onOk,
+  List<Map<String, dynamic>> rides = const [],
 }) {
   tester.view.physicalSize = const Size(1200, 3200);
   tester.view.devicePixelRatio = 1.0;
@@ -41,6 +48,12 @@ Future<void> _pump(
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
+        myBookingsViewModelProvider.overrideWith(
+          (ref) => MyBookingsViewModel(
+            repository: BookingRepository(),
+            initialBookings: [for (final b in rides) MyBooking.tryParse(b)!],
+          ),
+        ),
         multiStopPlannerViewModelProvider.overrideWith(
           (ref, start) => MultiStopPlannerViewModel(
             start: start,
@@ -209,5 +222,33 @@ void main() {
     expect(received!.stops.length, 2);
     expect(received!.stops[0].task, 'Collect the refill');
     expect(received!.endsAt, DateTime(2026, 7, 18, 12, 15));
+  });
+
+  testWidgets('money owed on an earlier ride is noted, and confirming still '
+      'works', (tester) async {
+    MultiStopTrip? received;
+    await _pump(
+      tester,
+      stops: _readyStops(),
+      onOk: (t) => received = t,
+      rides: [
+        bookingJson(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+      ],
+    );
+    expect(
+      find.text(
+        '₹50 unpaid from an earlier ride will be added when you pay for this '
+        'trip.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Confirm trip'));
+    await tester.pumpAndSettle();
+    expect(received, isNotNull);
   });
 }

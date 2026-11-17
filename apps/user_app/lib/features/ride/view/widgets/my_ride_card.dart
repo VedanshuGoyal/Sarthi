@@ -5,16 +5,20 @@ import '../../domain/my_booking.dart';
 import 'booking_status_pill.dart';
 import 'driver_row.dart';
 import 'ride_format.dart';
+import 'ride_note.dart';
 import 'star_rating.dart';
 import 'start_code_panel.dart';
 
 /// One booking. While it's active: the driver (with a call button that hands
 /// off to the phone's dialer) and the start code; once it's completed: who
-/// drove, the fare (and that it ended early, if it did), whether it's paid —
-/// or a "Pay by UPI" button — and the stars given — or a "Rate your trip"
-/// prompt; once cancelled: who cancelled and why, and any cancellation fee
-/// with its own "Pay by UPI" button while it's due. Renders data only;
-/// [onTap] opens the ride and [onRate] its rating.
+/// drove, the fare (and that it ended early or ran past the booked time, if
+/// it did), whether it's paid — or a "Pay by UPI" button — and the stars
+/// given — or a "Rate your trip" prompt; once cancelled: who cancelled and
+/// why, and any cancellation fee with its own "Pay by UPI" button while it's
+/// due. A Pay button is for the total, with what's [carried] from other
+/// bookings named under it; an active ride says what will be added to its
+/// payment. Renders data only; [onTap] opens the ride and [onRate] its
+/// rating.
 class MyRideCard extends StatelessWidget {
   const MyRideCard({
     super.key,
@@ -23,9 +27,14 @@ class MyRideCard extends StatelessWidget {
     this.onRate,
     this.onPay,
     this.driverPhoto,
+    this.carried,
   });
 
   final MyBooking booking;
+
+  /// What paying for [booking] also collects for the customer's other
+  /// bookings; when null, its `carriedPaise`, worded as from other rides.
+  final EarlierDues? carried;
 
   /// The driver's photo, when the booking has a driver with one.
   final ImageProvider? driverPhoto;
@@ -44,6 +53,14 @@ class MyRideCard extends StatelessWidget {
     final b = booking;
     final destination = b.destinationAddress;
     final waitingForDriver = b.status == BookingStatus.requested;
+    final carried =
+        this.carried ??
+        (b.carriedPaise > 0 ? (paise: b.carriedPaise, oneRide: false) : null);
+    final payButton = _PayButton(
+      amountPaise: b.totalDuePaise,
+      includes: carried == null ? null : RideFormat.carriedIncluded(carried),
+      onPressed: onPay ?? onTap,
+    );
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       onTap: onTap,
@@ -106,9 +123,11 @@ class MyRideCard extends StatelessWidget {
             ),
             if (RideFormat.endedEarly(b) case final early?)
               Text('Ended early. $early', style: t.body(size: 13)),
+            if (RideFormat.ranOver(b) case final over?)
+              Text(over, style: t.body(size: 13)),
             const SizedBox(height: Skyline.s8),
             if (b.paymentStatus == RidePaymentStatus.due) ...[
-              _PayButton(amountPaise: b.chargePaise, onPressed: onPay ?? onTap),
+              payButton,
               const SizedBox(height: Skyline.s4),
             ],
             if (b.myRating case final rating?)
@@ -147,10 +166,7 @@ class MyRideCard extends StatelessWidget {
               ),
               if (b.paymentStatus == RidePaymentStatus.due) ...[
                 const SizedBox(height: Skyline.s8),
-                _PayButton(
-                  amountPaise: b.chargePaise,
-                  onPressed: onPay ?? onTap,
-                ),
+                payButton,
               ],
             ],
           ] else if (b.status == BookingStatus.expired)
@@ -187,28 +203,43 @@ class MyRideCard extends StatelessWidget {
             const SizedBox(height: Skyline.s12),
             StartCodePanel(code: b.startOtp!),
           ],
+          if (carried != null && b.status.isActive) ...[
+            const SizedBox(height: Skyline.s12),
+            RideNote(text: RideFormat.carriedNote(carried)),
+          ],
         ],
       ),
     );
   }
 }
 
-/// "Pay ₹640 by UPI", for whatever the booking owes.
+/// "Pay ₹640 by UPI", for whatever paying for the booking collects, and
+/// the [includes] line naming what's from other rides.
 class _PayButton extends StatelessWidget {
-  const _PayButton({required this.amountPaise, this.onPressed});
+  const _PayButton({required this.amountPaise, this.includes, this.onPressed});
 
   final int amountPaise;
+  final String? includes;
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: FilledButton.tonalIcon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-      label: Text('Pay ${RideFormat.rupees(amountPaise)} by UPI'),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FilledButton.tonalIcon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+          label: Text('Pay ${RideFormat.rupees(amountPaise)} by UPI'),
+        ),
+        if (includes case final line?) ...[
+          const SizedBox(height: Skyline.s4),
+          Text(line, style: t.body(size: 13)),
+        ],
+      ],
+    );
+  }
 }
 
 /// A finished booking's footer: what was charged — who drove, or that it's
