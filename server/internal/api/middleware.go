@@ -1,9 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,13 +24,40 @@ const maxJSONBody = 256 << 10
 // limitBodies bounds request bodies so one client cannot make the server read
 // (and store, and re-serve) megabytes of JSON. skip reports routes that apply
 // their own limit.
+//
+// An oversized body is answered 413 body_too_large here, before any handler:
+// handlers map every decode error to 400, so leaving the cap to them would
+// hide it. A body of unknown length (chunked) is read up to the cap first.
 func limitBodies(next http.Handler, skip func(*http.Request) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil && !skip(r) {
-			r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+		if r.Body == nil || r.Body == http.NoBody || skip(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.ContentLength > maxJSONBody {
+			writeBodyTooLarge(w)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+		if r.ContentLength < 0 {
+			buf, err := io.ReadAll(r.Body)
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				writeBodyTooLarge(w)
+				return
+			}
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "could not read the request body")
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(buf))
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func writeBodyTooLarge(w http.ResponseWriter) {
+	writeErrorCode(w, http.StatusRequestEntityTooLarge, "body_too_large",
+		fmt.Sprintf("the request body is larger than %d KB", maxJSONBody>>10), 0)
 }
 
 // isUpload matches the KYC document upload route, which reads its multipart
