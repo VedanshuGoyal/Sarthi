@@ -681,11 +681,11 @@ func (r *DriverKYCRepository) FindBankAccount(ctx context.Context, driverID stri
 
 // bankColumns is the SELECT list bankScan reads.
 const bankColumns = `account_holder_name, account_number_last4, ifsc_code, updated_at,
-	verified_at, coalesce(verified_name, '')`
+	verified_at, coalesce(verified_name, ''), account_number_encrypted`
 
 func bankScan(a *domain.DriverBankAccount) []any {
 	return []any{
 		&a.AccountHolderName, &a.AccountNumberLast4, &a.IFSCCode, &a.UpdatedAt,
-		&a.VerifiedAt, &a.VerifiedName,
+		&a.VerifiedAt, &a.VerifiedName, &a.AccountNumberEncrypted,
 	}
 }

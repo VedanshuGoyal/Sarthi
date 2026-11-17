@@ -218,6 +218,10 @@ type DriverBankAccount struct {
 	// VerifiedName the name the bank holds for it.
 	VerifiedAt   *time.Time `json:"verifiedAt,omitempty"`
 	VerifiedName string     `json:"verifiedName,omitempty"`
+
+	// AccountNumberEncrypted is the sealed full number, never sent out; the
+	// service opens it only to tell an unchanged re-save from a new account.
+	AccountNumberEncrypted []byte `json:"-"`
 }
 
 // DriverKYC is the whole Document View as the app needs to render it: what has

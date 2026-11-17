@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -488,6 +489,11 @@ func (s *DriverKYCService) SetBankAccount(
 	// Checked before it's stored: an account the bank doesn't know would
 	// only fail later, at the first payout.
 	defer s.lockChecks(driverID, domain.CheckBankAccount)()
+	// Saving the verified account again changes nothing: no paid check, no
+	// "account changed" push, and a cleared driver stays cleared.
+	if stored, ok := s.unchangedBankAccount(ctx, driverID, holderName, number, code); ok {
+		return stored, nil
+	}
 	checked, err := s.verifyBankAccount(ctx, driverID, number, code)
 	if err != nil {
 		return domain.DriverBankAccount{}, err
@@ -517,6 +523,25 @@ func (s *DriverKYCService) SetBankAccount(
 		return domain.DriverBankAccount{}, err
 	}
 	return account, nil
+}
+
+// unchangedBankAccount returns driverID's stored account when it is already
+// verified and the same holder, number and IFSC are being saved again. Any
+// doubt (no account, a read or decrypt failure) reads as a change.
+func (s *DriverKYCService) unchangedBankAccount(
+	ctx context.Context, driverID, holderName, number, ifsc string,
+) (domain.DriverBankAccount, bool) {
+	stored, err := s.store.FindBankAccount(ctx, driverID)
+	if err != nil || stored.VerifiedAt == nil || stored.AccountHolderName != holderName ||
+		stored.IFSCCode != ifsc || stored.AccountNumberLast4 != number[len(number)-4:] ||
+		len(stored.AccountNumberEncrypted) == 0 {
+		return domain.DriverBankAccount{}, false
+	}
+	plain, err := s.cipher.Open(stored.AccountNumberEncrypted)
+	if err != nil || subtle.ConstantTimeCompare(plain, []byte(number)) != 1 {
+		return domain.DriverBankAccount{}, false
+	}
+	return stored, true
 }
 
 // Submit closes the Document View: it re-checks that every step is filled in
