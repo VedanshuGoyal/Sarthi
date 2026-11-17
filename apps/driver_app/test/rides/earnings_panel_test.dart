@@ -116,6 +116,59 @@ void main() {
     check(find.text('Payouts').evaluate()).isEmpty();
     check(find.text('payouts down').evaluate()).isEmpty();
   });
+
+  testWidgets('a cancellation fee counts in the money card but is no '
+      'completed trip; an early-ended trip lists at its charge', (
+    tester,
+  ) async {
+    repo
+      ..summary = const Earnings(
+        today: EarningsPeriod(farePaise: 20000, rides: 1),
+        payments: DriverPayments(
+          // The ₹200 early-ended trip and the ₹50 fee.
+          awaitingCustomerPaise: 25000,
+          awaitingCustomerRides: 2,
+        ),
+      )
+      ..mine = [
+        ride(
+          id: 'fee',
+          status: 'cancelled',
+          cancelledBy: 'customer',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+        ride(
+          id: 'ended',
+          status: 'completed',
+          farePaise: 20000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      ];
+    // Wide enough for the ride screen the row opens.
+    await pump(tester, width: 1800);
+
+    check(tester.takeException()).isNull();
+    check(find.text('Waiting for customers to pay').evaluate()).isNotEmpty();
+    check(find.text('2 trips').evaluate()).isNotEmpty();
+    check(find.text('₹250').evaluate()).isNotEmpty();
+    // One completed trip — the early-ended one, at what it was charged.
+    check(
+      find.byType(ListTile).evaluate().where((e) {
+        final tile = e.widget as ListTile;
+        return tile.onTap != null;
+      }),
+    ).length.equals(1);
+    check(find.textContaining('Awaiting payment').evaluate()).length.equals(1);
+    check(find.text('₹200').evaluate()).length.equals(2); // today, the row
+    check(find.text('₹50').evaluate()).isEmpty();
+
+    // The row opens the trip.
+    await tester.tap(find.textContaining('Awaiting payment'));
+    await tester.pumpAndSettle();
+    check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+  });
 }
 
 class _SessionStorage implements DriverSessionStorage {
