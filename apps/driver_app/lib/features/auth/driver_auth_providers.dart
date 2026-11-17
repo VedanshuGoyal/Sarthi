@@ -11,6 +11,7 @@ import 'view_model/driver_registration_view_model.dart';
 /// current token without the repository holding its own copy.
 final driverAuthRepositoryProvider = Provider<DriverAuthRepository>((ref) {
   return DriverAuthRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () =>
         ref.read(driverAuthControllerProvider).valueOrNull?.token,
   );

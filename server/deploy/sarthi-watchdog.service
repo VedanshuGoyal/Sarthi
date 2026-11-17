@@ -1,0 +1,6 @@
+[Unit]
+Description=Sarthi watchdog (Telegram alerts)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sarthi/deploy/watchdog.sh

@@ -21,12 +21,16 @@ type PaymentOrder struct {
 	UserID          string
 	AmountPaise     int64
 	ProviderOrderID string
-	State           PaymentState
-	TransactionID   string
-	PaymentMode     string
-	UTR             string
-	ExpiresAt       time.Time
-	CreatedAt       time.Time
+	// CheckoutToken is what the app's SDK opens the order with, kept so a
+	// second tap on Pay reopens the same order instead of a second one.
+	// Empty for orders opened before it was stored.
+	CheckoutToken string
+	State         PaymentState
+	TransactionID string
+	PaymentMode   string
+	UTR           string
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
 }
 
 // SettleOutcome is what recording a completed order did to its booking.
@@ -105,6 +109,10 @@ type DriverPaymentSummary struct {
 // PayoutDue is what MOJUD owes one driver right now — their share of every
 // paid ride not yet paid out — with the bank details to send it to.
 // AccountNumber is decrypted only for the admin payouts list.
+//
+// A driver who isn't KYC-verified, or whose account the bank hasn't
+// confirmed, is OnHold: still owed, but listed without bank details until
+// that's settled (HoldReason says why).
 type PayoutDue struct {
 	DriverID          string `json:"driverId"`
 	DriverName        string `json:"driverName"`
@@ -114,10 +122,21 @@ type PayoutDue struct {
 	AccountHolderName string `json:"accountHolderName,omitempty"`
 	AccountNumber     string `json:"accountNumber,omitempty"`
 	IFSCCode          string `json:"ifscCode,omitempty"`
+	// VerifiedName is the name the bank holds for the account (the penny
+	// drop's), as opposed to the AccountHolderName the driver typed.
+	VerifiedName string `json:"verifiedName,omitempty"`
+	// AccountUpdatedAt is when the driver last changed the account.
+	AccountUpdatedAt *time.Time `json:"accountUpdatedAt,omitempty"`
+
+	OnHold     bool   `json:"onHold,omitempty"`
+	HoldReason string `json:"holdReason,omitempty"`
 
 	// AccountNumberEncrypted is how the store hands the number over; the
 	// service opens it into AccountNumber.
 	AccountNumberEncrypted []byte `json:"-"`
+	// KYCStatus and AccountVerifiedAt decide the hold.
+	KYCStatus         KYCStatus  `json:"-"`
+	AccountVerifiedAt *time.Time `json:"-"`
 }
 
 // DriverPayout is one bank transfer to a driver covering Rides paid rides.

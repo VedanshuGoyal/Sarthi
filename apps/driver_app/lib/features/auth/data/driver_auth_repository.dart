@@ -33,6 +33,19 @@ class OtpResendLockedException extends AuthException {
   final Duration retryAfter;
 }
 
+/// Raised when the account can't be deleted yet (`account_busy`): a ride is
+/// underway, or a completed ride's customer hasn't paid. [message] is the
+/// server's explanation.
+class AccountBusyException extends AuthException {
+  const AccountBusyException(super.message);
+}
+
+/// Raised when the server no longer accepts the session (401). The app's
+/// HTTP client signs the driver out when it sees one.
+class SessionExpiredException extends AuthException {
+  const SessionExpiredException(super.message);
+}
+
 /// The single entry point for driver authentication/registration data access.
 ///
 /// View models talk only to this repository — never to an HTTP client
@@ -90,14 +103,21 @@ class DriverAuthRepository {
   }
 
   /// Creates the driver account and returns the logged-in [DriverAuthSession]
-  /// (token + driver).
+  /// (token + driver). [consentVersion] is the version of the Terms and
+  /// Privacy Policy the driver agreed to, which the server records.
+  /// [registrationTicket] is [DriverOtpResult.registrationTicket] from
+  /// verifying the number: the server needs it from this build on.
   Future<DriverAuthSession> register({
     required String phoneE164,
     required String name,
+    String? consentVersion,
+    String? registrationTicket,
   }) async {
     final body = await _post('/driver/auth/register', {
       'phoneE164': phoneE164,
       'name': name.trim(),
+      'consentVersion': ?consentVersion,
+      'registrationTicket': ?registrationTicket,
     });
     return DriverAuthSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
@@ -108,12 +128,31 @@ class DriverAuthRepository {
     await _post('/driver/auth/logout', const {}, token: token);
   }
 
-  /// POSTs [payload] as JSON to [path]. Returns the response body on 2xx;
-  /// throws [AuthException] with the server's message otherwise. Attaches a
-  /// bearer token when one is supplied or available from [_tokenGetter].
+  /// Deletes the signed-in driver's account (`DELETE /driver/account`).
+  ///
+  /// The server anonymises the account, deletes their KYC documents, bank
+  /// details and checks, and revokes every session; ride and payment
+  /// records stay. Throws [AccountBusyException] while it can't yet,
+  /// [SessionExpiredException] on a 401, and [AuthException] otherwise.
+  Future<void> deleteAccount() async {
+    await _send('DELETE', '/driver/account');
+  }
+
+  /// POSTs [payload] as JSON to [path]; see [_send].
   Future<String> _post(
     String path,
     Map<String, dynamic> payload, {
+    String? token,
+  }) => _send('POST', path, payload: payload, token: token);
+
+  /// Sends [method] to [path], with [payload] as its JSON body. Returns the
+  /// response body on 2xx; throws [AuthException] with the server's message
+  /// otherwise. Attaches a bearer token when one is supplied or available
+  /// from [_tokenGetter].
+  Future<String> _send(
+    String method,
+    String path, {
+    Map<String, dynamic>? payload,
     String? token,
   }) async {
     final bearer = token ?? _tokenGetter?.call();
@@ -121,13 +160,16 @@ class DriverAuthRepository {
       'Content-Type': 'application/json',
       if (bearer != null) 'Authorization': 'Bearer $bearer',
     };
+    final uri = Uri.parse('$_baseUrl$path');
     final http.Response response;
     try {
-      response = await _client.post(
-        Uri.parse('$_baseUrl$path'),
-        headers: headers,
-        body: jsonEncode(payload),
-      );
+      response = method == 'DELETE'
+          ? await _client.delete(uri, headers: headers)
+          : await _client.post(
+              uri,
+              headers: headers,
+              body: jsonEncode(payload ?? const {}),
+            );
     } catch (_) {
       throw const AuthException(
         "Can't reach the server. Check your connection and try again.",
@@ -160,9 +202,16 @@ class DriverAuthRepository {
           message,
           Duration(seconds: seconds is int ? seconds : 0),
         );
-      default:
-        return AuthException(message);
+      case 'account_busy':
+        return AccountBusyException(message);
     }
+    // A 401 without a code is the session check (OTP 401s carry one).
+    if (response.statusCode == 401 && body['code'] == null) {
+      return const SessionExpiredException(
+        'Your session has ended. Please sign in again.',
+      );
+    }
+    return AuthException(message);
   }
 
   /// Decodes the JSON body as a map, or an empty map when it isn't one.

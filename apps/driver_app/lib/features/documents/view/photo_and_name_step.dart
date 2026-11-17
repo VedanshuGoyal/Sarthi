@@ -50,7 +50,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       maxWidth: 1024,
       imageQuality: 85,
     );
-    if (photo == null) return;
+    if (photo == null || !mounted) return;
 
     setState(() => _error = null);
     // Uploaded as soon as it's taken: a selfie sitting in the OS cache
@@ -58,6 +58,13 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
     await ref
         .read(documentRegistrationViewModelProvider)
         .capturePhoto(DocumentKind.selfie, photo.path);
+  }
+
+  Future<void> _retrySelfie() async {
+    setState(() => _error = null);
+    await ref
+        .read(documentRegistrationViewModelProvider)
+        .retryUpload(DocumentKind.selfie);
   }
 
   Future<void> _pickDateOfBirth() async {
@@ -126,7 +133,15 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       fields: [
         Center(
           child: GestureDetector(
-            onTap: _pickSelfie,
+            // Blocked mid-upload, like the document tiles: a retake would
+            // replace the file under the in-flight request. A failed upload
+            // is sent again from the copy already on the phone.
+            onTap: switch (selfieState) {
+              DocumentUploadState.uploading => null,
+              DocumentUploadState.failed when selfiePath != null =>
+                _retrySelfie,
+              _ => _pickSelfie,
+            },
             child: Container(
               width: 96,
               height: 96,
@@ -166,6 +181,13 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
             ),
           ),
         ),
+        if (selfieState == DocumentUploadState.failed && selfiePath != null)
+          Center(
+            child: TextButton(
+              onPressed: _pickSelfie,
+              child: const Text('Take a new one instead'),
+            ),
+          ),
         const SizedBox(height: 4),
         Center(
           child: Text(

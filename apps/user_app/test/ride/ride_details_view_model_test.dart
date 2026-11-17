@@ -40,12 +40,28 @@ RideDetailsViewModel _vm(
   );
 }
 
+/// A rides list whose reloads never see the latest — as when the list
+/// request fails or races — so only the server's refusal tells the fee.
+class _LaggingBookings extends MyBookingsViewModel {
+  _LaggingBookings(FakeBookingServer server)
+    : super(
+        repository: server.repository(),
+        initialBookings: [MyBooking.tryParse(bookingJson(otp: '4821'))!],
+      );
+
+  @override
+  Future<void> load() async {}
+}
+
 /// A payment page that closes with [outcome] and remembers what it opened.
 class _FakeCheckout implements UpiCheckout {
-  _FakeCheckout(this.outcome);
+  _FakeCheckout(this.outcome, {this.onOpen});
 
   final CheckoutOutcome outcome;
   final List<PaymentCheckout> opened = [];
+
+  /// Runs while the page is "open", before it closes with [outcome].
+  final void Function()? onOpen;
 
   @override
   Future<CheckoutOutcome> open(
@@ -53,6 +69,7 @@ class _FakeCheckout implements UpiCheckout {
     required String flowId,
   }) async {
     opened.add(checkout);
+    onOpen?.call();
     return outcome;
   }
 }
@@ -67,9 +84,10 @@ void main() {
       final vm = _vm(server, bookings: bookings);
       check(vm.booking!.canCancel).isTrue();
 
-      final cancelling = vm.cancel(reason: 'Plans changed');
+      check(vm.cancelFeePaise).equals(0);
+      final cancelling = vm.cancel(reason: 'Plans changed', acceptFeePaise: 0);
       check(vm.isCancelling).isTrue();
-      check(await cancelling).isTrue();
+      check(await cancelling).equals(CancelOutcome.cancelled);
 
       check(vm.isCancelling).isFalse();
       check(vm.booking!.status).equals(BookingStatus.cancelled);
@@ -78,6 +96,12 @@ void main() {
       ).equals('Cancelled by you · Plans changed');
       check(bookings.active).isEmpty();
       check(bookings.past.single.id).equals('b1');
+      // Free before the driver reaches the pickup: nothing to pay.
+      check(vm.booking!.hasCancellationFee).isFalse();
+      check(vm.booking!.canPay).isFalse();
+      check(
+        jsonDecode(server.requests[1].body) as Map,
+      ).deepEquals({'reason': 'Plans changed', 'acceptFeePaise': 0});
       // The list is re-read after the cancel.
       await bookings.load();
       check(server.requests.map((r) => '${r.method} ${r.url.path}')).deepEquals(
@@ -92,7 +116,9 @@ void main() {
           ..actionError = (409, 'booking_state');
         final vm = _vm(server);
 
-        check(await vm.cancel(reason: 'Plans changed')).isFalse();
+        check(
+          await vm.cancel(reason: 'Plans changed', acceptFeePaise: 0),
+        ).equals(CancelOutcome.failed);
         check(vm.cancelError).isNotNull().contains('already started');
         check(vm.booking!.status).equals(BookingStatus.accepted);
       },
@@ -102,8 +128,156 @@ void main() {
       final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
       final vm = _vm(server);
       check(vm.booking!.canCancel).isFalse();
-      check(await vm.cancel()).isFalse();
+      check(vm.cancelFeePaise).equals(0);
+      check(await vm.cancel(acceptFeePaise: 0)).equals(CancelOutcome.failed);
       check(server.requests.where((r) => r.method == 'POST')).isEmpty();
+    });
+
+    Map<String, dynamic> atPickup() =>
+        bookingJson(status: 'arrived', otp: '4821', cancellationFeePaise: 5000);
+
+    test('at the pickup, cancelling costs the fee the server names, and '
+        'the ride is then due for it', () async {
+      final server = FakeBookingServer([atPickup()]);
+      final vm = _vm(server, checkout: _FakeCheckout(CheckoutOutcome.success));
+      check(vm.cancelFeePaise).equals(5000);
+
+      check(
+        await vm.cancel(reason: 'Plans changed', acceptFeePaise: 5000),
+      ).equals(CancelOutcome.cancelled);
+
+      final post = server.requests.firstWhere((r) => r.method == 'POST');
+      check(
+        jsonDecode(post.body) as Map,
+      ).deepEquals({'reason': 'Plans changed', 'acceptFeePaise': 5000});
+      final b = vm.booking!;
+      check(b.status).equals(BookingStatus.cancelled);
+      check(b.hasCancellationFee).isTrue();
+      check(b.chargePaise).equals(5000);
+      check(b.paymentStatus).equals(RidePaymentStatus.due);
+      check(vm.canPay).isTrue();
+      check(vm.cancelFeePaise).equals(0);
+    });
+
+    test('a driver who reaches the pickup after the sheet opened gets the '
+        'fee shown before anything is cancelled', () async {
+      final server = FakeBookingServer([bookingJson(otp: '4821')]);
+      final repo = server.repository();
+      final bookings = MyBookingsViewModel(repository: repo);
+      await bookings.load();
+      final vm = _vm(server, bookings: bookings);
+      // The sheet opened while the driver was on the way: free.
+      final shown = vm.cancelFeePaise;
+      check(shown).equals(0);
+      // Then the driver arrives.
+      server.bookings[0] = atPickup();
+
+      check(
+        await vm.cancel(reason: 'Plans changed', acceptFeePaise: shown),
+      ).equals(CancelOutcome.feeChanged);
+
+      // Nothing cancelled; the list shows the driver at the pickup and the
+      // fee to confirm.
+      check(server.bookings[0]['status']).equals('arrived');
+      check(vm.booking!.status).equals(BookingStatus.arrived);
+      check(vm.cancelFeePaise).equals(5000);
+      check(vm.cancelError).isNull();
+      check(vm.isCancelling).isFalse();
+      check(server.requests.map((r) => '${r.method} ${r.url.path}')).deepEquals(
+        ['GET /me/bookings', 'POST /me/bookings/b1/cancel', 'GET /me/bookings'],
+      );
+
+      // Confirming again with the fee shown cancels.
+      check(
+        await vm.cancel(reason: 'Plans changed', acceptFeePaise: 5000),
+      ).equals(CancelOutcome.cancelled);
+      check(vm.booking!.cancellationFeePaise).equals(5000);
+    });
+
+    test('the fee from the refusal counts even when the list lags', () async {
+      // The list still says "on the way"; only the server's refusal names
+      // the fee.
+      final server = FakeBookingServer([atPickup()]);
+      final vm = RideDetailsViewModel(
+        repository: server.repository(),
+        bookings: _LaggingBookings(server),
+        bookingId: 'b1',
+      );
+      check(vm.cancelFeePaise).equals(0);
+
+      check(
+        await vm.cancel(acceptFeePaise: 0),
+      ).equals(CancelOutcome.feeChanged);
+      check(vm.booking!.status).equals(BookingStatus.accepted);
+      check(vm.cancelFeePaise).equals(5000);
+    });
+
+    test('a fee refusal that names no fee is not offered free again', () async {
+      final server = FakeBookingServer([bookingJson()])
+        ..actionError = (409, 'cancellation_fee');
+      final vm = _vm(server);
+
+      check(
+        await vm.cancel(reason: 'Plans changed', acceptFeePaise: 0),
+      ).equals(CancelOutcome.failed);
+      check(vm.cancelError).isNotNull().contains('has a fee');
+    });
+  });
+
+  group('ending the trip early', () {
+    test(
+      'ends an in-progress trip and leaves it due for the time used',
+      () async {
+        final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+        final vm = _vm(
+          server,
+          checkout: _FakeCheckout(CheckoutOutcome.success),
+        );
+        check(vm.canEndTrip).isTrue();
+
+        final ending = vm.endTrip();
+        check(vm.isEndingTrip).isTrue();
+        check(await ending).isTrue();
+
+        check(vm.isEndingTrip).isFalse();
+        final post = server.requests.firstWhere((r) => r.method == 'POST');
+        check(post.url.path).equals('/me/bookings/b1/end');
+        final b = vm.booking!;
+        check(b.status).equals(BookingStatus.completed);
+        check(b.endedEarly).isTrue();
+        check(b.farePaise).equals(24000);
+        check(b.bookedFarePaise).equals(64000);
+        check(b.paymentStatus).equals(RidePaymentStatus.due);
+        check(vm.canEndTrip).isFalse();
+        check(vm.canPay).isTrue();
+        check(rideTimeline(b).last.label).equals('Ended early');
+      },
+    );
+
+    test('a trip that already ended says so and refreshes', () async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      final repo = server.repository();
+      final bookings = MyBookingsViewModel(repository: repo);
+      await bookings.load();
+      final vm = _vm(server, bookings: bookings);
+      // The driver ended it a moment ago.
+      server.bookings[0] = bookingJson(status: 'completed');
+
+      check(await vm.endTrip()).isFalse();
+      check(vm.endTripError).equals("This trip isn't in progress any more.");
+      await bookings.load();
+      check(vm.booking!.status).equals(BookingStatus.completed);
+      check(vm.canEndTrip).isFalse();
+    });
+
+    test('only a trip in progress can be ended', () async {
+      for (final status in ['accepted', 'arrived', 'completed', 'cancelled']) {
+        final server = FakeBookingServer([bookingJson(status: status)]);
+        final vm = _vm(server);
+        check(because: status, vm.canEndTrip).isFalse();
+        check(because: status, await vm.endTrip()).isFalse();
+        check(because: status, server.requests).isEmpty();
+      }
     });
   });
 
@@ -113,7 +287,8 @@ void main() {
 
     test('opens the UPI page, then shows the ride paid once the server '
         'confirms', () async {
-      final server = FakeBookingServer([due()])..paidAfterSyncs = 2;
+      // The first check is the one made on opening the ride.
+      final server = FakeBookingServer([due()])..paidAfterSyncs = 3;
       final checkout = _FakeCheckout(CheckoutOutcome.success);
       final vm = _vm(server, checkout: checkout);
       check(vm.canPay).isTrue();
@@ -128,6 +303,7 @@ void main() {
       check(
         server.requests.map((r) => '${r.method} ${r.url.path}'),
       ).deepEquals([
+        'POST /me/bookings/b1/payment/sync',
         'POST /me/bookings/b1/payment',
         'POST /me/bookings/b1/payment/sync',
         'POST /me/bookings/b1/payment/sync',
@@ -144,10 +320,103 @@ void main() {
       check(await vm.pay()).isFalse();
       check(vm.payError).equals('Payment cancelled.');
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.due);
-      // Checked once, in case it went through anyway.
+      // Checked on opening, and once after, in case it went through anyway.
       check(
         server.requests.where((r) => r.url.path.endsWith('/sync')),
-      ).length.equals(1);
+      ).length.equals(2);
+      // Nothing went through, so paying again is fine.
+      check(vm.canPay).isTrue();
+    });
+
+    test('opening a due ride finds a payment the app never heard back '
+        'about', () async {
+      // Android killed the app behind the UPI app; the money went through.
+      final server = FakeBookingServer([due()])..paidAfterSyncs = 1;
+      final checkout = _FakeCheckout(CheckoutOutcome.success);
+      final vm = _vm(server, checkout: checkout);
+
+      // Tapped before the open check answers: no second order.
+      check(await vm.pay()).isTrue();
+
+      check(checkout.opened).isEmpty();
+      check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+      check(
+        server.requests.where((r) => r.url.path.endsWith('/payment')),
+      ).isEmpty();
+    });
+
+    test('a payment the bank is slow to confirm keeps Pay off, even on '
+        'reopening, and keeps being checked until it lands', () {
+      fakeAsync((async) {
+        // Open check, five quick checks, then the slow ones: at +5 s, +15 s.
+        final server = FakeBookingServer([due()])..paidAfterSyncs = 8;
+        final repo = server.repository();
+        final bookings = MyBookingsViewModel(
+          repository: repo,
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        RideDetailsViewModel open() => RideDetailsViewModel(
+          repository: repo,
+          bookings: bookings,
+          bookingId: 'b1',
+          checkout: _FakeCheckout(CheckoutOutcome.success),
+          paySyncEvery: Duration.zero,
+        );
+        final vm = open();
+        bool? paid;
+        vm.pay().then((v) => paid = v);
+        async.elapse(const Duration(milliseconds: 1));
+
+        check(paid).equals(false);
+        check(vm.canPay).isFalse();
+        check(vm.payError).isNotNull().startsWith("We're still confirming");
+
+        // Leaving and coming back doesn't turn Pay back on.
+        vm.dispose();
+        final reopened = open();
+        async.elapse(const Duration(milliseconds: 1));
+        check(reopened.canPay).isFalse();
+        check(reopened.payError).isNotNull().startsWith("We're still");
+        final syncsBefore = server.requests.length;
+
+        async.elapse(const Duration(seconds: 5));
+        check(server.requests.length).equals(syncsBefore + 1);
+        check(reopened.booking!.paymentStatus).equals(RidePaymentStatus.due);
+
+        async.elapse(const Duration(seconds: 10));
+        check(reopened.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+        check(bookings.isConfirmingPayment('b1')).isFalse();
+        check(reopened.payError).isNull();
+        check(reopened.canPay).isFalse();
+
+        // Nothing left running.
+        async.elapse(const Duration(minutes: 15));
+        check(server.requests.length).equals(syncsBefore + 2);
+        reopened.dispose();
+      });
+    });
+
+    test('after the limit, Pay comes back', () {
+      fakeAsync((async) {
+        final server = FakeBookingServer([due()]);
+        final bookings = MyBookingsViewModel(
+          repository: server.repository(),
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        bookings.confirmPayment(
+          'b1',
+          first: const Duration(seconds: 1),
+          longest: const Duration(seconds: 4),
+          giveUpAfter: const Duration(seconds: 10),
+        );
+        check(bookings.isConfirmingPayment('b1')).isTrue();
+
+        // 1 + 2 + 4 + 4 s: four checks, then it stops.
+        async.elapse(const Duration(seconds: 30));
+
+        check(server.requests).length.equals(4);
+        check(bookings.isConfirmingPayment('b1')).isFalse();
+      });
     });
 
     test('a ride paid from an earlier attempt just shows as paid', () async {
@@ -162,6 +431,55 @@ void main() {
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
     });
 
+    test(
+      'leaving while the order is being made opens no payment page',
+      () async {
+        final server = FakeBookingServer([due()]);
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, checkout: checkout);
+
+        final paying = vm.pay();
+        // Back out of the screen before the server answers with the order.
+        vm.dispose();
+
+        check(await paying).isFalse();
+        check(checkout.opened).isEmpty();
+      },
+    );
+
+    test(
+      'leaving as the UPI page closes still gets the payment checked',
+      () async {
+        final server = FakeBookingServer([due()])..paidAfterSyncs = 2;
+        final repo = server.repository();
+        final bookings = MyBookingsViewModel(
+          repository: repo,
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        late final RideDetailsViewModel vm;
+        // The customer backs out of the ride screen right as PhonePe returns.
+        final checkout = _FakeCheckout(
+          CheckoutOutcome.success,
+          onOpen: () => vm.dispose(),
+        );
+        vm = RideDetailsViewModel(
+          repository: repo,
+          bookings: bookings,
+          bookingId: 'b1',
+          checkout: checkout,
+          paySyncEvery: Duration.zero,
+        );
+
+        await vm.pay();
+
+        // The list the Activity tab shows has the ride paid, so it doesn't
+        // offer to take the money again.
+        check(
+          bookings.byId('b1')!.paymentStatus,
+        ).equals(RidePaymentStatus.paid);
+      },
+    );
+
     test('payments not set up on the server', () async {
       final server = FakeBookingServer([due()])
         ..paymentError = (503, 'payments_not_configured');
@@ -169,6 +487,42 @@ void main() {
 
       check(await vm.pay()).isFalse();
       check(vm.payError).equals("Paying in the app isn't available yet.");
+    });
+
+    test(
+      'a cancellation fee pays through the same checkout, for the fee',
+      () async {
+        final server = FakeBookingServer([
+          bookingJson(
+            status: 'cancelled',
+            cancellationFeePaise: 5000,
+            paymentStatus: 'due',
+          ),
+        ])..paidAfterSyncs = 2;
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, checkout: checkout);
+        check(vm.canPay).isTrue();
+
+        check(await vm.pay()).isTrue();
+
+        check(checkout.opened.single.amountPaise).equals(5000);
+        check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+        check(
+          server.requests.map((r) => '${r.method} ${r.url.path}'),
+        ).deepEquals([
+          'POST /me/bookings/b1/payment/sync',
+          'POST /me/bookings/b1/payment',
+          'POST /me/bookings/b1/payment/sync',
+        ]);
+      },
+    );
+
+    test('a ride cancelled for free has nothing to pay', () async {
+      final server = FakeBookingServer([bookingJson(status: 'cancelled')]);
+      final vm = _vm(server, checkout: _FakeCheckout(CheckoutOutcome.success));
+      check(vm.canPay).isFalse();
+      check(await vm.pay()).isFalse();
+      check(server.requests).isEmpty();
     });
 
     test('nothing to pay before the trip is done', () async {

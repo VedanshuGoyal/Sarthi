@@ -13,8 +13,9 @@ type AdminStats struct {
 
 	Users        StatsUsers `json:"users"`
 	DriversByKYC StatsKYC   `json:"driversByKyc"`
-	// DriversOnDuty counts drivers in the live presence index: online and
-	// not since gone offline. Nil when no index is wired.
+	// DriversOnDuty counts drivers in the live presence index whose app has
+	// reported in within the last 10 minutes: online, and not since gone
+	// offline or quiet. Nil when no index is wired.
 	DriversOnDuty    *int                `json:"driversOnDuty,omitempty"`
 	BookingsByStatus StatsBookings       `json:"bookingsByStatus"`
 	CompletedRides   StatsCompletedRides `json:"completedRides"`
@@ -57,12 +58,17 @@ type StatsCompletedRides struct {
 }
 
 // StatsRideWindow is the rides completed since From, their summed fares, and
-// MOJUD's commission on those fares at the current rate.
+// MOJUD's commission on those fares at the current rate — leaving out rides
+// settled by hand (cash or waived), on which MOJUD receives nothing.
 type StatsRideWindow struct {
 	From            time.Time `json:"from"`
 	Rides           int       `json:"rides"`
 	GrossFarePaise  int64     `json:"grossFarePaise"`
 	CommissionPaise int64     `json:"commissionPaise"`
+
+	// SettledByHandPaise is the part of GrossFarePaise settled by hand; it
+	// is only the commission's input, not sent out.
+	SettledByHandPaise int64 `json:"-"`
 }
 
 // StatsPayoutsDue is what MOJUD owes drivers now — the total of the payouts

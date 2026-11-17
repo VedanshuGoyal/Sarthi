@@ -1,0 +1,419 @@
+<!-- DRAFT — owner and counsel must review before publishing.
+     Every [[PLACEHOLDER]] must be filled in. Data facts must match docs/privacy/data-map.md.
+     Published by scripts/publish-apps.sh as https://apps.mojud.life/terms/ -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terms of Service | MOJUD</title>
+<meta name="description" content="The terms for using MOJUD and MOJUD Driver: booking, cancellation, payment, responsibilities, ratings and account deletion.">
+<meta name="theme-color" content="#0B2239">
+<link rel="icon" type="image/png" href="/mojud-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+  :root {
+    --navy: #0B2239; --navy-2: #12345A;
+    --signal: #2A93BE; --signal-ink: #1A6E93; --signal-soft: #D6EAF4;
+    --gold: #CE9A3C; --gold-soft: #F4E7CF;
+    --paper: #F5F8FB; --surface: #FFFFFF; --sunken: #EDF3F8;
+    --ink: #0B2239; --muted: #4A5D72; --faint: #5E7086; --line: #DCE7F1;
+    --radius: 22px;
+    --serif: "Instrument Serif", Georgia, serif;
+    --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16.5px/1.7 var(--sans); overflow-x: hidden; }
+  a { color: var(--signal-ink); text-underline-offset: 3px; }
+  a:hover { color: var(--ink); }
+  .wrap { width: 100%; max-width: 1140px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+  .skip { position: absolute; left: 12px; top: -60px; background: var(--navy); color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 50; }
+  .skip:focus { top: 12px; }
+  :focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; border-radius: 8px; }
+
+  /* Header */
+  .head { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
+  .head-row { display: flex; align-items: center; gap: 12px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; letter-spacing: .14em; font-size: 15px; }
+  .nav { margin-left: auto; display: flex; gap: 4px; }
+  .nav a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 14px; padding: 7px 12px; border-radius: 999px; }
+  .nav a:hover { color: var(--ink); background: var(--sunken); }
+  .nav a[aria-current="page"] { color: var(--ink); background: var(--signal-soft); }
+
+  /* Title */
+  .intro { padding-top: 40px; padding-bottom: 28px; }
+  @media (min-width: 900px) { .intro { padding-top: 64px; padding-bottom: 40px; } }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 700 12.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--signal-ink); }
+  .eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--gold); border-radius: 2px; }
+  h1 { margin: 14px 0 0; font-size: clamp(38px, 8vw, 64px); line-height: 1.02; font-weight: 800; letter-spacing: -.02em; }
+  .serif { font-family: var(--serif); font-weight: 400; font-style: italic; letter-spacing: -.01em; color: var(--signal-ink); }
+  .lede { margin: 16px 0 0; max-width: 36em; color: var(--muted); font-size: clamp(16.5px, 2.2vw, 19px); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; padding: 0; list-style: none; }
+  .meta li { background: var(--signal-soft); color: var(--signal-ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; }
+
+  /* Layout */
+  .layout { display: grid; gap: 24px; padding-bottom: 72px; }
+  @media (min-width: 1000px) { .layout { grid-template-columns: 270px minmax(0, 1fr); gap: 56px; align-items: start; } }
+  .toc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; }
+  @media (min-width: 1000px) { .toc { position: sticky; top: 84px; max-height: calc(100vh - 108px); overflow: auto; } }
+  .toc h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .toc ol { margin: 0; padding-left: 24px; font-size: 14.5px; line-height: 1.5; }
+  .toc li { margin: 6px 0; color: var(--faint); }
+  .toc a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .toc a:hover { color: var(--signal-ink); text-decoration: underline; }
+  @media (min-width: 600px) and (max-width: 999px) { .toc ol { columns: 2; column-gap: 32px; } .toc li { break-inside: avoid; } }
+
+  /* Document */
+  .doc { max-width: 46em; min-width: 0; }
+  .summary { background: var(--navy); color: #fff; border-radius: var(--radius); padding: 24px; margin-bottom: 8px; }
+  .summary h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .summary ul { margin: 0; padding-left: 20px; }
+  .summary li { margin: 6px 0; color: rgba(255,255,255,.88); }
+  .summary p { margin: 12px 0 0; font-size: 14px; color: rgba(255,255,255,.7); }
+  .doc section { padding-top: 36px; scroll-margin-top: 76px; }
+  .doc h2 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 12px; font-size: clamp(22px, 3.4vw, 27px); line-height: 1.2; font-weight: 800; letter-spacing: -.015em; }
+  .doc h2 .n { font: italic 400 1.25em/1 var(--serif); color: var(--signal); min-width: 1.2em; }
+  .doc h3 { margin: 20px 0 6px; font-size: 17px; font-weight: 800; }
+  .doc p { margin: 0 0 12px; }
+  .doc ul, .doc ol { margin: 0 0 12px; padding-left: 22px; }
+  .doc li { margin: 6px 0; }
+  .doc li::marker { color: var(--signal); }
+  .doc strong { font-weight: 700; }
+  .note { margin: 14px 0; padding: 14px 16px; border-radius: 14px; background: var(--sunken); color: var(--muted); font-size: 15px; }
+  .note strong { color: var(--ink); }
+  .ph { background: var(--gold-soft); color: var(--navy); border-radius: 6px; padding: 1px 6px; font-weight: 700; font-size: .92em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .contact { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; }
+  .contact p { margin: 4px 0; }
+
+  /* Footer */
+  .foot { background: var(--surface); border-top: 1px solid var(--line); padding: 36px 0 28px; font-size: 14.5px; color: var(--muted); }
+  .foot-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; align-items: center; }
+  .foot ul { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; padding: 0; list-style: none; }
+  .foot a { color: var(--muted); text-decoration: none; font-weight: 600; }
+  .foot a:hover { color: var(--ink); text-decoration: underline; }
+  .foot-base { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--faint); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="head">
+  <div class="wrap head-row">
+    <a class="brand" href="/" aria-label="MOJUD home">
+      <svg width="26" height="26" viewBox="0 0 144 144" aria-hidden="true">
+        <g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none">
+          <line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/>
+          <line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/>
+          <line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/>
+        </g>
+        <circle cx="72" cy="72" r="9" fill="#CE9A3C"/>
+      </svg>
+      MOJUD
+    </a>
+    <nav class="nav" aria-label="Policies">
+      <a href="/terms/" aria-current="page">Terms</a>
+      <a href="/privacy/">Privacy</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap intro">
+    <p class="eyebrow">Legal</p>
+    <h1>Terms of <span class="serif">Service</span></h1>
+    <p class="lede">The rules for using the MOJUD app (for customers) and the MOJUD Driver app (for drivers).</p>
+    <ul class="meta" aria-label="About this version">
+      <li>Version 2026-11</li>
+      <li>Effective <mark class="ph">[[EFFECTIVE DATE]]</mark></li>
+    </ul>
+  </div>
+
+  <div class="wrap layout">
+    <nav class="toc" aria-labelledby="toc-title">
+      <h2 id="toc-title">Contents</h2>
+      <ol>
+        <li><a href="#about">Who we are</a></li>
+        <li><a href="#service">What MOJUD is</a></li>
+        <li><a href="#account">Your account</a></li>
+        <li><a href="#booking">Booking a driver</a></li>
+        <li><a href="#cancel">Cancellation and no-show</a></li>
+        <li><a href="#payment">Fares and payment</a></li>
+        <li><a href="#unpaid">If a trip isn't paid</a></li>
+        <li><a href="#customers">Customer responsibilities</a></li>
+        <li><a href="#damage">Accidents, damage and fines</a></li>
+        <li><a href="#drivers">Driver responsibilities</a></li>
+        <li><a href="#earnings">Driver earnings and payouts</a></li>
+        <li><a href="#ratings">Ratings</a></li>
+        <li><a href="#safety">Safety</a></li>
+        <li><a href="#suspension">Suspension and closing accounts</a></li>
+        <li><a href="#deletion">Deleting your account</a></li>
+        <li><a href="#liability">Limitation of liability</a></li>
+        <li><a href="#law">Governing law and disputes</a></li>
+        <li><a href="#changes">Changes to these terms</a></li>
+        <li><a href="#contact">Contact and grievances</a></li>
+      </ol>
+    </nav>
+
+    <article class="doc">
+      <aside class="summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">In short</h2>
+        <ul>
+          <li>MOJUD connects you with an independent, verified driver who drives <strong>your own car</strong>.</li>
+          <li>Book at least 45 minutes ahead. Cancelling is free until the trip starts.</li>
+          <li>Pay by UPI in the app after the trip. While a trip is unpaid, you can't book again.</li>
+          <li>Your car's insurance and condition are your responsibility.</li>
+          <li>You can delete your account in the app.</li>
+        </ul>
+        <p>This summary helps you find your way. The full terms below are what apply.</p>
+      </aside>
+
+      <section id="about" aria-labelledby="about-h">
+        <h2 id="about-h"><span class="n">1</span>Who we are</h2>
+        <p>These terms are an agreement between you and <mark class="ph">[[REGISTERED ENTITY NAME AND ADDRESS]]</mark> ("MOJUD", "we", "us").</p>
+        <p>They apply when you use the MOJUD app, the MOJUD Driver app, or this website. By creating an account, you agree to them. Our <a href="/privacy/">Privacy Policy</a> explains how we handle your data.</p>
+      </section>
+
+      <section id="service" aria-labelledby="service-h">
+        <h2 id="service-h"><span class="n">2</span>What MOJUD is</h2>
+        <ul>
+          <li>MOJUD is a platform. It connects customers who need someone to drive their car with independent drivers.</li>
+          <li>We don't provide cars. The driver drives the customer's own car.</li>
+          <li>Drivers are independent. They are not MOJUD's employees or agents. They choose when to go on duty and which rides to accept.</li>
+          <li>We operate in Delhi NCR.</li>
+          <li>You can book three kinds of trip:
+            <ul>
+              <li><strong>Round Trip:</strong> a driver for a number of hours.</li>
+              <li><strong>One-Way:</strong> from your pickup to one destination.</li>
+              <li><strong>Multi-Stop:</strong> several stops in one trip.</li>
+            </ul>
+          </li>
+          <li>Before a driver can take rides, we check their identity through DigiLocker, their driving licence and their bank account, and our team reviews their selfie. These checks lower the risk, but they can't guarantee how anyone will behave.</li>
+        </ul>
+      </section>
+
+      <section id="account" aria-labelledby="account-h">
+        <h2 id="account-h"><span class="n">3</span>Your account</h2>
+        <ul>
+          <li>You must be 18 or older.</li>
+          <li>You sign in with your mobile number and a one-time code we send by SMS.</li>
+          <li>Give true, current details, and keep them up to date.</li>
+          <li>Keep your phone secure. You are responsible for what happens on your account.</li>
+          <li>One account per person. Don't share, sell or transfer it. One identity can have only one driver account.</li>
+          <li>Install the apps only from <a href="/">apps.mojud.life</a>.</li>
+        </ul>
+      </section>
+
+      <section id="booking" aria-labelledby="booking-h">
+        <h2 id="booking-h"><span class="n">4</span>Booking a driver</h2>
+        <ul>
+          <li>Choose the trip, your car and a start time at least 45 minutes from now.</li>
+          <li>You see the fare before you book.</li>
+          <li>A booking is a request. It is confirmed when a driver accepts it. The app then shows you the driver's name, photo, rating and phone number.</li>
+          <li>If no driver has accepted it 30 minutes before the start time, the booking closes, the app shows "No driver found", and you pay nothing.</li>
+          <li>A driver may hand back a ride before it starts. We'll tell you and offer the ride to other drivers, but we can't promise another driver will take it.</li>
+          <li>The trip starts only when the driver enters the 4-digit start code shown in your app. Give the code only to the driver, in person.</li>
+          <li>If a trip runs longer than booked: <mark class="ph">[[EXTRA TIME POLICY: what happens and what it costs]]</mark></li>
+        </ul>
+      </section>
+
+      <section id="cancel" aria-labelledby="cancel-h">
+        <h2 id="cancel-h"><span class="n">5</span>Cancellation and no-show</h2>
+        <h3>Customers</h3>
+        <ul>
+          <li>You can cancel in the app at any time before the trip starts. It's free until your driver reaches the pickup.</li>
+          <li>Once your driver is at the pickup, cancelling costs ₹50. The app shows this before you confirm. The fee goes to the driver, less MOJUD's commission.</li>
+          <li>Once a trip has started, you can end it early in the app. You pay the hourly rate for the time used: each started hour counts as a full hour, plus any late-night charge for those hours. You never pay more than the fare you booked.</li>
+          <li>If you're not at the pickup, the driver waits 15 minutes from when they arrived or from your booked start time, whichever is later. After that they can close the ride. There's no fee for a no-show.</li>
+        </ul>
+        <h3>Drivers</h3>
+        <ul>
+          <li>If you can't make a ride you accepted, hand it back in the app as early as you can, so another driver can take it.</li>
+          <li><mark class="ph">[[DRIVER LATE HAND-BACK AND NO-SHOW POLICY: consequences, if any]]</mark></li>
+        </ul>
+      </section>
+
+      <section id="payment" aria-labelledby="payment-h">
+        <h2 id="payment-h"><span class="n">6</span>Fares and payment</h2>
+        <ul>
+          <li>Fares are in Indian rupees and include all taxes, including GST.</li>
+          <li>You pay after the trip ends, by UPI in the app, through PhonePe. A payment counts only once PhonePe confirms it to us.</li>
+          <li>PhonePe handles the payment, and its terms also apply. We never see your UPI PIN.</li>
+          <li>MOJUD collects the fare and pays the driver their share (see <a href="#earnings">section 11</a>).</li>
+          <li>Fuel, tolls, parking and other costs of running your car on the trip are yours. <mark class="ph">[[RUNNING COSTS: confirm, and how a driver who pays one for you is repaid]]</mark></li>
+          <li>If you are charged twice, or charged by mistake, contact us and we'll refund the extra amount. <mark class="ph">[[REFUND TIMELINE]]</mark></li>
+        </ul>
+      </section>
+
+      <section id="unpaid" aria-labelledby="unpaid-h">
+        <h2 id="unpaid-h"><span class="n">7</span>If a trip isn't paid</h2>
+        <ul>
+          <li>Until you pay for a completed trip, you can't make new bookings.</li>
+          <li>You also can't delete your account while a completed trip is unpaid.</li>
+          <li>We may contact you to collect what you owe. <mark class="ph">[[FURTHER STEPS FOR UNPAID TRIPS, e.g. late fee or recovery, if any]]</mark></li>
+        </ul>
+      </section>
+
+      <section id="customers" aria-labelledby="customers-h">
+        <h2 id="customers-h"><span class="n">8</span>Customer responsibilities</h2>
+        <ul>
+          <li><strong>Your car must be legal to drive.</strong> That means valid registration, insurance as the law requires, a valid pollution certificate and any permit it needs. Keep the papers in the car as the law requires.</li>
+          <li><strong>Your car must be safe.</strong> Brakes, tyres, lights and the rest must be in working order. The car's insurance and condition are your responsibility, not MOJUD's or the driver's.</li>
+          <li>Give the right pickup, stops and car details, including the gearbox, so we send a driver who can drive it.</li>
+          <li>Be at the pickup at the start time.</li>
+          <li>Don't ask the driver to do anything illegal or unsafe. For example: speeding, breaking traffic rules, carrying illegal goods, or carrying more people than the car has seats.</li>
+          <li>Treat the driver with respect. Abuse, harassment or violence will get your account closed.</li>
+          <li>You are responsible for your passengers and for anything you leave in the car.</li>
+        </ul>
+      </section>
+
+      <section id="damage" aria-labelledby="damage-h">
+        <h2 id="damage-h"><span class="n">9</span>Accidents, damage and fines</h2>
+        <p>MOJUD does not pay for damage to your car, including damage during a trip. <mark class="ph">[[DAMAGE AND LIABILITY POLICY: who pays for traffic fines (challans) and for third-party claims arising during a trip; how and by when to report it]]</mark></p>
+        <p>Report any accident, damage or traffic fine from a trip to us as soon as you can at <mark class="ph">[[CONTACT EMAIL]]</mark>, with the booking ID. In an emergency, call 112 first.</p>
+      </section>
+
+      <section id="drivers" aria-labelledby="drivers-h">
+        <h2 id="drivers-h"><span class="n">10</span>Driver responsibilities</h2>
+        <ul>
+          <li>Be 18 or older and hold a valid driving licence for the kind of car you drive. Tell us at once if your licence expires or is suspended or cancelled.</li>
+          <li>Complete verification honestly: Aadhaar through DigiLocker, your driving licence, your bank account and a selfie. Only verified drivers get rides. We may ask you to verify again.</li>
+          <li>Accept only rides you can do. Be on time. Drive only cars with a gearbox you told us you can drive.</li>
+          <li>Drive safely and within the law. Never drive after alcohol or drugs, or when you are too tired. Don't use a handheld phone while driving.</li>
+          <li>Start a trip only with the customer's start code. End it in the app when the trip ends.</li>
+          <li>Keep location sharing on while you are on duty. The app uses it to show you ride requests and to let your customer track the trip.</li>
+          <li>Look after the customer's car and belongings. Don't use the car for anything outside the trip.</li>
+          <li>Use the customer's phone number, address and trip details only for that ride. Don't keep, share or use them for anything else.</li>
+          <li>Don't take payment for a MOJUD ride outside the app.</li>
+          <li>You are responsible for your own taxes on what you earn. <mark class="ph">[[TAX: any tax MOJUD must deduct or report on driver earnings]]</mark></li>
+        </ul>
+      </section>
+
+      <section id="earnings" aria-labelledby="earnings-h">
+        <h2 id="earnings-h"><span class="n">11</span>Driver earnings and payouts</h2>
+        <ul>
+          <li>For each completed ride, MOJUD keeps a commission of 13% of the fare. The rest is yours. The same applies to a cancellation fee a customer pays after you reached the pickup.</li>
+          <li>Your share becomes due once the customer has paid. If a customer doesn't pay, MOJUD still pays you your share once it closes that trip's bill.</li>
+          <li>We pay by bank transfer to the bank account you verified in the app. <mark class="ph">[[PAYOUT SCHEDULE]]</mark></li>
+          <li>We can't pay you until your verification and bank account are confirmed. Until then, what you've earned stays owed to you.</li>
+          <li>The Earnings screen shows what customers still owe, what we owe you, and what we have paid.</li>
+        </ul>
+      </section>
+
+      <section id="ratings" aria-labelledby="ratings-h">
+        <h2 id="ratings-h"><span class="n">12</span>Ratings</h2>
+        <ul>
+          <li>After a completed trip, the customer and the driver can each rate the other once, from 1 to 5 stars, with an optional note.</li>
+          <li>Your average rating is shown to the other side on later rides.</li>
+          <li>Rate honestly. Don't use the note to abuse anyone or to share personal details.</li>
+          <li>We may use ratings and notes to keep the service safe, including when we decide on suspensions.</li>
+        </ul>
+      </section>
+
+      <section id="safety" aria-labelledby="safety-h">
+        <h2 id="safety-h"><span class="n">13</span>Safety</h2>
+        <ul>
+          <li>In an emergency, call 112. The customer app has a button for it under Help &amp; safety.</li>
+          <li>Under Help &amp; safety, customers can also share trip details on WhatsApp with someone they choose, and contact MOJUD support.</li>
+          <li>Tell us about any safety problem, during or after a trip.</li>
+        </ul>
+      </section>
+
+      <section id="suspension" aria-labelledby="suspension-h">
+        <h2 id="suspension-h"><span class="n">14</span>Suspension and closing accounts</h2>
+        <p>We may suspend or close an account, or take a driver off the road, if:</p>
+        <ul>
+          <li>you break these terms or the law;</li>
+          <li>you give false details or commit fraud;</li>
+          <li>there are safety complaints or serious misconduct;</li>
+          <li>there are repeated low ratings, no-shows or late cancellations <mark class="ph">[[THRESHOLDS, if any]]</mark>; or</li>
+          <li>a driver's verification fails, expires or is withdrawn.</li>
+        </ul>
+        <p>When a driver is taken off the road, rides they accepted but haven't started go back to other drivers, and the customers are told. A trip already under way can finish.</p>
+        <p>Earnings already due to a driver are still paid, except <mark class="ph">[[CASES WHERE EARNINGS CAN BE WITHHELD, e.g. fraud]]</mark>.</p>
+        <p>If you think we got it wrong, contact our Grievance Officer (<a href="#contact">section 19</a>).</p>
+      </section>
+
+      <section id="deletion" aria-labelledby="deletion-h">
+        <h2 id="deletion-h"><span class="n">15</span>Deleting your account</h2>
+        <ul>
+          <li>You can delete your account in the app at any time: open the <strong>Account</strong> tab and tap <strong>Delete account</strong>. This works the same in MOJUD and MOJUD Driver. You can also ask us by email.</li>
+          <li>We can't delete it while a driver has accepted a ride, has arrived, or the trip is under way. We also can't delete it while a completed trip is unpaid.</li>
+          <li>When you delete it, we remove your personal details and sign you out on every device.</li>
+          <li>Customers: bookings no driver has taken yet are cancelled.</li>
+          <li>Drivers: earnings not yet paid out are still owed to you. Contact us before you delete, so we can pay them.</li>
+          <li>We keep records of rides and payments, without your name, phone number or email. The <a href="/privacy/#deletion">Privacy Policy</a> explains what we keep and why.</li>
+          <li>Deletion can't be undone. You can sign up again later with the same number.</li>
+        </ul>
+      </section>
+
+      <section id="liability" aria-labelledby="liability-h">
+        <h2 id="liability-h"><span class="n">16</span>Limitation of liability</h2>
+        <ul>
+          <li>We work to keep MOJUD running well, but we can't promise it will always be available or free of errors, or that a driver will always be found.</li>
+          <li>The driving is done by an independent driver. To the extent the law allows, MOJUD is not liable for:
+            <ul>
+              <li>indirect losses, such as lost time, missed appointments or lost earnings;</li>
+              <li>loss of or damage to things left in the car;</li>
+              <li>anything caused by the car's condition, or by missing insurance or papers;</li>
+              <li>delays from traffic, weather or other events outside our control.</li>
+            </ul>
+          </li>
+          <li>To the extent the law allows, our total liability to you for any claim about a trip is limited to <mark class="ph">[[LIABILITY CAP, e.g. the fare of that trip]]</mark>.</li>
+          <li>Nothing in these terms limits any liability that the law does not allow us to limit, or your rights as a consumer under Indian law.</li>
+        </ul>
+      </section>
+
+      <section id="law" aria-labelledby="law-h">
+        <h2 id="law-h"><span class="n">17</span>Governing law and disputes</h2>
+        <ul>
+          <li>The laws of India govern these terms.</li>
+          <li>Please contact us first. Most problems can be sorted out quickly.</li>
+          <li>Any dispute goes to the courts at <mark class="ph">[[JURISDICTION CITY]]</mark>, India, subject to your rights under consumer protection law.</li>
+        </ul>
+      </section>
+
+      <section id="changes" aria-labelledby="changes-h">
+        <h2 id="changes-h"><span class="n">18</span>Changes to these terms</h2>
+        <ul>
+          <li>We may update these terms. The version and date at the top of this page will change when we do.</li>
+          <li>If a change is significant, we'll tell you in the app before it applies.</li>
+          <li>If you keep using MOJUD after a change applies, the new terms apply to you. If you don't agree, you can delete your account.</li>
+        </ul>
+      </section>
+
+      <section id="contact" aria-labelledby="contact-h">
+        <h2 id="contact-h"><span class="n">19</span>Contact and grievances</h2>
+        <div class="contact">
+          <p><strong>MOJUD</strong>, <mark class="ph">[[REGISTERED ENTITY NAME AND ADDRESS]]</mark></p>
+          <p>Email: <mark class="ph">[[CONTACT EMAIL]]</mark></p>
+          <p>Grievance Officer: <mark class="ph">[[GRIEVANCE OFFICER NAME]]</mark>, at the same email</p>
+        </div>
+        <p class="note">We aim to reply to complaints within <mark class="ph">[[GRIEVANCE RESPONSE TIME]]</mark>.</p>
+      </section>
+    </article>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <a class="brand" href="/">
+        <svg width="22" height="22" viewBox="0 0 144 144" aria-hidden="true"><g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none"><line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/><line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/><line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/></g><circle cx="72" cy="72" r="9" fill="#CE9A3C"/></svg>
+        MOJUD
+      </a>
+      <ul>
+        <li><a href="/terms/" aria-current="page">Terms of Service</a></li>
+        <li><a href="/privacy/">Privacy Policy</a></li>
+        <li><a href="/">Get the apps</a></li>
+      </ul>
+    </div>
+    <div class="foot-base">© 2026 MOJUD · A driver for your own car, in Delhi NCR.</div>
+  </div>
+</footer>
+</body>
+</html>

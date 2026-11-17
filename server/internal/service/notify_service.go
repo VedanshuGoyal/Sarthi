@@ -36,6 +36,13 @@ const (
 	pushTypeRideCompleted  = "ride_completed"
 	pushTypePaymentPaid    = "payment_received"
 	pushTypeKYCDecided     = "kyc_decided"
+	pushTypeBankChanged    = "bank_account_changed"
+	pushTypeNoDriverYet    = "no_driver_yet"
+	pushTypeRideExpired    = "ride_expired"
+	pushTypeRideReminder   = "ride_reminder"
+	pushTypeDutyOff        = "duty_off"
+	pushTypeRideNoShow     = "ride_no_show"
+	pushTypeRideEndedEarly = "ride_ended_early"
 )
 
 const (
@@ -45,8 +52,15 @@ const (
 	// offline.
 	presenceFresh = 10 * time.Minute
 
-	// maxAlertedDrivers caps one request's fan-out, nearest first.
+	// maxAlertedDrivers caps one request's fan-out: the nearest this many
+	// drivers who could take the ride.
 	maxAlertedDrivers = 200
+
+	// fewNearbyDrivers is how many fresh nearby drivers who could take a ride
+	// count as enough: with fewer, every verified driver with the app
+	// installed is alerted too (my estimate for launch, when drivers are few
+	// and their apps mostly in the background).
+	fewNearbyDrivers = 5
 
 	// pushTimeout bounds one event's sends.
 	pushTimeout = 30 * time.Second
@@ -64,12 +78,21 @@ type PushTokenStore interface {
 	Delete(ctx context.Context, token string) error
 	ForUser(ctx context.Context, userID string) ([]string, error)
 	ForDrivers(ctx context.Context, driverIDs []string) (map[string][]string, error)
+	// VerifiedDriversWithTokens lists up to limit KYC-verified drivers who
+	// have the app installed, most recently registered install first.
+	VerifiedDriversWithTokens(ctx context.Context, limit int) ([]string, error)
+}
+
+// DeclineReader says who passed on a ride: declined it in their feed or
+// handed it back (repository.DriverRideRepository).
+type DeclineReader interface {
+	DeclinedBy(ctx context.Context, rideID string) ([]string, error)
 }
 
 // NearbyDriverFinder searches the live presence index
 // (memstore.DriverTracker).
 type NearbyDriverFinder interface {
-	FindNearbyDrivers(lat, lng, radiusMeters float64, limit int) ([]memstore.NearbyDriver, error)
+	FindNearbyDrivers(lat, lng, radiusMeters float64, seenSince time.Time, limit int) ([]memstore.NearbyDriver, error)
 }
 
 // NotifyService sends the apps' push notifications, Uber-style:
@@ -94,9 +117,18 @@ type NotifyService struct {
 	sender   push.Sender
 	drivers  NearbyDriverFinder
 	profiles DriverProfileReader
+	declines DeclineReader
 	now      func() time.Time
 	wg       sync.WaitGroup
+
+	// fallbackBelow is fewNearbyDrivers; tests set 0 to see nearby drivers
+	// alone.
+	fallbackBelow int
 }
+
+// SetDeclines lets ride requests skip the drivers who passed on a ride.
+// Without it, a re-alert reaches them again.
+func (s *NotifyService) SetDeclines(d DeclineReader) { s.declines = d }
 
 // NewNotifyService wires the service. sender may be nil (pushes off).
 func NewNotifyService(tokens PushTokenStore, sender push.Sender, drivers NearbyDriverFinder, profiles DriverProfileReader) *NotifyService {
@@ -106,6 +138,8 @@ func NewNotifyService(tokens PushTokenStore, sender push.Sender, drivers NearbyD
 		drivers:  drivers,
 		profiles: profiles,
 		now:      time.Now,
+
+		fallbackBelow: fewNearbyDrivers,
 	}
 }
 
@@ -178,33 +212,56 @@ func (s *NotifyService) DriverReleased(ctx context.Context, b domain.Booking, pl
 }
 
 // alertDrivers sends "New ride request" for b to every eligible online
-// driver near its pickup, except skip.
+// driver near its pickup — and, when few of those are about, to every
+// verified driver with the app installed — except skip and anyone who
+// declined or handed the ride back.
 func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan tripPlan, skip string) {
 	closesIn := plan.ScheduledAt.Add(-acceptCutoff).Sub(s.now())
 	if closesIn <= 0 {
 		return
 	}
-	nearby, err := s.drivers.FindNearbyDrivers(plan.Pickup.Lat, plan.Pickup.Lng, requestRadiusM, maxAlertedDrivers)
+	passed := s.passedOn(ctx, b.ID)
+	if skip != "" {
+		passed[skip] = true
+	}
+	eligible := func(driverID string) bool {
+		if passed[driverID] {
+			return false
+		}
+		p, err := s.profiles.FindProfile(ctx, driverID)
+		return err == nil && clearedToDrive(p, s.now()) == nil && canDrive(p.Transmission, plan.Car)
+	}
+
+	// Only fresh positions, and no cap until eligibility is known: the cap
+	// counts drivers who could take the ride, so nearer stale or ineligible
+	// ones can't crowd them out.
+	// Lock screens show this to every driver near the ride, before anyone
+	// has taken it: the area, not the address (see coarseRide).
+	pickup := coarsePlace(plan.Pickup)
+	nearby, err := s.drivers.FindNearbyDrivers(pickup.Lat, pickup.Lng, requestRadiusM,
+		s.now().Add(-presenceFresh), 0)
 	if err != nil {
 		slog.WarnContext(ctx, "push: finding drivers for request failed", "rideId", b.ID, "error", err)
-		return
 	}
 	distance := map[string]float64{}
 	var ids []string
 	for _, n := range nearby {
-		if n.Driver.ID == skip || s.now().Sub(n.Driver.Location.UpdatedAt) > presenceFresh {
-			continue
+		if len(ids) == maxAlertedDrivers {
+			break
 		}
-		p, err := s.profiles.FindProfile(ctx, n.Driver.ID)
-		if err != nil || p.KYCStatus != domain.KYCVerified ||
-			!canDrive(p.Transmission, plan.Car) {
-			continue
+		if eligible(n.Driver.ID) {
+			ids = append(ids, n.Driver.ID)
+			distance[n.Driver.ID] = n.DistanceM
 		}
-		ids = append(ids, n.Driver.ID)
-		distance[n.Driver.ID] = n.DistanceM
+	}
+	// Rides are booked hours ahead, but presence only knows drivers whose
+	// app reported in the last few minutes — a phone in a pocket stops
+	// reporting. When few of those are near, ask the rest too.
+	if len(ids) < s.fallbackBelow {
+		ids = s.withFallbackDrivers(ctx, b.ID, ids, eligible)
 	}
 	if len(ids) == 0 {
-		slog.InfoContext(ctx, "push: no online drivers near request", "rideId", b.ID)
+		slog.InfoContext(ctx, "push: no drivers to alert for request", "rideId", b.ID)
 		return
 	}
 	byDriver, err := s.tokens.ForDrivers(ctx, ids)
@@ -220,10 +277,16 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 	title := "New ride request · " + formatFare(fare, estimated)
 	sent := 0
 	for driverID, tokens := range byDriver {
-		body := fmt.Sprintf("%s · %s · %s away", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan),
-			formatDistance(distance[driverID]))
-		if plan.Pickup.Address != "" {
-			body += "\nPickup: " + plan.Pickup.Address
+		body := formatWhen(plan.ScheduledAt) + " · " + tripLabel(b.TripType, plan)
+		d, near := distance[driverID]
+		if near {
+			body += " · " + formatDistance(d) + " away"
+		}
+		if pickup.Address != "" {
+			body += "\nPickup area: " + pickup.Address
+		}
+		if !near {
+			body += "\nGo on duty in the app to see it."
 		}
 		for _, token := range tokens {
 			if s.send(ctx, push.Message{
@@ -239,7 +302,50 @@ func (s *NotifyService) alertDrivers(ctx context.Context, b domain.Booking, plan
 			}
 		}
 	}
-	slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver), "devices", sent)
+	slog.InfoContext(ctx, "push: ride request sent", "rideId", b.ID, "drivers", len(byDriver),
+		"nearby", len(distance), "devices", sent)
+}
+
+// withFallbackDrivers adds to ids, up to maxAlertedDrivers, the verified
+// drivers with the app installed who pass eligible and aren't in ids yet.
+func (s *NotifyService) withFallbackDrivers(ctx context.Context, rideID string, ids []string, eligible func(string) bool) []string {
+	all, err := s.tokens.VerifiedDriversWithTokens(ctx, maxAlertedDrivers)
+	if err != nil {
+		slog.WarnContext(ctx, "push: listing drivers for request failed", "rideId", rideID, "error", err)
+		return ids
+	}
+	have := map[string]bool{}
+	for _, id := range ids {
+		have[id] = true
+	}
+	for _, id := range all {
+		if len(ids) == maxAlertedDrivers {
+			break
+		}
+		if !have[id] && eligible(id) {
+			ids = append(ids, id)
+			have[id] = true
+		}
+	}
+	return ids
+}
+
+// passedOn is the set of drivers who declined ride rideID or handed it
+// back, so a re-alert doesn't ask them again. Empty when unknown.
+func (s *NotifyService) passedOn(ctx context.Context, rideID string) map[string]bool {
+	out := map[string]bool{}
+	if s.declines == nil {
+		return out
+	}
+	ids, err := s.declines.DeclinedBy(ctx, rideID)
+	if err != nil {
+		slog.WarnContext(ctx, "push: reading who declined a ride failed", "rideId", rideID, "error", err)
+		return out
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }
 
 // DriverAssigned tells customer userID that driverName took their ride.
@@ -282,6 +388,16 @@ func (s *NotifyService) RideCompleted(ctx context.Context, userID string, ride d
 			body = fmt.Sprintf("Pay %s by UPI in the app.", formatFare(ride.FarePaise, false))
 		}
 		s.tellCustomer(ctx, userID, ride.ID, pushTypeRideCompleted, "Trip complete", body, 24*time.Hour)
+	})
+}
+
+// CustomerNoShow tells customer userID their driver waited at the pickup
+// and closed the ride because they never came.
+func (s *NotifyService) CustomerNoShow(ctx context.Context, userID string, ride domain.DriverRide) {
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("Your driver waited at the pickup for your ride on %s, but you didn't arrive, "+
+			"so it was closed as a no-show. Book again when you're ready.", formatWhen(ride.ScheduledAt))
+		s.tellCustomer(ctx, userID, ride.ID, pushTypeRideNoShow, "Ride closed: no-show", body, 24*time.Hour)
 	})
 }
 
@@ -355,12 +471,55 @@ func (s *NotifyService) KYCDecided(ctx context.Context, driverID string, status 
 	})
 }
 
+// BankAccountChanged tells a driver their payout account was just set to
+// the one ending last4, so a change they didn't make — someone else holding
+// their session — doesn't go unnoticed until a payout goes astray.
+func (s *NotifyService) BankAccountChanged(ctx context.Context, driverID, last4 string) {
+	body := fmt.Sprintf("Your earnings will now be paid to the account ending %s. "+
+		"If you didn't make this change, contact MOJUD support right away.", last4)
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "Bank account changed",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "bank-account",
+				Data:    map[string]string{"type": pushTypeBankChanged},
+				TTL:     7 * 24 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeBankChanged, "driverId", driverID, "devices", sent)
+	})
+}
+
 // scheduledOrCreated is when b was for: its start, else when it was booked.
 func scheduledOrCreated(b domain.Booking) time.Time {
 	if b.ScheduledAt != nil {
 		return *b.ScheduledAt
 	}
 	return b.CreatedAt
+}
+
+// RideEndedEarly tells the driver of b that the customer ended the trip
+// before its booked end, and what it's charged for the time used.
+func (s *NotifyService) RideEndedEarly(ctx context.Context, b domain.Booking, plan tripPlan) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("The customer ended the trip. They pay %s for the time used (booked %s).",
+			formatFare(b.FarePaise, false), formatFare(b.BookedFarePaise, false))
+		s.tellDriver(ctx, b.DriverID, b.ID, pushTypeRideEndedEarly, "Trip ended by the customer", body, 24*time.Hour)
+	})
 }
 
 // RideCancelled tells the driver who had booking b that the customer
@@ -374,6 +533,10 @@ func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, pla
 			formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan))
 		if b.CancelReason != "" {
 			body += "\nReason: " + b.CancelReason
+		}
+		if b.CancellationFeePaise > 0 {
+			body += fmt.Sprintf("\nThey pay a %s cancellation fee; your share comes with your payout.",
+				formatFare(b.CancellationFeePaise, false))
 		}
 		byDriver, err := s.tokens.ForDrivers(ctx, []string{b.DriverID})
 		if err != nil {
@@ -396,6 +559,119 @@ func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, pla
 		}
 		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeRideCancelled, "rideId", b.ID, "devices", sent)
 	})
+}
+
+// RealertDrivers sends open booking b's "new ride request" again to the
+// drivers who could take it — the watchdog's re-broadcast for a ride nobody
+// has taken hours before it starts.
+func (s *NotifyService) RealertDrivers(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		s.alertDrivers(ctx, b, plan, "")
+	})
+}
+
+// NoDriverYet tells the customer that no driver has taken open booking b
+// yet, an hour before it starts, and until when MOJUD keeps looking.
+func (s *NotifyService) NoDriverYet(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		closes := plan.ScheduledAt.Add(-acceptCutoff)
+		body := fmt.Sprintf("No driver has taken your ride on %s yet. We're alerting more drivers "+
+			"and will keep looking until %s.", formatWhen(plan.ScheduledAt), formatClock(closes))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeNoDriverYet, "Still finding your driver", body,
+			max(closes.Sub(s.now()), 10*time.Minute))
+	})
+}
+
+// NoDriverFound tells the customer that booking b closed to drivers with
+// nobody taking it.
+func (s *NotifyService) NoDriverFound(ctx context.Context, b domain.Booking, plan tripPlan) {
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("We couldn't find a driver for your ride on %s. "+
+			"Please book again for a later time.", formatWhen(plan.ScheduledAt))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeRideExpired, "No driver found", body, time.Hour)
+	})
+}
+
+// RideReminder reminds the driver and the customer of accepted booking b
+// that it starts soon (the watchdog sends it an hour ahead). The driver is
+// asked to open the app, which is what starts sharing their position on
+// the customer's map.
+func (s *NotifyService) RideReminder(ctx context.Context, b domain.Booking, plan tripPlan) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		ttl := max(plan.ScheduledAt.Sub(s.now()), 10*time.Minute)
+		title := "Your ride starts " + formatUntil(plan.ScheduledAt.Sub(s.now()))
+
+		driverBody := fmt.Sprintf("%s · %s.", formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan))
+		if plan.Pickup.Address != "" {
+			driverBody += "\nPickup: " + plan.Pickup.Address
+		}
+		driverBody += "\nOpen MOJUD Driver so the customer can see you on the way."
+		s.tellDriver(ctx, b.DriverID, b.ID, pushTypeRideReminder, title, driverBody, ttl)
+
+		name := s.driverName(ctx, b.DriverID)
+		if name == "" {
+			name = "Your driver"
+		}
+		customerBody := fmt.Sprintf("%s is driving for you at %s. You can follow them on the map in the app from now.",
+			name, formatClock(plan.ScheduledAt))
+		s.tellCustomer(ctx, b.UserID, b.ID, pushTypeRideReminder, title, customerBody, ttl)
+	})
+}
+
+// DutyEnded tells driverID the server took them off duty because their app
+// had gone silent, and how to get ride requests again.
+func (s *NotifyService) DutyEnded(ctx context.Context, driverID string) {
+	s.background(ctx, func(ctx context.Context) {
+		byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+		if err != nil {
+			slog.WarnContext(ctx, "push: loading driver tokens failed", "driverId", driverID, "error", err)
+			return
+		}
+		body := fmt.Sprintf("MOJUD Driver hasn't checked in for %d hours, so we've taken you off duty. "+
+			"Open the app and go on duty to get ride requests near you again.", int(dutySilence.Hours()))
+		sent := 0
+		for _, token := range byDriver[driverID] {
+			if s.send(ctx, push.Message{
+				Token:   token,
+				Title:   "You're off duty",
+				Body:    body,
+				Channel: channelRideRequests,
+				Tag:     "duty",
+				Data:    map[string]string{"type": pushTypeDutyOff},
+				TTL:     12 * time.Hour,
+			}) {
+				sent++
+			}
+		}
+		slog.InfoContext(ctx, "push: driver update sent", "type", pushTypeDutyOff, "driverId", driverID, "devices", sent)
+	})
+}
+
+// tellDriver sends one ride update to every install of driverID.
+func (s *NotifyService) tellDriver(ctx context.Context, driverID, rideID, kind, title, body string, ttl time.Duration) {
+	byDriver, err := s.tokens.ForDrivers(ctx, []string{driverID})
+	if err != nil {
+		slog.WarnContext(ctx, "push: loading driver tokens failed", "rideId", rideID, "error", err)
+		return
+	}
+	sent := 0
+	for _, token := range byDriver[driverID] {
+		if s.send(ctx, push.Message{
+			Token:   token,
+			Title:   title,
+			Body:    body,
+			Channel: channelRideRequests,
+			Tag:     "ride-" + rideID,
+			Data:    map[string]string{"type": kind, "rideId": rideID},
+			TTL:     ttl,
+		}) {
+			sent++
+		}
+	}
+	slog.InfoContext(ctx, "push: driver update sent", "type", kind, "rideId", rideID, "devices", sent)
 }
 
 // tellCustomer sends one ride update to every install of userID.
@@ -499,6 +775,29 @@ func tripLabel(tripType string, plan tripPlan) string {
 // formatWhen renders a start time in IST, e.g. "Mon 26 Oct, 10:30 AM".
 func formatWhen(t time.Time) string {
 	return t.In(ist).Format("Mon 2 Jan, 3:04 PM")
+}
+
+// formatClock renders a time of day in IST, e.g. "9:30 AM".
+func formatClock(t time.Time) string {
+	return t.In(ist).Format("3:04 PM")
+}
+
+// formatUntil renders how far off something is, to the minute: "in 1 hour",
+// "in 45 min", "in 2 h 10 min", or "now".
+func formatUntil(d time.Duration) string {
+	m := int(d.Round(time.Minute) / time.Minute)
+	switch {
+	case m <= 0:
+		return "now"
+	case m == 60:
+		return "in 1 hour"
+	case m < 60:
+		return fmt.Sprintf("in %d min", m)
+	case m%60 == 0:
+		return fmt.Sprintf("in %d h", m/60)
+	default:
+		return fmt.Sprintf("in %d h %d min", m/60, m%60)
+	}
 }
 
 // formatDistance renders metres as "800 m" or "3.2 km".

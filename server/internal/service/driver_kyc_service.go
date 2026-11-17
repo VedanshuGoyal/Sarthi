@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,6 +36,12 @@ var ErrInvalidProfile = errors.New("invalid document details")
 // ErrUnknownDocumentKind is returned for a document kind Sarthi doesn't collect.
 var ErrUnknownDocumentKind = errors.New("unknown document kind")
 
+// ErrDocumentRetired is returned for an upload of an Aadhaar or licence
+// photo. Both are checked at source now, and an Aadhaar photo carries the
+// full number, which MOJUD doesn't keep. Photos already on file can still be
+// read.
+var ErrDocumentRetired = errors.New("this document is checked online now and its photo isn't needed; update the app")
+
 // ErrNoDriverPhoto is returned when a driver hasn't uploaded a selfie, or a
 // booking has no driver whose photo could be shown.
 var ErrNoDriverPhoto = errors.New("no driver photo")
@@ -56,12 +63,26 @@ type DriverKYCStore interface {
 	FindBankAccount(ctx context.Context, driverID string) (domain.DriverBankAccount, error)
 
 	SetDigiLockerSession(ctx context.Context, driverID, clientID string) error
-	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord) error
+	SaveAadhaarVerification(ctx context.Context, driverID string, rec domain.AadhaarRecord, identityFingerprint string) error
 	SaveLicenseVerification(ctx context.Context, driverID string, rec domain.LicenseRecord) error
-	DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error
+	DecideSubmission(ctx context.Context, driverID string, decide func(domain.DriverKYC) (domain.KYCStatus, string, error)) error
+	ReviewKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error
 	RecordCheck(ctx context.Context, driverID string, kind domain.KYCCheckKind, ref string, outcome domain.KYCCheckOutcome, detail string) error
 	CountChecks(ctx context.Context, driverID string, kind domain.KYCCheckKind, since time.Time) (int, error)
+	CountAllChecks(ctx context.Context, since time.Time) (int, error)
 	ListKYCReviews(ctx context.Context, status domain.KYCStatus) ([]domain.KYCReview, error)
+}
+
+// KYCAlerter tells a driver about changes to their KYC they must hear about
+// (NotifyService).
+type KYCAlerter interface {
+	BankAccountChanged(ctx context.Context, driverID, last4 string)
+}
+
+// HeldRideReleaser hands back the rides a driver holds once they may no
+// longer drive (DriverRideService).
+type HeldRideReleaser interface {
+	ReleaseHeldRides(ctx context.Context, driverID string) (int, error)
 }
 
 // DriverKYCService runs the driver app's six-step Document View: it validates
@@ -78,6 +99,20 @@ type DriverKYCService struct {
 	// driver can finish KYC. digiLockerRedirect is where DigiLocker ends.
 	verifier           IdentityVerifier
 	digiLockerRedirect string
+
+	// alerts, when set, is told about bank-account changes.
+	alerts KYCAlerter
+
+	// rides, when set, releases a rejected driver's upcoming rides.
+	rides HeldRideReleaser
+
+	// checkLocks serialises each driver's paid checks of one kind.
+	checkLocks keyedLocks
+
+	// autoClear lets Submit verify a driver whose checks all agree, with no
+	// person looking (KYC_AUTO_CLEAR). Off by default: at launch every
+	// submission goes to a reviewer.
+	autoClear bool
 
 	now func() time.Time
 }
@@ -99,6 +134,21 @@ func NewDriverKYCService(
 		now:                time.Now,
 	}
 }
+
+// SetAlerts wires the pushes sent when a driver's KYC changes (nil sends
+// none). Separate from the constructor because the notifier is built after
+// this service in main.
+func (s *DriverKYCService) SetAlerts(a KYCAlerter) { s.alerts = a }
+
+// SetRideReleaser wires what hands back a rejected driver's upcoming rides
+// (nil releases none). Separate from the constructor because the ride
+// service is built after this one in main.
+func (s *DriverKYCService) SetRideReleaser(r HeldRideReleaser) { s.rides = r }
+
+// SetAutoClear turns on clearing a driver at submission when the Aadhaar,
+// licence and bank account all name the same person (KYC_AUTO_CLEAR=true).
+// Off — the default — every complete submission waits for a reviewer.
+func (s *DriverKYCService) SetAutoClear(on bool) { s.autoClear = on }
 
 // Load returns everything the Document View needs to render its six steps.
 func (s *DriverKYCService) Load(ctx context.Context, driverID string) (domain.DriverKYC, error) {
@@ -136,8 +186,11 @@ func (s *DriverKYCService) UploadDocument(
 	if !validDocumentKind(kind) {
 		return domain.DriverDocument{}, ErrUnknownDocumentKind
 	}
+	if !slices.Contains(domain.RequiredDocumentKinds, kind) {
+		return domain.DriverDocument{}, ErrDocumentRetired
+	}
 
-	clean, err := processDocumentImage(raw)
+	clean, err := processDocumentImage(ctx, raw)
 	if err != nil {
 		return domain.DriverDocument{}, err
 	}
@@ -323,18 +376,19 @@ type ProfileUpdate struct {
 // Once DigiLocker has verified the Aadhaar, the name, date of birth and gender
 // are the Aadhaar's: sending them unchanged is fine, changing them is
 // [ErrIdentityLocked].
+//
+// Only a real change reopens the driver's KYC: re-saving a step as it is (or
+// sending nothing) leaves a verified driver verified.
 func (s *DriverKYCService) UpdateProfile(ctx context.Context, driverID string, u ProfileUpdate) error {
-	if u.FullName != nil || u.DateOfBirth != nil || u.Gender != nil {
-		profile, err := s.store.FindProfile(ctx, driverID)
-		if err != nil {
-			return err
+	profile, err := s.store.FindProfile(ctx, driverID)
+	if err != nil {
+		return err
+	}
+	if profile.AadhaarVerifiedAt != nil && (u.FullName != nil || u.DateOfBirth != nil || u.Gender != nil) {
+		if changesIdentity(profile, u) {
+			return ErrIdentityLocked
 		}
-		if profile.AadhaarVerifiedAt != nil {
-			if changesIdentity(profile, u) {
-				return ErrIdentityLocked
-			}
-			u.FullName, u.DateOfBirth, u.Gender = nil, nil, nil
-		}
+		u.FullName, u.DateOfBirth, u.Gender = nil, nil, nil
 	}
 
 	var p repository.UpdateProfileParams
@@ -391,8 +445,24 @@ func (s *DriverKYCService) UpdateProfile(ctx context.Context, driverID string, u
 	if err := s.store.UpdateProfile(ctx, driverID, p); err != nil {
 		return err
 	}
+	if !profileChanges(profile, p) {
+		return nil
+	}
 	// Editing a step invalidates any earlier submission.
 	return s.store.SetKYCStatus(ctx, driverID, domain.KYCIncomplete, false)
+}
+
+// profileChanges reports whether applying p would change any stored field
+// of old.
+func profileChanges(old domain.DriverProfile, p repository.UpdateProfileParams) bool {
+	differs := func(v *string, current string) bool { return v != nil && *v != current }
+	return differs(p.Transmission, string(old.Transmission)) ||
+		differs(p.FullName, old.FullName) ||
+		differs(p.Gender, string(old.Gender)) ||
+		differs(p.AadhaarFingerprint, old.AadhaarFingerprint) ||
+		differs(p.DrivingLicenseNumber, old.DrivingLicenseNumber) ||
+		(p.DateOfBirth != nil &&
+			(old.DateOfBirth == nil || p.DateOfBirth.Format(time.DateOnly) != old.DateOfBirth.Format(time.DateOnly)))
 }
 
 // SetBankAccount validates and stores where a driver's earnings are paid. The
@@ -418,6 +488,12 @@ func (s *DriverKYCService) SetBankAccount(
 
 	// Checked before it's stored: an account the bank doesn't know would
 	// only fail later, at the first payout.
+	defer s.lockChecks(driverID, domain.CheckBankAccount)()
+	// Saving the verified account again changes nothing: no paid check, no
+	// "account changed" push, and a cleared driver stays cleared.
+	if stored, ok := s.unchangedBankAccount(ctx, driverID, holderName, number, code); ok {
+		return stored, nil
+	}
 	checked, err := s.verifyBankAccount(ctx, driverID, number, code)
 	if err != nil {
 		return domain.DriverBankAccount{}, err
@@ -439,35 +515,91 @@ func (s *DriverKYCService) SetBankAccount(
 	if err != nil {
 		return domain.DriverBankAccount{}, err
 	}
+	slog.InfoContext(ctx, "kyc: bank account changed", "driverID", driverID, "last4", account.AccountNumberLast4)
+	if s.alerts != nil {
+		s.alerts.BankAccountChanged(ctx, driverID, account.AccountNumberLast4)
+	}
 	if err := s.store.SetKYCStatus(ctx, driverID, domain.KYCIncomplete, false); err != nil {
 		return domain.DriverBankAccount{}, err
 	}
 	return account, nil
 }
 
+// unchangedBankAccount returns driverID's stored account when it is already
+// verified and the same holder, number and IFSC are being saved again. Any
+// doubt (no account, a read or decrypt failure) reads as a change.
+func (s *DriverKYCService) unchangedBankAccount(
+	ctx context.Context, driverID, holderName, number, ifsc string,
+) (domain.DriverBankAccount, bool) {
+	stored, err := s.store.FindBankAccount(ctx, driverID)
+	if err != nil || stored.VerifiedAt == nil || stored.AccountHolderName != holderName ||
+		stored.IFSCCode != ifsc || stored.AccountNumberLast4 != number[len(number)-4:] ||
+		len(stored.AccountNumberEncrypted) == 0 {
+		return domain.DriverBankAccount{}, false
+	}
+	plain, err := s.cipher.Open(stored.AccountNumberEncrypted)
+	if err != nil || subtle.ConstantTimeCompare(plain, []byte(number)) != 1 {
+		return domain.DriverBankAccount{}, false
+	}
+	return stored, true
+}
+
 // Submit closes the Document View: it re-checks that every step is filled in
 // and verified server-side — the app's own progress tracking is a
-// convenience, not the authority — then clears the driver to drive when the
-// Aadhaar, licence and bank account all name the same person, or leaves them
-// submitted for a person to look at, with the reason in the review note.
+// convenience, not the authority — then leaves the driver submitted for a
+// person to look at, with any reason the checks disagree in the review
+// note. With auto-clear on (SetAutoClear), a driver whose Aadhaar, licence
+// and bank account all name the same person is cleared to drive instead.
+//
+// The decision is made with the driver's row locked, so an edit can't slip
+// in between what was checked and what is written.
 func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.DriverKYC, error) {
-	kyc, err := s.Load(ctx, driverID)
+	decide := decideSubmission
+	if !s.autoClear {
+		decide = decideForReview
+	}
+	err := s.store.DecideSubmission(ctx, driverID, func(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+		// A driver already cleared stays cleared: a repeat tap or a retry
+		// must not send them back to a reviewer. Every real edit reopens a
+		// verified driver first, so nothing new is being submitted here.
+		if kyc.Profile.KYCStatus == domain.KYCVerified {
+			return "", "", nil
+		}
+		return decide(kyc)
+	})
 	if err != nil {
 		return domain.DriverKYC{}, err
 	}
-	if missing := missingSteps(kyc); len(missing) > 0 {
-		return domain.DriverKYC{}, fmt.Errorf("%w: %s", ErrKYCIncomplete, strings.Join(missing, ", "))
-	}
-
-	status := domain.KYCVerified
-	issues := reviewIssues(kyc)
-	if len(issues) > 0 {
-		status = domain.KYCSubmitted
-	}
-	if err := s.store.DecideKYC(ctx, driverID, status, strings.Join(issues, "; ")); err != nil {
-		return domain.DriverKYC{}, err
-	}
 	return s.Load(ctx, driverID)
+}
+
+// decideForReview is decideSubmission with auto-clear off: a driver it
+// would clear goes to a person all the same, with nothing in the note —
+// the checks agreed.
+func decideForReview(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+	status, note, err := decideSubmission(kyc)
+	if err != nil {
+		return "", "", err
+	}
+	if status == domain.KYCVerified {
+		return domain.KYCSubmitted, "", nil
+	}
+	return status, note, nil
+}
+
+// decideSubmission is Submit's rule. A driver a reviewer rejected only ever
+// goes back to a person, with the reviewer's note kept for them to read.
+func decideSubmission(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+	if missing := missingSteps(kyc); len(missing) > 0 {
+		return "", "", fmt.Errorf("%w: %s", ErrKYCIncomplete, strings.Join(missing, ", "))
+	}
+	if kyc.Profile.KYCRejectedAt != nil {
+		return domain.KYCSubmitted, kyc.Profile.KYCReviewNote, nil
+	}
+	if issues := reviewIssues(kyc); len(issues) > 0 {
+		return domain.KYCSubmitted, strings.Join(issues, "; "), nil
+	}
+	return domain.KYCVerified, "", nil
 }
 
 // changesIdentity reports whether u would change an Aadhaar-verified field.
@@ -571,11 +703,17 @@ func validGender(g domain.Gender) bool {
 	return false
 }
 
-// yearsBetween returns completed years from dob to now.
+// yearsBetween returns completed years from dob to now, by calendar date:
+// the birthday is reached on its month and day (today's date in IST),
+// whatever the leap years in between. A 29 February birthday falls on
+// 1 March in other years.
 func yearsBetween(dob, now time.Time) int {
-	years := now.Year() - dob.Year()
-	// Not yet past this year's birthday: one fewer completed year.
-	if now.YearDay() < dob.YearDay() {
+	n := now.In(ist)
+	today := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+	birth := time.Date(dob.Year(), dob.Month(), dob.Day(), 0, 0, 0, 0, time.UTC)
+	years := today.Year() - birth.Year()
+	// Not yet this year's birthday: one fewer completed year.
+	if birth.AddDate(years, 0, 0).After(today) {
 		years--
 	}
 	return years

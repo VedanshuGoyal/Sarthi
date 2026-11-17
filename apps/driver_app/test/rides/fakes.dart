@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:driver_app/core/services/location_service.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
+import 'package:driver_app/features/rides/domain/payout.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 
 /// A ride as the backend sends it, with overridable fields.
@@ -18,22 +19,29 @@ Map<String, dynamic> rideJson({
   String? cancelledBy,
   String? cancelReason,
   Map<String, dynamic>? myRating,
+  bool approximate = false,
+  String? noShowAt,
+  String? paymentStatus,
+  int? sharePaise,
+  int? cancellationFeePaise,
+  int? bookedFarePaise,
 }) => {
   'id': id,
   'tripType': tripType,
   'status': status,
+  if (approximate) 'approximate': true,
   'scheduledAt': scheduledAt,
   'endsAt': '2026-10-26T12:00:00+05:30',
   'farePaise': farePaise,
   'fareEstimated': false,
   'pickup': {
-    'address': 'Connaught Place, New Delhi',
+    'address': approximate ? 'Saket, New Delhi' : 'Connaught Place, New Delhi',
     'lat': 28.63,
     'lng': 77.21,
   },
   'hours': 3,
   'car': {
-    'registration': 'DL01AB1234',
+    'registration': approximate ? '' : 'DL01AB1234',
     'carType': 'sedan',
     'transmission': 'automatic',
   },
@@ -48,7 +56,13 @@ Map<String, dynamic> rideJson({
   if (cancelledAt != null) 'cancelledAt': cancelledAt,
   if (cancelledBy != null) 'cancelledBy': cancelledBy,
   if (cancelReason != null) 'cancelReason': cancelReason,
+  if (noShowAt != null) 'noShowAt': noShowAt,
   if (myRating != null) 'myRating': myRating,
+  if (paymentStatus != null) 'paymentStatus': paymentStatus,
+  if (sharePaise != null) 'sharePaise': sharePaise,
+  if (cancellationFeePaise != null)
+    'cancellationFeePaise': cancellationFeePaise,
+  if (bookedFarePaise != null) 'bookedFarePaise': bookedFarePaise,
 };
 
 Ride ride({
@@ -59,10 +73,24 @@ Ride ride({
   String? cancelledBy,
   String? cancelReason,
   Map<String, dynamic>? myRating,
+  bool approximate = false,
+  String? noShowAt,
+  int farePaise = 34000,
+  String? paymentStatus,
+  int? sharePaise,
+  int? cancellationFeePaise,
+  int? bookedFarePaise,
 }) => Ride.tryParse(
   rideJson(
     id: id,
     status: status,
+    approximate: approximate,
+    noShowAt: noShowAt,
+    farePaise: farePaise,
+    paymentStatus: paymentStatus,
+    sharePaise: sharePaise,
+    cancellationFeePaise: cancellationFeePaise,
+    bookedFarePaise: bookedFarePaise,
     scheduledAt: scheduledAt,
     cancelledAt: cancelledAt,
     cancelledBy: cancelledBy,
@@ -77,6 +105,15 @@ class FakeRidesRepository implements RidesRepository {
   List<Ride> openRides = [];
   List<Ride> mine = [];
   Earnings summary = const Earnings();
+  List<Payout> payoutList = [];
+
+  /// When set, [payouts] throws it.
+  RidesException? payoutsFailure;
+
+  /// How many times each read was asked for.
+  int requestsCalls = 0;
+  int myRidesCalls = 0;
+  int earningsCalls = 0;
 
   /// When set, [act] throws this for the given action.
   Map<RideAction, RidesException> failures = {};
@@ -97,10 +134,16 @@ class FakeRidesRepository implements RidesRepository {
   bool failShareLocation = false;
 
   @override
-  Future<List<Ride>> requests({double? lat, double? lng}) async => openRides;
+  Future<List<Ride>> requests({double? lat, double? lng}) async {
+    requestsCalls++;
+    return openRides;
+  }
 
   @override
-  Future<List<Ride>> myRides() async => mine;
+  Future<List<Ride>> myRides() async {
+    myRidesCalls++;
+    return mine;
+  }
 
   @override
   Future<Ride?> act(
@@ -121,6 +164,7 @@ class FakeRidesRepository implements RidesRepository {
       RideAction.start => 'in_progress',
       RideAction.complete => 'completed',
       RideAction.rate => 'completed',
+      RideAction.noShow => 'cancelled',
       _ => null,
     };
     if (status == null) return null;
@@ -129,6 +173,7 @@ class FakeRidesRepository implements RidesRepository {
         id: id,
         status: status,
         withCustomer: true,
+        cancelledBy: action == RideAction.noShow ? 'no_show' : null,
         myRating: action == RideAction.rate
             ? {'stars': stars ?? 0, if (note != null) 'note': note}
             : null,
@@ -137,7 +182,17 @@ class FakeRidesRepository implements RidesRepository {
   }
 
   @override
-  Future<Earnings> earnings() async => summary;
+  Future<Earnings> earnings() async {
+    earningsCalls++;
+    return summary;
+  }
+
+  @override
+  Future<List<Payout>> payouts() async {
+    final failure = payoutsFailure;
+    if (failure != null) throw failure;
+    return payoutList;
+  }
 
   @override
   Future<void> setDuty({required bool online, double? lat, double? lng}) async {

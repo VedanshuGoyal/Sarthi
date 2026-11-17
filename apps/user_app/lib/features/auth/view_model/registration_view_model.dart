@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/config/legal.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_session.dart';
 import '../domain/auth_user.dart';
@@ -78,6 +79,10 @@ class RegistrationViewModel extends ChangeNotifier {
   /// Sent as a bearer token on authenticated requests.
   String? _token;
   String? get token => _token;
+
+  /// The one-time ticket the server handed back when this device verified a
+  /// new number; registering sends it, proving it is the same device.
+  String? _registrationTicket;
 
   /// Number of digits the OTP screen should collect.
   int get otpLength => AuthRepository.otpLength;
@@ -164,6 +169,7 @@ class RegistrationViewModel extends ChangeNotifier {
           // Returning customer — log in and go straight to home.
           await _completeSignIn(result.session!);
         } else {
+          _registrationTicket = result.registrationTicket;
           _step = RegistrationStep.profile;
         }
       } on OtpInvalidatedException {
@@ -208,6 +214,8 @@ class RegistrationViewModel extends ChangeNotifier {
     _otpAttempts = 0;
     _resendLocked = false;
     _otpInvalidated = false;
+    // A fresh code ends the server's pass, and the ticket with it.
+    _registrationTicket = null;
   }
 
   /// Locks resends for [wait] (cap reached), surfacing a live countdown.
@@ -241,7 +249,7 @@ class RegistrationViewModel extends ChangeNotifier {
           _resendCount = 0;
         }
       }
-      notifyListeners();
+      _notify();
     });
   }
 
@@ -256,7 +264,26 @@ class RegistrationViewModel extends ChangeNotifier {
     }
   }
 
-  /// Validates name + email + date of birth, registers the account, and
+  /// Shown when the customer tries to create an account without agreeing to
+  /// the Terms and Privacy Policy.
+  static const String consentRequired =
+      'Please agree to the Terms and Privacy Policy to continue.';
+
+  bool _consented = false;
+
+  /// Whether the customer has ticked "I agree to the Terms and Privacy
+  /// Policy". Required to register.
+  bool get consented => _consented;
+
+  /// Records the consent checkbox, clearing the error it may have raised.
+  void onConsentChanged(bool value) {
+    _consented = value;
+    if (_errorText == consentRequired) _errorText = null;
+    notifyListeners();
+  }
+
+  /// Validates name + email + date of birth and the consent, registers the
+  /// account (recording which version of the documents was agreed to), and
   /// finishes the flow.
   Future<void> submitProfile({
     required String name,
@@ -265,7 +292,8 @@ class RegistrationViewModel extends ChangeNotifier {
     final error =
         AuthValidators.name(name) ??
         AuthValidators.email(email) ??
-        AuthValidators.dateOfBirth(_dateOfBirth);
+        AuthValidators.dateOfBirth(_dateOfBirth) ??
+        (_consented ? null : consentRequired);
     if (error != null) return _fail(error);
 
     await _run(() async {
@@ -274,6 +302,8 @@ class RegistrationViewModel extends ChangeNotifier {
         name: name,
         email: email,
         dateOfBirth: _dateOfBirth!,
+        consentVersion: Legal.consentVersion,
+        registrationTicket: _registrationTicket,
       );
       await _completeSignIn(session);
     });
@@ -308,8 +338,11 @@ class RegistrationViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _resendTimer?.cancel();
     super.dispose();
   }
@@ -318,7 +351,14 @@ class RegistrationViewModel extends ChangeNotifier {
 
   /// Runs [action] with the loading flag set, mapping [AuthException]s to
   /// [errorText] and unexpected errors to a generic message.
+  ///
+  /// Ignored while another request is in flight: the keyboard's "done" key
+  /// stays live under the disabled button, and a second verify or register
+  /// would race the first. Signing in swaps this flow's screen out (and so
+  /// disposes this view model) before the request settles, so nothing is
+  /// notified after that.
   Future<void> _run(Future<void> Function() action) async {
+    if (_isLoading) return;
     _isLoading = true;
     _errorText = null;
     notifyListeners();
@@ -330,12 +370,16 @@ class RegistrationViewModel extends ChangeNotifier {
       _errorText = 'Something went wrong. Please try again.';
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
   void _fail(String message) {
     _errorText = message;
     notifyListeners();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 }

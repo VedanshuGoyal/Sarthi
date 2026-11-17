@@ -21,6 +21,24 @@ type fakeBookingStore struct {
 	got       domain.Booking
 	err       error
 	listed    []domain.UserBooking
+
+	// unpaid is the customer's unpaid ride UnpaidRide reports ("" none);
+	// repeat, when set, is the booking Insert finds already made.
+	unpaid    string
+	unpaidMin int64
+	repeat    *domain.Booking
+}
+
+// DriverBusyElsewhere looks across every listed booking, whoever's it is.
+func (f *fakeBookingStore) DriverBusyElsewhere(_ context.Context, driverID, bookingID string) (bool, error) {
+	for _, ub := range f.listed {
+		b := ub.Booking
+		if b.DriverID == driverID && b.ID != bookingID &&
+			(b.Status == domain.RideStatusArrived || b.Status == domain.RideStatusInProgress) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (f *fakeBookingStore) ListForUser(context.Context, string, int) ([]domain.UserBooking, error) {
@@ -45,19 +63,34 @@ func (f *fakeBookingStore) FindForUser(_ context.Context, id, userID string) (do
 	return *ub, nil
 }
 
-func (f *fakeBookingStore) Cancel(_ context.Context, id, userID, reason string, at time.Time) (domain.Booking, error) {
+func (f *fakeBookingStore) Cancel(_ context.Context, id, userID, reason string, at time.Time, atPickup repository.PickupCancel) (domain.Booking, error) {
 	ub, err := f.find(id, userID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
 	b := &ub.Booking
-	switch b.Status {
-	case domain.RideStatusRequested, domain.RideStatusAccepted, domain.RideStatusArrived:
+	switch {
+	case b.Status == domain.RideStatusRequested, b.Status == domain.RideStatusAccepted:
+	case b.Status == domain.RideStatusArrived && atPickup.Allowed:
+		b.CancellationFeePaise = atPickup.FeePaise
 	default:
 		return domain.Booking{}, repository.ErrBookingStateConflict
 	}
 	b.Status, b.CancelledAt, b.CancelledBy, b.CancelReason, b.StartOTP =
 		domain.RideStatusCancelled, &at, domain.CancelledByCustomer, reason, ""
+	return *b, nil
+}
+
+func (f *fakeBookingStore) EndEarly(_ context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error) {
+	ub, err := f.find(id, userID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	b := &ub.Booking
+	if b.Status != domain.RideStatusInProgress {
+		return domain.Booking{}, repository.ErrBookingStateConflict
+	}
+	b.Status, b.CompletedAt, b.BookedFarePaise, b.FarePaise = domain.RideStatusCompleted, &at, b.FarePaise, farePaise
 	return *b, nil
 }
 
@@ -73,19 +106,28 @@ func (f *fakeBookingStore) RateDriver(_ context.Context, id, userID string, r do
 	return nil
 }
 
-func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingParams) (domain.Booking, error) {
+func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingParams) (domain.Booking, bool, error) {
 	if f.err != nil {
-		return domain.Booking{}, f.err
+		return domain.Booking{}, false, f.err
 	}
 	f.insertHit = true
 	f.params = p
+	if f.repeat != nil {
+		return *f.repeat, true, nil
+	}
 	f.got = domain.Booking{
 		ID:       "bk-1",
 		UserID:   p.UserID,
 		TripType: p.TripType,
 		Details:  p.Details,
 	}
-	return f.got, nil
+	return f.got, false, nil
+}
+
+// UnpaidRide answers with the preset unpaid ride, recording the minimum asked.
+func (f *fakeBookingStore) UnpaidRide(_ context.Context, _ string, minPaise int64) (string, error) {
+	f.unpaidMin = minPaise
+	return f.unpaid, nil
 }
 
 // roundTripDetails is a round-trip payload as the customer app sends it.
@@ -118,7 +160,7 @@ func TestBookingService_Record_persists(t *testing.T) {
 	svc := newTestBookingService(store)
 
 	// A leading/trailing space on the trip type is trimmed before storing.
-	got, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails())
+	got, _, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails(), "")
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -145,14 +187,14 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	svc := newTestBookingService(store)
 	details := map[string]any{"hours": 4}
 
-	if _, err := svc.Record(context.Background(), "u1", "  ", details); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "  ", details, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("blank tripType: err = %v, want ErrInvalidBooking", err)
 	}
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", nil); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", nil, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("nil details: err = %v, want ErrInvalidBooking", err)
 	}
 	// Details a driver couldn't read (no pickup coordinates) are refused.
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", details); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", details, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("unreadable details: err = %v, want ErrInvalidBooking", err)
 	}
 	if store.insertHit {
@@ -160,11 +202,46 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	}
 }
 
+// A booking exactly as the current customer app builds it — a luxury car
+// late in the evening, so the quote includes the night surcharge — is
+// accepted at the app's price.
+func TestBookingService_Record_acceptsTheAppsFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["scheduledAt"] = "2026-10-24T21:00:00.000" // 9pm IST for 3h: 2 night hours
+	d["hours"] = 3.0
+	d["car"] = map[string]any{"registration": "DL01AB1234", "carType": "luxury", "transmission": "automatic"}
+	d["fare"] = 538.0 // RoundTripTariff.luxury.fareFor(3) = 440, + 50 + 24×2
+
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if store.params.FarePaise != 53800 || store.params.FareEstimated {
+		t.Errorf("fare = %d (estimated %v), want quoted 53800", store.params.FarePaise, store.params.FareEstimated)
+	}
+}
+
+func TestBookingService_Record_rejectsTamperedFare(t *testing.T) {
+	store := &fakeBookingStore{}
+	svc := newTestBookingService(store)
+	d := roundTripDetails()
+	d["hours"] = 10.0
+	d["fare"] = 300.0 // the tariff is 1040
+
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); !errors.Is(err, ErrFareMismatch) {
+		t.Fatalf("err = %v, want ErrFareMismatch", err)
+	}
+	if store.insertHit {
+		t.Error("a tampered booking must not be stored")
+	}
+}
+
 func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 	wantErr := errors.New("db down")
 	svc := newTestBookingService(&fakeBookingStore{err: wantErr})
 
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, wantErr) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
@@ -213,7 +290,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// 30 minutes ahead: it would close to drivers the moment it's booked.
 	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, ErrBookingTooSoon) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, ErrBookingTooSoon) {
 		t.Errorf("30 min ahead: err = %v, want ErrBookingTooSoon", err)
 	}
 	if store.insertHit {
@@ -222,7 +299,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// The earliest slot, submitted a couple of minutes later: still accepted.
 	svc.now = func() time.Time { return start.Add(-43 * time.Minute) }
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); err != nil {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); err != nil {
 		t.Errorf("43 min ahead: err = %v, want nil", err)
 	}
 }
@@ -272,11 +349,14 @@ func TestBookingService_ListMine_expiresUntakenRequests(t *testing.T) {
 }
 
 // cancelAlerts records the bookings a BookingAlerter was told were cancelled.
-type cancelAlerts struct{ cancelled []domain.Booking }
+type cancelAlerts struct{ cancelled, ended []domain.Booking }
 
 func (c *cancelAlerts) RideRequested(context.Context, domain.Booking, tripPlan) {}
 func (c *cancelAlerts) RideCancelled(_ context.Context, b domain.Booking, _ tripPlan) {
 	c.cancelled = append(c.cancelled, b)
+}
+func (c *cancelAlerts) RideEndedEarly(_ context.Context, b domain.Booking, _ tripPlan) {
+	c.ended = append(c.ended, b)
 }
 
 // customerRide is u1's round trip from roundTripDetails, in status, with
@@ -305,7 +385,7 @@ func TestBookingService_Cancel(t *testing.T) {
 	ctx := context.Background()
 
 	// An open request: cancelled, nobody to tell.
-	got, err := svc.Cancel(ctx, "u1", "open", "  Plans changed ")
+	got, err := svc.Cancel(ctx, "u1", "open", "  Plans changed ", nil)
 	if err != nil {
 		t.Fatalf("Cancel(open): %v", err)
 	}
@@ -319,7 +399,7 @@ func TestBookingService_Cancel(t *testing.T) {
 
 	// A ride a driver took: the driver is told, and the start code is gone.
 	long := strings.Repeat("ड", 250) // over the cap, in multi-byte runes
-	got, err = svc.Cancel(ctx, "u1", "coming", long)
+	got, err = svc.Cancel(ctx, "u1", "coming", long, nil)
 	if err != nil {
 		t.Fatalf("Cancel(coming): %v", err)
 	}
@@ -334,11 +414,11 @@ func TestBookingService_Cancel(t *testing.T) {
 	}
 
 	// Underway, or someone else's: refused.
-	if _, err := svc.Cancel(ctx, "u1", "driving", ""); !errors.Is(err, ErrCannotCancel) ||
+	if _, err := svc.Cancel(ctx, "u1", "driving", "", nil); !errors.Is(err, ErrCannotCancel) ||
 		!errors.Is(err, repository.ErrBookingStateConflict) {
 		t.Errorf("Cancel(driving) err = %v, want ErrCannotCancel", err)
 	}
-	if _, err := svc.Cancel(ctx, "u2", "open", ""); !errors.Is(err, repository.ErrBookingNotFound) {
+	if _, err := svc.Cancel(ctx, "u2", "open", "", nil); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("Cancel(other user) err = %v, want ErrBookingNotFound", err)
 	}
 	if len(alerts.cancelled) != 1 {
@@ -463,6 +543,36 @@ func TestBookingService_DriverLocation(t *testing.T) {
 	}
 	if _, err := svc.DriverLocation(ctx, "u2", "waiting"); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("other user: err = %v, want ErrBookingNotFound", err)
+	}
+}
+
+// One customer must not follow another's trip: while the driver is at or on
+// someone else's ride, the next customer sees no position; and an accepted
+// ride the driver never started stops sharing once it's well past its end.
+func TestBookingService_DriverLocation_onlyThisRidesDriver(t *testing.T) {
+	start := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC) // roundTripDetails: 4 hours
+	live := memstore.NewLiveLocations()
+	other := customerRide("other", domain.RideStatusInProgress, "d1")
+	other.Booking.UserID = "u2"
+	store := &fakeBookingStore{listed: []domain.UserBooking{customerRide("next", domain.RideStatusAccepted, "d1"), other}}
+	svc := newTestBookingService(store)
+	svc.live = live
+	ctx := context.Background()
+	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
+	live.Put("d1", domain.LiveLocation{Lat: 28.6, Lng: 77.2, UpdatedAt: start.Add(-30 * time.Minute)})
+
+	if loc, err := svc.DriverLocation(ctx, "u1", "next"); err != nil || loc != nil {
+		t.Fatalf("driver on another ride: %+v, %v; want nil, nil", loc, err)
+	}
+	store.listed[1].Booking.Status = domain.RideStatusCompleted
+	if loc, err := svc.DriverLocation(ctx, "u1", "next"); err != nil || loc == nil {
+		t.Fatalf("driver free again: %+v, %v; want their position", loc, err)
+	}
+
+	// Planned to end at 12:00; still accepted (the driver never came).
+	svc.now = func() time.Time { return start.Add(4*time.Hour + trackingGrace) }
+	if _, err := svc.DriverLocation(ctx, "u1", "next"); !errors.Is(err, ErrNotTracking) {
+		t.Errorf("long after the planned end: err = %v, want ErrNotTracking", err)
 	}
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../domain/payout.dart';
 import '../domain/ride.dart';
 import '../rides_providers.dart';
 import 'ride_detail_screen.dart';
@@ -10,10 +11,12 @@ import 'widgets/ride_widgets.dart';
 
 /// The Earnings tab: today's total up top, the week / month / all-time
 /// windows, where the money stands (customers yet to pay, due to the driver,
-/// paid to their bank), and the completed trips that make them up.
+/// paid to their bank), the payouts MOJUD has made, and the completed trips
+/// that make them up.
 ///
-/// The windows are trip fares as booked — what the trips were worth. The
-/// money card is the balance: customers pay MOJUD by UPI, and MOJUD pays the
+/// The windows are trip fares as booked — what the trips were worth — with
+/// the driver's share of them beside, when the server sends it. The money
+/// card is the balance: customers pay MOJUD by UPI, and MOJUD pays the
 /// driver's share (after its commission) to their bank.
 class EarningsPanel extends ConsumerWidget {
   const EarningsPanel({super.key});
@@ -94,6 +97,11 @@ class EarningsPanel extends ConsumerWidget {
                       const SizedBox(height: Skyline.s16),
                       _MoneyCard(payments: e.payments),
                     ],
+                    if (vm.payoutsLoaded) ...[
+                      const SizedBox(height: Skyline.s24),
+                      const SectionHeader(title: 'Payouts'),
+                      _PayoutsList(payouts: vm.payouts),
+                    ],
                     const SizedBox(height: Skyline.s24),
                     const SectionHeader(title: 'Completed trips'),
                     if (recent.isEmpty)
@@ -109,17 +117,22 @@ class EarningsPanel extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                           vertical: Skyline.s8,
                         ),
-                        child: Column(
-                          children: [
-                            for (final (i, ride) in recent.indexed) ...[
-                              if (i > 0)
-                                const Divider(
-                                  indent: Skyline.s16,
-                                  endIndent: Skyline.s16,
-                                ),
-                              _TripRow(ride: ride),
+                        // The rows are tappable: their ink needs a
+                        // Material above the card's fill, not under it.
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: Column(
+                            children: [
+                              for (final (i, ride) in recent.indexed) ...[
+                                if (i > 0)
+                                  const Divider(
+                                    indent: Skyline.s16,
+                                    endIndent: Skyline.s16,
+                                  ),
+                                _TripRow(ride: ride),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                   ],
@@ -164,6 +177,13 @@ class _TodayHero extends StatelessWidget {
             '${period.rides} ${period.rides == 1 ? 'trip' : 'trips'} completed',
             style: t.body(size: 14, color: muted),
           ),
+          if (!loading && period.netRupees != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              '${RideFormat.rupees(period.netRupees!)} yours after commission',
+              style: t.body(size: 14, color: muted),
+            ),
+          ],
         ],
       ),
     );
@@ -196,6 +216,11 @@ class _PeriodTile extends StatelessWidget {
             '${period.rides} ${period.rides == 1 ? 'trip' : 'trips'}',
             style: t.body(size: 12.5),
           ),
+          if (period.netRupees case final net?)
+            Text(
+              '${RideFormat.rupees(net)} yours',
+              style: t.label(size: 12.5, color: t.success),
+            ),
         ],
       ),
     );
@@ -250,6 +275,57 @@ class _MoneyCard extends StatelessWidget {
               subtitle: Text(detail),
               trailing: Text(
                 RideFormat.rupees((paise / 100).round()),
+                style: t.figure(16),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The bank transfers MOJUD has made to the driver, newest first, each with
+/// the reference to find it on a bank statement.
+class _PayoutsList extends StatelessWidget {
+  const _PayoutsList({required this.payouts});
+
+  final List<Payout> payouts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (payouts.isEmpty) {
+      return const PanelMessage(
+        icon: Icons.account_balance_rounded,
+        title: 'No payouts yet',
+        body:
+            'Each transfer MOJUD makes to your bank is listed here with its '
+            'reference.',
+      );
+    }
+    final t = SkylineTokens.of(context);
+    return SkylineCard(
+      padding: const EdgeInsets.symmetric(vertical: Skyline.s8),
+      child: Column(
+        children: [
+          for (final (i, payout) in payouts.indexed) ...[
+            if (i > 0)
+              const Divider(indent: Skyline.s16, endIndent: Skyline.s16),
+            ListTile(
+              leading: Icon(Icons.check_circle_rounded, color: t.success),
+              title: Text(
+                '${payout.rides} ${payout.rides == 1 ? 'trip' : 'trips'} · '
+                '${RideFormat.when(payout.createdAt)}',
+              ),
+              subtitle: payout.reference.isEmpty
+                  ? null
+                  : Text(
+                      'Ref ${payout.reference}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              trailing: Text(
+                RideFormat.rupees(payout.rupees),
                 style: t.figure(16),
               ),
             ),

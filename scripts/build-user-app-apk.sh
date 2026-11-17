@@ -17,14 +17,28 @@
 # actually deployed. Copy server/.env.prod.example there and fill in DOMAIN
 # if it doesn't exist yet.
 #
-# Release builds are signed with apps/user_app/android/key.properties if
-# present (see build.gradle.kts); otherwise Flutter falls back to the debug
-# key, so this still runs on a fresh checkout — just not distributable.
+# Release builds are signed with apps/user_app/android/key.properties (see
+# build.gradle.kts). Without it a release build fails, because a debug-signed
+# APK can't update the installs already out there. ALLOW_DEBUG_SIGNING=1
+# builds a local, non-distributable release with the debug key instead.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 MODE="${1:-release}"
+
+# Check the signing key up front rather than after a long Gradle run.
+if [ "$MODE" = "release" ] && [ ! -f "$REPO_ROOT/apps/user_app/android/key.properties" ]; then
+  if [ "${ALLOW_DEBUG_SIGNING:-}" = "1" ]; then
+    echo "⚠️  No apps/user_app/android/key.properties — signing with the debug key." >&2
+    echo "   This APK can't update a published install. Don't publish it." >&2
+  else
+    echo "❌ No apps/user_app/android/key.properties, so this release can't be signed" >&2
+    echo "   with the release key. Restore it, or set ALLOW_DEBUG_SIGNING=1 for a" >&2
+    echo "   local, non-distributable build." >&2
+    exit 1
+  fi
+fi
 
 PROD_ENV="$REPO_ROOT/server/.env.prod"
 DOMAIN=""
@@ -43,9 +57,17 @@ API_BASE_URL="https://$DOMAIN"
 
 cd "$REPO_ROOT/apps/user_app"
 
+# The build number (the +N of pubspec's version) rides on every request as
+# X-Build, for the server's minimum-build gate (server/README.md, "App builds").
+APP_BUILD="$(sed -nE 's/^version:[[:space:]]*[^+[:space:]]+\+([0-9]+)[[:space:]]*$/\1/p' pubspec.yaml)"
+if [ -z "$APP_BUILD" ]; then
+  echo "❌ Couldn't read the +N build number from apps/user_app/pubspec.yaml's version." >&2
+  exit 1
+fi
+
 # Feed .env (Google Maps SDK key etc.) into the build's compile-time defines when
 # present, same as run-user-app.sh — independent of which backend it talks to.
-DART_DEFINES=(--dart-define="API_BASE_URL=${API_BASE_URL}")
+DART_DEFINES=(--dart-define="API_BASE_URL=${API_BASE_URL}" --dart-define="APP_BUILD=${APP_BUILD}")
 if [ -f .env ]; then
   DART_DEFINES+=(--dart-define-from-file=.env)
   echo "🔑 Loading build settings from apps/user_app/.env"
@@ -62,7 +84,11 @@ else
   echo "   Copy .env.example to .env and add your MAPS_API_KEY (Google Maps SDK)."
 fi
 
-echo "🌐 Pointing APK at ${API_BASE_URL}"
+if [ "${ALLOW_DEBUG_SIGNING:-}" = "1" ]; then
+  DART_DEFINES+=(--android-project-arg=allowDebugSigning=true)
+fi
+
+echo "🌐 Pointing APK at ${API_BASE_URL} (build ${APP_BUILD})"
 
 echo "📦 Resolving dependencies..."
 flutter pub get

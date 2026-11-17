@@ -32,10 +32,20 @@ type bookingRequest struct {
 }
 
 // bookingResponse confirms a stored booking, naming the id the app can use to
-// refer to it once ride tracking exists.
+// refer to it once ride tracking exists. Duplicate marks a repeated submit
+// answered with the booking the first one made.
 type bookingResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Duplicate bool   `json:"duplicate,omitempty"`
+}
+
+// paymentDueResponse is the 409 for a customer who must pay for a completed
+// ride (BookingID) before booking another.
+type paymentDueResponse struct {
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	BookingID string `json:"bookingId"`
 }
 
 // bookingsResponse is the customer's bookings list.
@@ -49,9 +59,20 @@ type oneBookingResponse struct {
 }
 
 // cancelRequest is the POST /me/bookings/{id}/cancel body. The reason is
-// optional; an empty or missing body cancels without one.
+// optional; an empty or missing body cancels without one. AcceptFeePaise is
+// the cancellation fee the app showed the customer (0 for none); apps from
+// before the fee send none.
 type cancelRequest struct {
-	Reason string `json:"reason"`
+	Reason         string `json:"reason"`
+	AcceptFeePaise *int64 `json:"acceptFeePaise"`
+}
+
+// cancellationFeeResponse is the 409 for a cancel that now costs more than
+// the app showed: FeePaise is what it costs.
+type cancellationFeeResponse struct {
+	Error    string `json:"error"`
+	Code     string `json:"code"`
+	FeePaise int64  `json:"feePaise"`
 }
 
 // ratingRequest is the body of a rating, from either app.
@@ -78,7 +99,10 @@ func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bookingsResponse{Bookings: bookings})
 }
 
-// Submit handles POST /me/bookings.
+// Submit handles POST /me/bookings. An Idempotency-Key header (the app's,
+// per booking attempt) makes a retry return the booking the first try made:
+// 202 for a new booking, 200 with "duplicate": true for a repeat. A
+// customer with an unpaid ride gets 409 payment_due naming it.
 func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	var req bookingRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -86,13 +110,32 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	booking, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details)
+	booking, duplicate, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details,
+		r.Header.Get("Idempotency-Key"))
+	if due, ok := errors.AsType[*service.PaymentDueError](err); ok {
+		writeJSON(w, http.StatusConflict, paymentDueResponse{
+			Error: due.Error(), Code: "payment_due", BookingID: due.BookingID,
+		})
+		return
+	}
+	if errors.Is(err, service.ErrFareMismatch) {
+		writeErrorCode(w, http.StatusBadRequest, "fare_mismatch", err.Error(), 0)
+		return
+	}
+	if errors.Is(err, service.ErrTripTooShort) {
+		writeErrorCode(w, http.StatusBadRequest, "trip_too_short", err.Error(), 0)
+		return
+	}
 	if errors.Is(err, service.ErrInvalidBooking) || errors.Is(err, service.ErrBookingTooSoon) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not record booking")
+		serverError(w, "could not record booking", err)
+		return
+	}
+	if duplicate {
+		writeJSON(w, http.StatusOK, bookingResponse{ID: booking.ID, Status: "received", Duplicate: true})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, bookingResponse{ID: booking.ID, Status: "received"})
@@ -105,9 +148,31 @@ func (h *BookingHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	b, err := h.svc.Cancel(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Reason)
+	b, err := h.svc.Cancel(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Reason, req.AcceptFeePaise)
+	if fee, ok := errors.AsType[*service.CancellationFeeError](err); ok {
+		writeJSON(w, http.StatusConflict, cancellationFeeResponse{
+			Error: fee.Error(), Code: "cancellation_fee", FeePaise: fee.FeePaise,
+		})
+		return
+	}
 	if err != nil {
 		writeBookingError(w, err, "could not cancel the ride")
+		return
+	}
+	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})
+}
+
+// End handles POST /me/bookings/{id}/end: the customer ends their trip in
+// progress and pays for the time used. 409 cannot_end when it isn't in
+// progress.
+func (h *BookingHandler) End(w http.ResponseWriter, r *http.Request) {
+	b, err := h.svc.EndEarly(r.Context(), userIDFrom(r.Context()), r.PathValue("id"))
+	if errors.Is(err, service.ErrCannotEnd) {
+		writeErrorCode(w, http.StatusConflict, "cannot_end", err.Error(), 0)
+		return
+	}
+	if err != nil {
+		writeBookingError(w, err, "could not end the trip")
 		return
 	}
 	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})

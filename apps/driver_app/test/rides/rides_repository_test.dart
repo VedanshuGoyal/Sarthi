@@ -48,6 +48,19 @@ void main() {
     check(ride.customer).isNull();
   });
 
+  test('an unreadable 2xx body is a RidesException, not a raw error', () async {
+    RidesRepository html() => RidesRepository(
+      baseUrl: 'http://api',
+      client: MockClient((_) async => http.Response('<html>ok</html>', 200)),
+    );
+
+    await check(html().myRides()).throws<RidesException>();
+    await check(html().requests()).throws<RidesException>();
+    await check(html().act('r1', RideAction.arrive)).throws<RidesException>();
+    await check(html().earnings()).throws<RidesException>();
+    await check(repo({'rides': 'nope'}).myRides()).throws<RidesException>();
+  });
+
   test('act posts the action and returns the updated ride', () async {
     late http.Request sent;
     final updated = await repo({
@@ -78,12 +91,15 @@ void main() {
 
   test('rate sends stars and note, and reads back myRating', () async {
     late http.Request sent;
-    final updated = await repo({
-      'ride': rideJson(
-        status: 'completed',
-        myRating: {'stars': 4, 'note': 'Great customer'},
-      ),
-    }, onRequest: (r) => sent = r).act('r1', RideAction.rate, stars: 4, note: 'Great customer');
+    final updated = await repo(
+      {
+        'ride': rideJson(
+          status: 'completed',
+          myRating: {'stars': 4, 'note': 'Great customer'},
+        ),
+      },
+      onRequest: (r) => sent = r,
+    ).act('r1', RideAction.rate, stars: 4, note: 'Great customer');
 
     check(sent.url.path).equals('/driver/rides/r1/rate');
     check(
@@ -127,6 +143,73 @@ void main() {
     check(e.today.rupees).equals(340);
     check(e.week.rides).equals(2);
     check(e.total.rupees).equals(999);
+    // An older server sends only the gross.
+    check(e.today.netPaise).isNull();
+    check(e.today.netRupees).isNull();
+  });
+
+  test('earnings reads the driver\'s net share beside the gross', () async {
+    final e = await repo({
+      'today': {'farePaise': 34000, 'rides': 1, 'netPaise': 29580},
+      'week': {'farePaise': 58000, 'rides': 2, 'netPaise': 50460},
+      'month': {'farePaise': 0, 'rides': 0, 'netPaise': 0},
+      'total': {'farePaise': 99900, 'rides': 4},
+    }).earnings();
+    check(e.today.rupees).equals(340);
+    check(e.today.netPaise).equals(29580);
+    check(e.today.netRupees).equals(296);
+    check(e.week.netRupees).equals(505);
+    check(e.month.netPaise).equals(0);
+    check(e.total.netPaise).isNull();
+  });
+
+  test('payouts lists the transfers and skips ones it cannot read', () async {
+    late http.Request sent;
+    final payouts = await repo({
+      'payouts': [
+        {
+          'id': 'p2',
+          'driverId': 'd1',
+          'amountPaise': 13050,
+          'rides': 2,
+          'reference': 'UTR123',
+          'createdAt': '2026-11-10T12:00:00Z',
+        },
+        {'id': 'broken'},
+        {
+          'id': 'p1',
+          'amountPaise': 29580,
+          'rides': 1,
+          'createdAt': '2026-11-03T09:30:00Z',
+        },
+      ],
+    }, onRequest: (r) => sent = r).payouts();
+
+    check(sent.method).equals('GET');
+    check(sent.url.path).equals('/driver/payouts');
+    check(sent.headers['Authorization']).equals('Bearer tok');
+    check(payouts.map((p) => p.id).toList()).deepEquals(['p2', 'p1']);
+    final first = payouts.first;
+    check(first.amountPaise).equals(13050);
+    check(first.rupees).equals(131);
+    check(first.rides).equals(2);
+    check(first.reference).equals('UTR123');
+    check(first.createdAt.toUtc()).equals(DateTime.utc(2026, 11, 10, 12));
+    check(payouts.last.reference).equals('');
+  });
+
+  test('payouts on a server without the list is an empty list', () async {
+    final payouts = await repo('404 page not found', status: 404).payouts();
+    check(payouts).isEmpty();
+  });
+
+  test('payouts failures other than 404 are RidesExceptions', () async {
+    await check(
+      repo({'error': 'could not list payouts'}, status: 500).payouts(),
+    ).throws<RidesException>(
+      (e) => e.has((e) => e.statusCode, 'statusCode').equals(500),
+    );
+    await check(repo({'payouts': 'nope'}).payouts()).throws<RidesException>();
   });
 
   test('setDuty sends the switch and position', () async {

@@ -203,7 +203,13 @@ void main() {
       check(trip.endsAt).equals(DateTime(2026, 7, 18, 12, 15));
 
       final json = trip.toJson();
-      check(json['scheduledAt']).equals('2026-07-18T09:00:00.000');
+      // An instant, not a wall time the server must guess the zone of.
+      check(
+        json['scheduledAt'],
+      ).equals(DateTime(2026, 7, 18, 9).toUtc().toIso8601String());
+      check(json['scheduledAt'] as String).endsWith('Z');
+      final stop = (json['stops'] as List).first as Map<String, dynamic>;
+      check(stop['departBy'] as String).endsWith('Z');
       check((json['stops'] as List).length).equals(2);
     });
 

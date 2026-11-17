@@ -24,7 +24,7 @@ func (s *statsSpy) Stats(_ context.Context, q repository.StatsQuery) (domain.Adm
 
 type onDutyCount int
 
-func (n onDutyCount) Count() int { return int(n) }
+func (n onDutyCount) CountSeenSince(time.Time) int { return int(n) }
 
 func TestStats_istWindows(t *testing.T) {
 	store := &statsSpy{}
@@ -115,6 +115,21 @@ func TestStats_commissionAtRate(t *testing.T) {
 		if st.CompletedRides.Today.Rides != 1 || st.CompletedRides.Today.GrossFarePaise != 12345 {
 			t.Errorf("bp %d: store's counts not passed through: %+v", tc.bp, st.CompletedRides.Today)
 		}
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. A ride settled by hand (cash or waived)
+// counts in the gross fare but earns MOJUD no commission.
+func TestStats_noCommissionOnRidesSettledByHand(t *testing.T) {
+	store := &statsSpy{st: domain.AdminStats{CompletedRides: domain.StatsCompletedRides{
+		Today: domain.StatsRideWindow{Rides: 2, GrossFarePaise: 110000, SettledByHandPaise: 100000},
+	}}}
+	st, err := NewStatsService(store, nil, 1300).Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if w := st.CompletedRides.Today; w.GrossFarePaise != 110000 || w.CommissionPaise != 1300 {
+		t.Errorf("today = %+v, want gross 110000 and commission 1300 (13%% of the 10000 not settled by hand)", w)
 	}
 }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:checks/checks.dart';
@@ -16,6 +17,7 @@ import 'package:driver_app/features/home/view/driver_home_shell.dart';
 import 'package:driver_app/features/notifications/notification_providers.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
+import 'package:driver_app/features/rides/view/ride_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,9 +34,13 @@ const _driver = Driver(
 void main() {
   late Directory tempDir;
   late FakeRidesRepository rides;
+  late _KycRepository kyc;
+  late _FakePush push;
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('shell_test');
+    kyc = _KycRepository();
+    push = _FakePush();
     rides = FakeRidesRepository()
       ..openRides = [ride(id: 'open-1')]
       ..summary = const Earnings(
@@ -42,10 +48,13 @@ void main() {
         week: EarningsPeriod(farePaise: 58000, rides: 2),
       );
   });
-  tearDown(() => tempDir.deleteSync(recursive: true));
+  tearDown(() {
+    push.close();
+    tempDir.deleteSync(recursive: true);
+  });
 
-  Future<void> pumpShell(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1080, 4400);
+  Future<void> pumpShell(WidgetTester tester, {double width = 1080}) async {
+    tester.view.physicalSize = Size(width, 4400);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
 
@@ -53,14 +62,12 @@ void main() {
       ProviderScope(
         overrides: [
           ridesRepositoryProvider.overrideWithValue(rides),
-          pushServiceProvider.overrideWithValue(PushService.off()),
-          locationServiceProvider.overrideWithValue(
-            FakeLocationService(),
-          ),
+          pushServiceProvider.overrideWithValue(push),
+          locationServiceProvider.overrideWithValue(FakeLocationService()),
           driverSessionStorageProvider.overrideWithValue(_SessionStorage()),
           documentRegistrationViewModelProvider.overrideWith(
             (ref) => DocumentRegistrationViewModel(
-              repository: _KycRepository(),
+              repository: kyc,
               files: DocumentFileStore(directory: tempDir),
             ),
           ),
@@ -121,6 +128,195 @@ void main() {
     check(find.text('Documents under review').evaluate()).isNotEmpty();
     check(find.text('HDFC0001234').evaluate()).isNotEmpty();
   });
+
+  group('pushes while the app is open', () {
+    /// Goes on duty, so a refresh of the requests feed would actually run.
+    Future<void> goOnDuty(WidgetTester tester) async {
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      check(find.text("You're on duty").evaluate()).isNotEmpty();
+    }
+
+    Future<void> goOffDuty(WidgetTester tester) async {
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a bank account change re-reads KYC, not the feed', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      await goOnDuty(tester);
+      final requests = rides.requestsCalls;
+      final kycLoads = kyc.loads;
+
+      push.arrive(const PushEvent(type: 'bank_account_changed'));
+      await tester.pumpAndSettle();
+
+      check(kyc.loads).equals(kycLoads + 1);
+      check(rides.requestsCalls).equals(requests);
+
+      // A request push still refreshes the feed.
+      push.arrive(const PushEvent(type: 'ride_request', rideId: 'open-2'));
+      await tester.pumpAndSettle();
+      check(rides.requestsCalls).equals(requests + 1);
+      check(kyc.loads).equals(kycLoads + 1);
+
+      await goOffDuty(tester);
+    });
+
+    testWidgets('a payout re-reads the earnings, not the feed', (tester) async {
+      await pumpShell(tester);
+      await goOnDuty(tester);
+      final requests = rides.requestsCalls;
+      final earnings = rides.earningsCalls;
+
+      push.arrive(const PushEvent(type: 'payout_sent'));
+      await tester.pumpAndSettle();
+
+      check(rides.earningsCalls).equals(earnings + 1);
+      check(rides.requestsCalls).equals(requests);
+
+      await goOffDuty(tester);
+    });
+
+    testWidgets('a ride MOJUD assigned re-reads the rides and opens on tap', (
+      tester,
+    ) async {
+      // Wide enough for the ride screen's step row.
+      await pumpShell(tester, width: 1800);
+      await goOnDuty(tester);
+      final requests = rides.requestsCalls;
+      final loads = rides.myRidesCalls;
+      rides.mine = [ride(id: 'assigned', status: 'accepted')];
+
+      push.arrive(const PushEvent(type: 'ride_assigned', rideId: 'assigned'));
+      await tester.pumpAndSettle();
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(rides.requestsCalls).equals(requests);
+      check(find.byType(RideDetailScreen).evaluate()).isEmpty();
+
+      push.tap(const PushEvent(type: 'ride_assigned', rideId: 'assigned'));
+      await tester.pumpAndSettle();
+      check(find.byType(RideDetailScreen).evaluate()).length.equals(1);
+      check(rides.requestsCalls).equals(requests);
+
+      Navigator.of(tester.element(find.byType(RideDetailScreen))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await goOffDuty(tester);
+    });
+
+    testWidgets('a trip the customer ended early re-reads the rides and the '
+        'earnings, and opens it completed on tap', (tester) async {
+      rides.mine = [ride(id: 'trip', status: 'in_progress')];
+      // Wide enough for the ride screen's step row.
+      await pumpShell(tester, width: 1800);
+      await goOnDuty(tester);
+      check(find.text('Ride in progress').evaluate()).isNotEmpty();
+      final requests = rides.requestsCalls;
+      final loads = rides.myRidesCalls;
+      final earnings = rides.earningsCalls;
+      rides.mine = [
+        ride(
+          id: 'trip',
+          status: 'completed',
+          farePaise: 20000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      ];
+
+      push.arrive(const PushEvent(type: 'ride_ended_early', rideId: 'trip'));
+      await tester.pumpAndSettle();
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(rides.earningsCalls).equals(earnings + 1);
+      check(rides.requestsCalls).equals(requests);
+      check(find.text('Ride in progress').evaluate()).isEmpty();
+      check(find.byType(RideDetailScreen).evaluate()).isEmpty();
+
+      push.tap(const PushEvent(type: 'ride_ended_early', rideId: 'trip'));
+      await tester.pumpAndSettle();
+      check(find.byType(RideDetailScreen).evaluate()).length.equals(1);
+      check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+      check(find.text('Complete trip').evaluate()).isEmpty();
+      check(rides.requestsCalls).equals(requests);
+
+      Navigator.of(tester.element(find.byType(RideDetailScreen))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await goOffDuty(tester);
+    });
+  });
+
+  group('coming back to the app', () {
+    /// Backgrounds the app and brings it back, one lifecycle step at a time
+    /// as the platform reports them.
+    Future<void> leaveAndReturn(WidgetTester tester) async {
+      for (final state in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('while on a trip re-reads the rides, which may have ended', (
+      tester,
+    ) async {
+      rides.mine = [ride(id: 'trip', status: 'in_progress')];
+      await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+      rides.mine = [ride(id: 'trip', status: 'completed', bookedFarePaise: 1)];
+
+      await leaveAndReturn(tester);
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(find.text('Ride in progress').evaluate()).isEmpty();
+    });
+
+    testWidgets('holding no ride reads nothing', (tester) async {
+      await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+
+      await leaveAndReturn(tester);
+
+      check(rides.myRidesCalls).equals(loads);
+    });
+  });
+}
+
+/// A [PushService] whose arrivals and taps the test sends.
+class _FakePush extends PushService {
+  _FakePush() : super.off();
+
+  final _arrivalEvents = StreamController<PushEvent>.broadcast();
+  final _tapEvents = StreamController<PushEvent>.broadcast();
+
+  @override
+  Stream<PushEvent> get arrivals => _arrivalEvents.stream;
+
+  @override
+  Stream<PushEvent> get taps => _tapEvents.stream;
+
+  void arrive(PushEvent event) => _arrivalEvents.add(event);
+
+  void tap(PushEvent event) => _tapEvents.add(event);
+
+  void close() {
+    _arrivalEvents.close();
+    _tapEvents.close();
+  }
 }
 
 class _SessionStorage implements DriverSessionStorage {
@@ -136,8 +332,16 @@ class _SessionStorage implements DriverSessionStorage {
 }
 
 class _KycRepository implements DriverKycRepository {
+  /// How many times the KYC record was read.
+  int loads = 0;
+
   @override
-  Future<DriverKyc> load() async => const DriverKyc(
+  Future<DriverKyc> load() async {
+    loads++;
+    return _kyc;
+  }
+
+  static const _kyc = DriverKyc(
     status: KycStatus.submitted,
     fullName: 'Ravi Kumar',
     drivingLicenseNumber: 'DL0120190012345',

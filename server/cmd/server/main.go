@@ -49,8 +49,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := newPool(ctx, cfg.DatabaseURL)
-	if err != nil {
+	// Postgres may be restarting (unattended upgrades restart it, and systemd
+	// can start us in the same moment), so wait for it instead of exiting.
+	var pool *pgxpool.Pool
+	if err := retryStartup(ctx, "connecting to postgres", func() error {
+		var err error
+		pool, err = newPool(ctx, cfg.DatabaseURL)
+		return err
+	}); err != nil {
 		return err
 	}
 	defer pool.Close()
@@ -62,22 +68,29 @@ func run() error {
 		repository.NewSessionRepository(pool),
 		memstore.NewSessionCache(),
 	)
-	if n, err := sessions.Warm(ctx); err != nil {
+	if err := retryStartup(ctx, "warming sessions", func() error {
+		n, err := sessions.Warm(ctx)
+		if err == nil {
+			slog.Info("sessions: warmed cache from DB", "count", n)
+		}
 		return err
-	} else {
-		slog.Info("sessions: warmed cache from DB", "count", n)
+	}); err != nil {
+		return err
 	}
 
 	// OTP abuse limits (resend cap, failed-verification cap, 30-min lockout) are
 	// Sarthi's own rules, enforced in memory regardless of the SMS provider.
+	// The day's SMS spend is one budget for both apps, counted only for texts
+	// actually sent.
+	smsBudget := memstore.NewSMSBudget(memstore.MaxDailySMS, memstore.SMSWindow)
 	authOpts := []service.Option{
 		service.WithTokenIssuer(sessions),
 		service.WithOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		authOpts = append(authOpts, service.WithOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		authOpts = append(authOpts, service.WithOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 		slog.Info("otp: Fast2SMS provider enabled")
 	} else {
 		slog.Warn("otp: no SMS provider configured; accepting dev OTP",
@@ -91,19 +104,23 @@ func run() error {
 		repository.NewDriverSessionRepository(pool),
 		memstore.NewSessionCache(),
 	)
-	if n, err := driverSessions.Warm(ctx); err != nil {
+	if err := retryStartup(ctx, "warming driver sessions", func() error {
+		n, err := driverSessions.Warm(ctx)
+		if err == nil {
+			slog.Info("driver sessions: warmed cache from DB", "count", n)
+		}
 		return err
-	} else {
-		slog.Info("driver sessions: warmed cache from DB", "count", n)
+	}); err != nil {
+		return err
 	}
 	driverAuthOpts := []service.DriverOption{
 		service.WithDriverTokenIssuer(driverSessions),
 		service.WithDriverOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 	}
 	driverAuthService := service.NewDriverAuthService(repository.NewDriverRepository(pool), driverAuthOpts...)
 
@@ -118,8 +135,17 @@ func run() error {
 	cars := service.NewCarService(repository.NewCarRepository(pool))
 
 	// Who is online right now, bucketed by H3 cell: the driver feed and the
-	// "new ride request" pushes both search it.
+	// "new ride request" pushes both search it. Duty is also kept on the
+	// drivers' rows, so a restart puts back whoever was on duty, as of when
+	// their app last reported in.
 	presence := memstore.NewDriverTracker(geo.DefaultResolution)
+	dutyStore := repository.NewDriverDutyRepository(pool)
+	if n, err := service.RestorePresence(ctx, dutyStore, presence, time.Now()); err != nil {
+		slog.Warn("presence: restoring drivers on duty failed; they reappear as their apps report in",
+			"error", err)
+	} else {
+		slog.Info("presence: restored drivers on duty", "count", n)
+	}
 	// Where each driver is while on a ride, for the customer's live map.
 	liveLocations := memstore.NewLiveLocations()
 	driverProfiles := repository.NewDriverKYCRepository(pool)
@@ -166,6 +192,12 @@ func run() error {
 		verifier,
 		cfg.Surepass.DigiLockerRedirectURL,
 	)
+	// Every change to a driver's payout account is pushed to them.
+	driverKYC.SetAlerts(notify)
+	// money+ops: at launch a person reviews every submission; KYC_AUTO_CLEAR
+	// lets drivers whose checks all agree through without one.
+	driverKYC.SetAutoClear(cfg.KYCAutoClear)
+	slog.Info("kyc: auto-clear on submission", "enabled", cfg.KYCAutoClear)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and
@@ -176,15 +208,24 @@ func run() error {
 
 	// Driver rides: bookings move through accept → arrive → start → complete
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
+	driverRideStore := repository.NewDriverRideRepository(pool)
+	// Re-alerts skip the drivers who declined a ride or handed it back.
+	notify.SetDeclines(driverRideStore)
+	// money+ops: drivers' net share of rides not paid yet is the fare less this.
+	driverRideStore.SetCommissionBasisPoints(cfg.CommissionBasisPoints)
 	driverRides := service.NewDriverRideService(
-		repository.NewDriverRideRepository(pool),
+		driverRideStore,
 		driverProfiles,
 		presence,
-		// Wrong start-code attempts, keyed by ride id (5 per code).
-		memstore.NewOTPGuard(),
+		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new
+		// code; 3 codes, then the ride is locked for 15 minutes.
+		memstore.NewStartCodeGuard(),
 		liveLocations,
 		notify,
 	)
+	// A driver a reviewer rejects hands back the rides they hold.
+	driverKYC.SetRideReleaser(driverRides)
+	driverRides.SetDutyStore(dutyStore)
 
 	// Ola Maps: the server alone holds the OAuth client secret and hands the
 	// apps short-lived tokens (GET /maps/token).
@@ -233,7 +274,18 @@ func run() error {
 			"customers can't pay in the app")
 	}
 	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
+	// Without a gateway nobody can pay in the app, so an unpaid ride must
+	// not block booking or account deletion.
+	bookings.SetPaymentsEnabled(payments.Enabled())
 	go payments.RunSweeper(ctx)
+	// Every minute: re-alert drivers about rides nobody has taken, tell the
+	// customer when no driver has turned up, remind both sides an hour
+	// ahead, and log an ERROR for ops when a driver is late or a ride runs
+	// hours over. Idempotent through booking_events. It also takes drivers
+	// off duty, with a push, once their app has been silent for hours.
+	watchdog := service.NewRideWatchdog(repository.NewRideWatchRepository(pool), notify)
+	watchdog.WatchDuty(dutyStore, presence, notify)
+	go watchdog.Run(ctx)
 	payouts := service.NewPayoutService(paymentStore, documentCipher)
 	if cfg.AdminToken == "" {
 		slog.Warn("admin: no ADMIN_TOKEN set; GET /users and /admin/* are off")
@@ -241,13 +293,45 @@ func run() error {
 	// The ops dashboard's counts (GET /admin/stats): PostgreSQL, plus who is
 	// on duty from the presence index.
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
+	// Account deletion (DPDP), and the daily sweep of data past retention.
+	erasure := service.NewErasureService(repository.NewErasureRepository(pool), sessions, driverSessions, blob, presence)
+	erasure.SetPaymentsEnabled(payments.Enabled())
+	go service.NewRetentionService(repository.NewRetentionRepository(pool), erasure).Run(ctx)
+	// Builds below a minimum get 426 update_required; 0 only observes.
+	slog.Info("apps: build contract",
+		"minUserApp", cfg.Apps.User.MinBuild, "latestUserApp", cfg.Apps.User.LatestBuild,
+		"minDriverApp", cfg.Apps.Driver.MinBuild, "latestDriverApp", cfg.Apps.Driver.LatestBuild,
+		"downloadUrl", cfg.Apps.DownloadURL)
+	// money+ops: the back office's booking tools and its audit trail. Assign
+	// runs the same conditional accept as a driver's own tap (driverRideStore).
+	ops := service.NewOpsService(service.OpsDeps{
+		CommissionBP: cfg.CommissionBasisPoints,
+		Bookings:     bookingStore,
+		Rides:        driverRideStore,
+		Payments:     paymentStore,
+		Checkouts:    payments,
+		Profiles:     driverProfiles,
+		Audit:        repository.NewAdminActionRepository(pool),
+		Alerts:       notify,
+	})
+
+	// /readyz fails until the schema has this build's migrations, so
+	// redeploy.sh rolls back a binary started against an un-migrated DB.
+	ready := func(ctx context.Context) error { return repository.SchemaReady(ctx, pool) }
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken),
+			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, ready, erasure,
+			appPolicy(cfg.Apps)),
+		// Bound every phase of a connection: a 12 MB KYC upload on a slow
+		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the
+		// per-request deadline (60 s) so handlers can always answer.
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      75 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Serve in the background; surface listen errors through a channel.
@@ -264,9 +348,26 @@ func run() error {
 		return err
 	case <-ctx.Done():
 		slog.Info("shutting down")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Long enough for the slowest upstream call (Surepass, 45 s) to finish,
+		// so a deploy doesn't cut off a paid check; then force-close. systemd's
+		// TimeoutStopSec (75 s) is longer still.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			srv.Close()
+			return err
+		}
+		return nil
+	}
+}
+
+// appPolicy is the client compatibility contract the router enforces.
+func appPolicy(c config.AppsConfig) api.AppPolicy {
+	return api.AppPolicy{
+		DownloadURL:  c.DownloadURL,
+		SupportPhone: c.SupportPhone,
+		UserApp:      api.AppBuilds{MinBuild: c.User.MinBuild, LatestBuild: c.User.LatestBuild},
+		DriverApp:    api.AppBuilds{MinBuild: c.Driver.MinBuild, LatestBuild: c.Driver.LatestBuild},
 	}
 }
 
@@ -319,6 +420,34 @@ func newBlobStore(cfg config.StorageConfig) (storage.Blob, error) {
 		return storage.NewLocal(cfg.LocalDir)
 	default:
 		return nil, fmt.Errorf("unknown storage backend %q", cfg.Backend)
+	}
+}
+
+// startupRetryFor is how long boot-time database steps keep retrying before
+// the process gives up and leaves the restart to systemd.
+const startupRetryFor = 90 * time.Second
+
+// retryStartup runs fn until it succeeds, backing off from 1s to 10s, for up
+// to startupRetryFor. On 15 Nov 2026 a Postgres restart during our own start
+// made the session warm-up fail and the process exit; this rides that out.
+func retryStartup(ctx context.Context, what string, fn func() error) error {
+	deadline := time.Now().Add(startupRetryFor)
+	wait := time.Second
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		slog.Warn("startup: retrying", "step", what, "in", wait.String(), "error", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, 10*time.Second)
 	}
 }
 

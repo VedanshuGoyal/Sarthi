@@ -30,6 +30,31 @@ abstract final class RideFormat {
     return '${negative ? '-' : ''}₹$grouped';
   }
 
+  /// [rupees] of an amount in paise, to the nearest rupee: 5000 → ₹50.
+  static String paise(int amount) => rupees((amount / 100).round());
+
+  /// Where a ride's money stands: "Awaiting payment", "Paid · your share
+  /// ₹44 after commission", "Paid out". Empty when there's nothing to pay.
+  static String payment(Ride ride) =>
+      switch ((ride.paymentStatus, ride.sharePaise)) {
+        (RidePaymentStatus.paid, final share?) =>
+          'Paid · your share ${paise(share)} after commission',
+        (final status, _) => status.label,
+      };
+
+  /// "₹50 cancellation fee · Awaiting payment", on a ride the customer
+  /// cancelled at the pickup ([Ride.hasCancellationFee]).
+  static String cancellationFee(Ride ride) => [
+    '${paise(ride.cancellationFeePaise ?? 0)} cancellation fee',
+    if (payment(ride).isNotEmpty) payment(ride),
+  ].join(' · ');
+
+  /// "Charged ₹200 for the time used (booked ₹340)", on a trip the customer
+  /// ended early ([Ride.endedEarly]).
+  static String endedEarly(Ride ride) =>
+      'Charged ${paise(ride.farePaise)} for the time used '
+      '(booked ${paise(ride.bookedFarePaise ?? ride.farePaise)})';
+
   /// 9:05 AM
   static String time(DateTime t) {
     final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;

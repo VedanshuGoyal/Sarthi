@@ -5,18 +5,17 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PushTokenRepository stores the FCM registration tokens of customer and
 // driver app installs. A token belongs to one account at a time: saving it
 // for another account (a different sign-in on the same phone) moves it.
 type PushTokenRepository struct {
-	pool *pgxpool.Pool
+	pool DB
 }
 
-// NewPushTokenRepository wires the repository to a connection pool.
-func NewPushTokenRepository(pool *pgxpool.Pool) *PushTokenRepository {
+// NewPushTokenRepository wires the repository to a pool (or a transaction).
+func NewPushTokenRepository(pool DB) *PushTokenRepository {
 	return &PushTokenRepository{pool: pool}
 }
 
@@ -102,6 +101,28 @@ func (r *PushTokenRepository) ForDrivers(ctx context.Context, driverIDs []string
 		return nil, fmt.Errorf("reading driver push tokens: %w", err)
 	}
 	return out, nil
+}
+
+// VerifiedDriversWithTokens lists up to limit KYC-verified drivers with at
+// least one install token, the most recently registered install first —
+// who a ride request falls back to when few drivers are online near it.
+func (r *PushTokenRepository) VerifiedDriversWithTokens(ctx context.Context, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT d.id::text
+		FROM drivers d
+		JOIN push_tokens p ON p.driver_id = d.id
+		WHERE d.kyc_status = 'verified'
+		GROUP BY d.id
+		ORDER BY max(p.updated_at) DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("listing verified drivers with push tokens: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("reading verified drivers with push tokens: %w", err)
+	}
+	return ids, nil
 }
 
 func collectTokens(rows pgx.Rows) ([]string, error) {

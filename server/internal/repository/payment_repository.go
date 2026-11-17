@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -19,36 +18,47 @@ var ErrPaymentOrderNotFound = errors.New("payment order not found")
 // for a payout.
 var ErrNothingToPayOut = errors.New("this driver has no paid rides waiting for a payout")
 
+// ErrPayoutMismatch is returned when the rides a payout would cover don't add
+// up to what the caller expected — the list it was read from is out of date.
+var ErrPayoutMismatch = errors.New("what this driver is owed has changed since the list was read; reload it and check the transfer")
+
+// ExpectedPayout is what the caller saw owed on the payouts list. A nil
+// field isn't checked.
+type ExpectedPayout struct {
+	AmountPaise *int64
+	Rides       *int
+}
+
 // PaymentRepository persists checkouts (payment_orders), the paid state of
 // bookings, and payouts to drivers.
 type PaymentRepository struct {
-	pool *pgxpool.Pool
+	db DB
 }
 
-// NewPaymentRepository wires the repository to a connection pool.
-func NewPaymentRepository(pool *pgxpool.Pool) *PaymentRepository {
-	return &PaymentRepository{pool: pool}
+// NewPaymentRepository wires the repository to a pool (or a transaction).
+func NewPaymentRepository(db DB) *PaymentRepository {
+	return &PaymentRepository{db: db}
 }
 
 const paymentOrderColumns = `merchant_order_id, booking_id, user_id, amount_paise,
-	provider_order_id, state, coalesce(transaction_id, ''), coalesce(payment_mode, ''),
-	coalesce(utr, ''), expires_at, created_at`
+	provider_order_id, coalesce(checkout_token, ''), state, coalesce(transaction_id, ''),
+	coalesce(payment_mode, ''), coalesce(utr, ''), expires_at, created_at`
 
 func scanPaymentOrder(row pgx.Row) (domain.PaymentOrder, error) {
 	var o domain.PaymentOrder
 	err := row.Scan(&o.MerchantOrderID, &o.BookingID, &o.UserID, &o.AmountPaise,
-		&o.ProviderOrderID, &o.State, &o.TransactionID, &o.PaymentMode,
+		&o.ProviderOrderID, &o.CheckoutToken, &o.State, &o.TransactionID, &o.PaymentMode,
 		&o.UTR, &o.ExpiresAt, &o.CreatedAt)
 	return o, err
 }
 
 // InsertOrder records a checkout the gateway just opened, as pending.
 func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrder) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db.Exec(ctx, `
 		INSERT INTO payment_orders
-		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.ExpiresAt)
+		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, checkout_token, expires_at)
+		VALUES ($1, $2, $3, $4, $5, nullif($6, ''), $7)`,
+		o.MerchantOrderID, o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.CheckoutToken, o.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("inserting payment order: %w", err)
 	}
@@ -57,7 +67,7 @@ func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrd
 
 // FindOrder returns the order merchantOrderID, or [ErrPaymentOrderNotFound].
 func (r *PaymentRepository) FindOrder(ctx context.Context, merchantOrderID string) (domain.PaymentOrder, error) {
-	o, err := scanPaymentOrder(r.pool.QueryRow(ctx,
+	o, err := scanPaymentOrder(r.db.QueryRow(ctx,
 		`SELECT `+paymentOrderColumns+` FROM payment_orders WHERE merchant_order_id = $1`,
 		merchantOrderID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -87,7 +97,7 @@ func (r *PaymentRepository) PendingSince(ctx context.Context, from, to time.Time
 }
 
 func (r *PaymentRepository) queryOrders(ctx context.Context, q string, args ...any) ([]domain.PaymentOrder, error) {
-	rows, err := r.pool.Query(ctx, q, args...)
+	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing payment orders: %w", err)
 	}
@@ -105,7 +115,7 @@ func (r *PaymentRepository) queryOrders(ctx context.Context, q string, args ...a
 
 // FailOrder marks a pending order failed.
 func (r *PaymentRepository) FailOrder(ctx context.Context, merchantOrderID string, st domain.GatewayOrderStatus, at time.Time) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := r.db.Exec(ctx, `
 		UPDATE payment_orders
 		SET state = 'failed', transaction_id = nullif($2, ''), payment_mode = nullif($3, ''), updated_at = $4
 		WHERE merchant_order_id = $1 AND state = 'pending'`,
@@ -123,7 +133,7 @@ func (r *PaymentRepository) FailOrder(ctx context.Context, merchantOrderID strin
 // another order. The booking is returned either way.
 func (r *PaymentRepository) CompleteOrder(ctx context.Context, o domain.PaymentOrder, st domain.GatewayOrderStatus, commissionPaise int64, at time.Time) (domain.SettleOutcome, domain.Booking, error) {
 	outcome := domain.SettledAlready
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return outcome, domain.Booking{}, fmt.Errorf("completing payment order: %w", err)
 	}
@@ -164,18 +174,21 @@ func (r *PaymentRepository) CompleteOrder(ctx context.Context, o domain.PaymentO
 
 // DuePayouts lists, per driver, the share of every ride paid on or before
 // asOf that hasn't been paid out, with their bank details (number still
-// sealed). Largest first.
+// sealed), KYC status and when the bank confirmed the account. Largest
+// first.
 func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]domain.PayoutDue, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.db.Query(ctx, `
 		SELECT d.id, d.name, d.phone_e164,
 		       count(*), sum(b.paid_paise - coalesce(b.commission_paise, 0)),
 		       coalesce(a.account_holder_name, ''), a.account_number_encrypted,
-		       coalesce(a.ifsc_code, '')
+		       coalesce(a.ifsc_code, ''), coalesce(a.verified_name, ''), a.updated_at,
+		       d.kyc_status, a.verified_at
 		FROM bookings b
 		JOIN drivers d ON d.id = b.driver_id
 		LEFT JOIN driver_bank_accounts a ON a.driver_id = d.id
 		WHERE b.paid_at IS NOT NULL AND b.payout_id IS NULL AND b.paid_at <= $1
-		GROUP BY d.id, d.name, d.phone_e164, a.account_holder_name, a.account_number_encrypted, a.ifsc_code
+		  AND b.paid_mode IS DISTINCT FROM 'cash' -- the customer paid the driver: MOJUD owes nothing
+		GROUP BY d.id, d.name, d.phone_e164, d.kyc_status, a.driver_id
 		ORDER BY 5 DESC`, asOf)
 	if err != nil {
 		return nil, fmt.Errorf("listing due payouts: %w", err)
@@ -185,7 +198,8 @@ func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]d
 	for rows.Next() {
 		var p domain.PayoutDue
 		if err := rows.Scan(&p.DriverID, &p.DriverName, &p.DriverPhone, &p.Rides, &p.AmountPaise,
-			&p.AccountHolderName, &p.AccountNumberEncrypted, &p.IFSCCode); err != nil {
+			&p.AccountHolderName, &p.AccountNumberEncrypted, &p.IFSCCode, &p.VerifiedName, &p.AccountUpdatedAt,
+			&p.KYCStatus, &p.AccountVerifiedAt); err != nil {
 			return nil, fmt.Errorf("listing due payouts: %w", err)
 		}
 		out = append(out, p)
@@ -194,34 +208,31 @@ func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]d
 }
 
 // RecordPayout records one transfer to driverID covering every ride of
-// theirs paid on or before asOf and not yet paid out, and stamps those
-// rides with it — in one transaction. [ErrNothingToPayOut] when there are
-// none.
-func (r *PaymentRepository) RecordPayout(ctx context.Context, driverID, reference string, asOf, at time.Time) (domain.DriverPayout, error) {
-	tx, err := r.pool.Begin(ctx)
+// theirs paid on or before asOf and not yet paid out, and stamps exactly
+// those rides with it — in one transaction. [ErrNothingToPayOut] when there
+// are none; [ErrPayoutMismatch] when they don't add up to expect.
+func (r *PaymentRepository) RecordPayout(
+	ctx context.Context, driverID, reference string, asOf, at time.Time, expect ExpectedPayout,
+) (domain.DriverPayout, error) {
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return domain.DriverPayout{}, fmt.Errorf("recording payout: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Lock the rides so a concurrent payout can't claim them too.
-	var (
-		rides  int
-		amount int64
-	)
-	err = tx.QueryRow(ctx, `
-		WITH due AS (
-		    SELECT paid_paise - coalesce(commission_paise, 0) AS share
-		    FROM bookings
-		    WHERE driver_id = $1 AND paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $2
-		    FOR UPDATE
-		)
-		SELECT count(*), coalesce(sum(share), 0) FROM due`, driverID, asOf).Scan(&rides, &amount)
+	// Lock the rides so a concurrent payout can't claim them too, and keep
+	// their ids: the stamp below must cover these rows and no others (a
+	// payment committing after this read is for the next payout).
+	ids, amount, err := lockDueRides(ctx, tx, driverID, asOf)
 	if err != nil {
-		return domain.DriverPayout{}, rideErr(err, ErrNothingToPayOut, "recording payout")
+		return domain.DriverPayout{}, err
 	}
+	rides := len(ids)
 	if rides == 0 || amount <= 0 {
 		return domain.DriverPayout{}, ErrNothingToPayOut
+	}
+	if (expect.AmountPaise != nil && *expect.AmountPaise != amount) || (expect.Rides != nil && *expect.Rides != rides) {
+		return domain.DriverPayout{}, fmt.Errorf("%w (now %d rides, %d paise)", ErrPayoutMismatch, rides, amount)
 	}
 
 	p := domain.DriverPayout{DriverID: driverID, AmountPaise: amount, Rides: rides, Reference: reference}
@@ -232,14 +243,50 @@ func (r *PaymentRepository) RecordPayout(ctx context.Context, driverID, referenc
 		driverID, amount, rides, reference, at).Scan(&p.ID, &p.CreatedAt); err != nil {
 		return domain.DriverPayout{}, fmt.Errorf("recording payout: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE bookings SET payout_id = $3
-		WHERE driver_id = $1 AND paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $2`,
-		driverID, asOf, p.ID); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE bookings SET payout_id = $2 WHERE id = ANY($1::uuid[])`, ids, p.ID)
+	if err != nil {
 		return domain.DriverPayout{}, fmt.Errorf("recording payout: %w", err)
+	}
+	if tag.RowsAffected() != int64(rides) {
+		return domain.DriverPayout{}, fmt.Errorf("recording payout: stamped %d rides, locked %d", tag.RowsAffected(), rides)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return domain.DriverPayout{}, fmt.Errorf("recording payout: %w", err)
 	}
 	return p, nil
+}
+
+// lockDueRides locks driverID's rides paid by asOf and not yet paid out,
+// returning their ids and the driver's total share of them. A ride settled
+// in cash is never part of a payout (the customer paid the driver); a
+// waived one is — MOJUD pays the driver's share itself.
+func lockDueRides(ctx context.Context, tx pgx.Tx, driverID string, asOf time.Time) ([]string, int64, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, paid_paise - coalesce(commission_paise, 0)
+		FROM bookings
+		WHERE driver_id = $1 AND paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $2
+		  AND paid_mode IS DISTINCT FROM 'cash'
+		FOR UPDATE`, driverID, asOf)
+	if err != nil {
+		return nil, 0, rideErr(err, ErrNothingToPayOut, "recording payout")
+	}
+	defer rows.Close()
+	var (
+		ids    []string
+		amount int64
+	)
+	for rows.Next() {
+		var (
+			id    string
+			share int64
+		)
+		if err := rows.Scan(&id, &share); err != nil {
+			return nil, 0, fmt.Errorf("recording payout: %w", err)
+		}
+		ids, amount = append(ids, id), amount+share
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, rideErr(err, ErrNothingToPayOut, "recording payout")
+	}
+	return ids, amount, nil
 }

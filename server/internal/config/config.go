@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -55,6 +57,17 @@ type Config struct {
 	// when unset.
 	CommissionBasisPoints int64
 
+	// AllowDevDefaults (ALLOW_DEV_DEFAULTS=1) lets the server boot without an
+	// SMS provider (accepting the dev OTP) and without at-rest keys (using the
+	// public dev keys). Local runs and CI set it; production must not, so a
+	// dropped env var fails the boot instead of silently opening every account.
+	AllowDevDefaults bool
+
+	// CORSAllowedOrigins (CORS_ALLOWED_ORIGINS, comma-separated) are browser
+	// origins allowed to call the API, besides localhost on any port. The
+	// mobile apps and the same-origin admin page need none.
+	CORSAllowedOrigins []string
+
 	// AdminToken guards the back-office routes (GET /users, /admin/…).
 	// Empty turns them off.
 	AdminToken string
@@ -62,6 +75,44 @@ type Config struct {
 	// Surepass checks drivers' Aadhaar (DigiLocker), licence and bank account.
 	// Without a token those checks are off and no driver can finish KYC.
 	Surepass SurepassConfig
+
+	// Apps is the client compatibility contract: per app, the oldest build
+	// the API still serves and the newest one published, and where the APKs
+	// are downloaded from (GET /app/config, and 426 below the minimum).
+	Apps AppsConfig
+
+	// KYCAutoClear (KYC_AUTO_CLEAR=true) clears a driver at submission when
+	// every check names the same person. Default false: a person reviews
+	// every submission.
+	KYCAutoClear bool
+}
+
+// supportPhoneRe is a WhatsApp-ready number: country code and number, digits only.
+var supportPhoneRe = regexp.MustCompile(`^[1-9][0-9]{9,14}$`)
+
+// DefaultAppDownloadURL is where the APKs are published.
+const DefaultAppDownloadURL = "https://apps.mojud.life"
+
+// AppsConfig holds the minimum and latest build of each app. A build is the
+// +N of the app's pubspec version.
+type AppsConfig struct {
+	// DownloadURL (APP_DOWNLOAD_URL) is the page the update screen opens.
+	DownloadURL string
+	// SupportPhone (SUPPORT_PHONE) is the ops WhatsApp number shown as
+	// "Contact support", digits with country code (e.g. 91XXXXXXXXXX). Kept
+	// out of the repo; empty hides the button.
+	SupportPhone string
+	// User is the customer app: MIN_BUILD_USER_APP, LATEST_BUILD_USER_APP.
+	User AppBuilds
+	// Driver is the driver app: MIN_BUILD_DRIVER_APP, LATEST_BUILD_DRIVER_APP.
+	Driver AppBuilds
+}
+
+// AppBuilds is one app's build range. Both default to 0; a MinBuild of 0
+// blocks nothing, so the gate only observes until a minimum is set.
+type AppBuilds struct {
+	MinBuild    int
+	LatestBuild int
 }
 
 // DefaultDigiLockerRedirectURL is the page DigiLocker ends on in production.
@@ -191,13 +242,28 @@ func Load() (Config, error) {
 		addr = ":8080"
 	}
 
+	allowDev := os.Getenv("ALLOW_DEV_DEFAULTS") == "1"
+
 	storage, err := loadStorage()
 	if err != nil {
 		return Config{}, err
 	}
-	secrets, err := loadSecrets()
+	secrets, err := loadSecrets(allowDev)
 	if err != nil {
 		return Config{}, err
+	}
+	fast2sms := Fast2SMSConfig{
+		APIKey: os.Getenv("FAST2SMS_API_KEY"),
+		OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
+	}
+	if !allowDev && !fast2sms.Enabled() {
+		return Config{}, fmt.Errorf("FAST2SMS_API_KEY and FAST2SMS_OTP_ID are required; " +
+			"without them the fixed dev OTP opens every account (set ALLOW_DEV_DEFAULTS=1 for local runs)")
+	}
+	adminToken := os.Getenv("ADMIN_TOKEN")
+	if !allowDev && adminToken != "" && len(adminToken) < MinAdminTokenLength {
+		return Config{}, fmt.Errorf("ADMIN_TOKEN must be at least %d characters "+
+			"(generate one with `openssl rand -hex 32`)", MinAdminTokenLength)
 	}
 
 	phonePe, err := loadPhonePe()
@@ -208,11 +274,23 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	apps, err := loadApps()
+	if err != nil {
+		return Config{}, err
+	}
+	kycAutoClear, err := envBool("KYC_AUTO_CLEAR")
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
+		Apps:                  apps,
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
-		AdminToken:            os.Getenv("ADMIN_TOKEN"),
+		KYCAutoClear:          kycAutoClear,
+		AllowDevDefaults:      allowDev,
+		CORSAllowedOrigins:    splitList(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		AdminToken:            adminToken,
 		Surepass: SurepassConfig{
 			Token:                 strings.TrimSpace(os.Getenv("SUREPASS_TOKEN")),
 			BaseURL:               os.Getenv("SUREPASS_BASE_URL"),
@@ -220,10 +298,7 @@ func Load() (Config, error) {
 		},
 		DatabaseURL: dsn,
 		Addr:        addr,
-		Fast2SMS: Fast2SMSConfig{
-			APIKey: os.Getenv("FAST2SMS_API_KEY"),
-			OTPID:  os.Getenv("FAST2SMS_OTP_ID"),
-		},
+		Fast2SMS:    fast2sms,
 		OlaMaps: OlaMapsConfig{
 			ClientID:     os.Getenv("OLA_MAPS_CLIENT_ID"),
 			ClientSecret: os.Getenv("OLA_MAPS_CLIENT_SECRET"),
@@ -258,6 +333,43 @@ func loadPhonePe() (PhonePeConfig, error) {
 	case "SANDBOX", "PRODUCTION":
 	default:
 		return PhonePeConfig{}, fmt.Errorf("PHONEPE_ENV must be SANDBOX or PRODUCTION, not %q", c.Environment)
+	}
+	return c, nil
+}
+
+// loadApps reads the client compatibility contract. A typo'd build number
+// fails the boot rather than silently turning the gate off.
+func loadApps() (AppsConfig, error) {
+	c := AppsConfig{
+		DownloadURL:  cmp.Or(strings.TrimSpace(os.Getenv("APP_DOWNLOAD_URL")), DefaultAppDownloadURL),
+		SupportPhone: strings.TrimPrefix(strings.TrimSpace(os.Getenv("SUPPORT_PHONE")), "+"),
+	}
+	if c.SupportPhone != "" && !supportPhoneRe.MatchString(c.SupportPhone) {
+		return AppsConfig{}, fmt.Errorf("SUPPORT_PHONE must be digits with country code, e.g. 91XXXXXXXXXX")
+	}
+	if u, err := url.Parse(c.DownloadURL); err != nil || u.Host == "" ||
+		(u.Scheme != "https" && u.Scheme != "http") {
+		return AppsConfig{}, fmt.Errorf("APP_DOWNLOAD_URL must be an http(s) URL, not %q", c.DownloadURL)
+	}
+	for _, f := range []struct {
+		env string
+		dst *int
+	}{
+		{"MIN_BUILD_USER_APP", &c.User.MinBuild},
+		{"LATEST_BUILD_USER_APP", &c.User.LatestBuild},
+		{"MIN_BUILD_DRIVER_APP", &c.Driver.MinBuild},
+		{"LATEST_BUILD_DRIVER_APP", &c.Driver.LatestBuild},
+	} {
+		v := strings.TrimSpace(os.Getenv(f.env))
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return AppsConfig{}, fmt.Errorf("%s must be a build number (the +N of the app's "+
+				"pubspec version), not %q", f.env, v)
+		}
+		*f.dst = n
 	}
 	return c, nil
 }
@@ -318,18 +430,56 @@ func loadStorage() (StorageConfig, error) {
 	}
 }
 
+// envBool reads env var name as a boolean ("true", "1", "false", …); unset
+// or blank is false.
+func envBool(name string) (bool, error) {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false, not %q", name, v)
+	}
+	return b, nil
+}
+
+// splitList parses a comma-separated env value, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// MinAdminTokenLength is the shortest ADMIN_TOKEN accepted outside dev mode.
+// The token alone guards decrypted bank numbers and KYC decisions.
+const MinAdminTokenLength = 32
+
 // loadSecrets reads the at-rest protection keys.
 //
-// Both are optional, mirroring how a missing SMS provider falls back to the
-// dev OTP: an unconfigured environment derives them from a fixed public
-// constant so local runs and CI work out of the box, and main logs a warning.
-// The constant is deliberately stable rather than random — a key regenerated
-// on every boot would silently orphan anything encrypted before the restart.
-func loadSecrets() (SecretsConfig, error) {
+// They come as a pair: setting only one is always an error, because the
+// other would silently fall back to a public constant. With neither set,
+// allowDev (ALLOW_DEV_DEFAULTS=1) derives both from a fixed public constant so
+// local runs and CI work out of the box, and main logs a warning; without it
+// the boot fails. The constant is deliberately stable rather than random — a
+// key regenerated on every boot would silently orphan anything encrypted
+// before the restart.
+func loadSecrets(allowDev bool) (SecretsConfig, error) {
 	encoded := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
 	pepper := os.Getenv("DOCUMENT_HASH_PEPPER")
 
-	if encoded == "" || pepper == "" {
+	if (encoded == "") != (pepper == "") {
+		return SecretsConfig{}, fmt.Errorf("set both DOCUMENT_ENCRYPTION_KEY and DOCUMENT_HASH_PEPPER, or neither")
+	}
+	if encoded == "" {
+		if !allowDev {
+			return SecretsConfig{}, fmt.Errorf("DOCUMENT_ENCRYPTION_KEY and DOCUMENT_HASH_PEPPER are required; " +
+				"without them bank numbers are sealed with a public key (set ALLOW_DEV_DEFAULTS=1 for local runs)")
+		}
 		return SecretsConfig{
 			EncryptionKey: devSecret("encryption-key"),
 			Pepper:        devSecret("hash-pepper"),
@@ -343,6 +493,11 @@ func loadSecrets() (SecretsConfig, error) {
 	}
 	return SecretsConfig{EncryptionKey: key, Pepper: []byte(pepper)}, nil
 }
+
+// DevEncryptionKey is the public key used when ALLOW_DEV_DEFAULTS=1 and no
+// DOCUMENT_ENCRYPTION_KEY is set. cmd/rekey uses it to move data sealed under
+// it to a real key.
+func DevEncryptionKey() []byte { return devSecret("encryption-key") }
 
 // devSecret derives a fixed, deliberately public development key from label.
 func devSecret(label string) []byte {

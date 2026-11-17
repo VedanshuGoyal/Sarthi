@@ -97,7 +97,19 @@ Without the PhonePe variables the payment routes answer 503
 | POST | `/me/bookings/{id}/payment/sync` | Re-checks the ride's open checkouts with PhonePe → `{booking}` (`paymentStatus` `due`/`paid`) |
 | POST | `/payments/phonepe/webhook` | PhonePe → us; `Authorization: SHA256(username:password)` |
 | GET | `/admin/payouts/due[?format=csv]` | Bearer `ADMIN_TOKEN`. Per driver: rides paid and not paid out, share after commission, bank details. CSV for a bank bulk upload; keep its `as_of` |
-| POST | `/admin/payouts` | Bearer `ADMIN_TOKEN`. `{driverId, reference: "<bank UTR>", asOf}` → marks those rides paid out |
+| POST | `/admin/payouts` | Bearer `ADMIN_TOKEN`. `{driverId, reference: "<bank UTR>", asOf}` → marks those rides paid out; audited; "payout sent" push (`payout_sent`) to the driver |
+| POST | `/me/bookings` | Optional `Idempotency-Key` header (the app sends a UUID per attempt). 202 new; 200 `{id, duplicate:true}` for a repeat (same key, or same trip within 10 min); 409 `payment_due` `{bookingId}` while a completed ride is unpaid |
+| GET | `/driver/payouts` | Driver session. `{payouts:[{id, amountPaise, rides, reference, createdAt}]}`, newest first, ≤ 50 |
+| GET | `/admin/bookings[?status=&date=&from=&to=]` | Bearer `ADMIN_TOKEN`. Status `requested`/`expired`/`accepted`/`arrived`/`in_progress`/`completed`/`cancelled`/`unpaid`; IST dates `YYYY-MM-DD`. ≤ 200, with customer and driver phones |
+| POST | `/admin/bookings/{id}/assign` | `{driverId}` → gives an open ride to a cleared driver (gearbox and clash checked; skips the 30-min cutoff). 409 `ride_unavailable` / `driver_not_cleared` / `transmission_mismatch` / `ride_clash` |
+| POST | `/admin/bookings/{id}/cancel` | `{reason}` (required) → cancelled by `ops`, any step before completed; customer and driver pushed |
+| POST | `/admin/bookings/{id}/settle` | `{mode: "cash"\|"waived", reason}` → a completed, unpaid ride marked paid without the gateway (`paid_paise` = commission = 0; never in a payout). 409 `booking_state` |
+| GET | `/admin/payments/attention` | `{paidTwice, stalePending}`: completed orders for an already-paid ride (refund by hand) and orders pending over 24 h |
+| GET | `/admin/actions[?target=&limit=]` | The audit trail (`admin_actions`): actor from the page's `X-Admin-Actor`, action, target, details |
+
+`KYC_AUTO_CLEAR=true` lets a driver whose Aadhaar, licence and bank all name
+the same person through at submission; unset (the launch default), every
+submission waits for a reviewer.
 
 If you already have Postgres, apply the migration manually instead of step 1:
 
@@ -114,16 +126,35 @@ migrate -path migrations -database "$DATABASE_URL" up
 | ------ | ------------------- | ------------------------------------------------- | ----- |
 | POST   | `/auth/otp`         | `{ "phoneE164": "+919876543210" }`                | Sends OTP via Fast2SMS (dev code `123456` when no provider is configured) |
 | POST   | `/auth/otp/resend`  | `{ "phoneE164": "+919876543210" }`                | Re-sends the last OTP (provider enforces window/attempt limits) |
-| POST   | `/auth/otp/verify`  | `{ "phoneE164": "...", "code": "123456" }`        | Login-or-register. 401 on wrong code. Existing number → `{registered:true, token, user}` (logged in); new number → `{registered:false}` (collect a profile, then register) |
-| POST   | `/auth/register`    | `{ "phoneE164", "name", "email", "dateOfBirth" }` | `dateOfBirth` is `YYYY-MM-DD`; 201 → `{registered:true, token, user}`, 409 if phone taken |
+| POST   | `/auth/otp/verify`  | `{ "phoneE164": "...", "code": "123456" }`        | Login-or-register. 401 on wrong code. Existing number → `{registered:true, token, user}` (logged in); new number → `{registered:false, registrationTicket}` (collect a profile, then register with the ticket) |
+| POST   | `/auth/register`    | `{ "phoneE164", "name", "email", "dateOfBirth", "registrationTicket" }` | `dateOfBirth` is `YYYY-MM-DD`; 201 → `{registered:true, token, user}`, 409 if phone taken. `registrationTicket` (from verify) is required from user_app build 9 / driver_app build 8 (`X-Build`), and once a ticket build verified the number; builds without `X-Build` keep the phone-only pass. 401 `otp_not_verified` otherwise. `/driver/auth/*` works the same |
 | GET    | `/auth/me`          | — (Bearer token)                                  | The authenticated user's account. 401 without a valid token |
 | POST   | `/auth/logout`      | — (Bearer token)                                  | Revokes the caller's session token |
 | GET    | `/maps/token`       | — (Bearer token)                                  | `{accessToken, expiresIn}` — an Ola Maps token minted server-side (cached, shared across users until ~5 min before expiry). 503 `maps_not_configured` without credentials, 502 `maps_unavailable` if Ola refuses |
 | GET    | `/users`            | — (Bearer `ADMIN_TOKEN`)                          | All accounts, newest first (back office; 404 when `ADMIN_TOKEN` is unset) |
 | GET    | `/admin/stats`      | — (Bearer `ADMIN_TOKEN`)                          | Ops dashboard counts: customers/drivers, drivers by KYC status, on duty, bookings by status (`expired` derived like `/me/bookings`), completed rides + gross fare + commission for today / 7 / 30 IST days, payouts due. Spec: `docs/features/admin-stats.md` |
 | GET    | `/healthz`          | —                                                 | Liveness |
+| GET    | `/app/config`       | —                                                 | Public. `{apps:{user_app:{minBuild, latestBuild, downloadUrl}, driver_app:{…}}}` |
 
 Authenticated endpoints expect the session token as `Authorization: Bearer <token>`.
+
+### App builds (client compatibility contract)
+
+APKs are side-loaded, so old builds stay in the field. Both apps send
+`X-App: user_app|driver_app` and `X-Build: <the +N of pubspec's version>` on
+every request (0 for a debug run).
+
+- A build below its app's minimum gets **426** `{error, code:"update_required", downloadUrl}`, and the app shows its update screen.
+- Never blocked: requests without the headers (builds from before the contract), build 0, and `/healthz`, `/readyz`, `/app/config`, `/admin*`, `/users`, the PhonePe webhook and the DigiLocker redirect.
+- The access log adds `app` and `build` to requests that send them. Requests without the headers are tallied at info level once an hour.
+
+```bash
+export MIN_BUILD_USER_APP=0        # 0 (default) = observe only
+export MIN_BUILD_DRIVER_APP=0
+export LATEST_BUILD_USER_APP=8     # newest published build, for /app/config
+export LATEST_BUILD_DRIVER_APP=7
+export APP_DOWNLOAD_URL=https://apps.mojud.life   # the default
+```
 
 ## Check all registered accounts
 

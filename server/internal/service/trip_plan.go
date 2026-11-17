@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/pkg/geo"
 )
 
 // Trip types the customer app books.
@@ -127,8 +128,128 @@ func (p tripPlan) Fare() (paise int64, estimated bool) {
 		return p.QuotedFarePaise, false
 	}
 	hours := int(math.Ceil(p.Duration().Hours()))
-	luxury := p.Car != nil && p.Car.CarType == string(domain.CarTypeLuxury)
-	return int64(hourlyTariffRupees(hours, luxury)) * 100, true
+	return int64(hourlyTariffRupees(hours, p.luxury())) * 100, true
+}
+
+// Bounds on what a customer may book, checked by [tripPlan.checkBookable].
+const (
+	// maxHireHours caps a round trip's hire. The app offers 1 to 12; the
+	// extra room is headroom for a later app, not a price risk, since the
+	// fare is still checked against the tariff.
+	maxHireHours = 24
+
+	// maxStraightLineMetresPerMinute is the fastest a car is assumed to cover
+	// the straight-line distance between two points: 100 km/h (my estimate —
+	// roads are longer than the straight line, so real trips are slower).
+	// It sets the shortest drive time a booking may claim.
+	maxStraightLineMetresPerMinute = 100_000.0 / 60
+)
+
+// Late-night surcharge, the customer app's nightSurchargeFor: from 22:00 IST,
+// a flat ₹50 plus ₹24 for each hire-hour (or part) driven after it.
+const (
+	nightFromHour     = 22
+	nightFlatRupees   = 50
+	nightHourlyRupees = 24
+)
+
+var (
+	// ErrFareMismatch is returned when a round trip's quoted fare isn't the
+	// tariff for its hours, car and start time.
+	ErrFareMismatch = errors.New("the fare doesn't match the current tariff for this trip; update the app and try again")
+
+	// ErrTripTooShort is returned when a one-way or multi-stop trip claims
+	// less time than the distance needs.
+	ErrTripTooShort = errors.New("the trip time is too short for the distance; allow more time and try again")
+)
+
+// checkBookable verifies that p prices the trip the way the server would, so
+// a customer can't set their own fare. A round trip must quote exactly the
+// tariff (base plus night surcharge) for its hours; with no quote, the
+// tariff becomes the quote. A one-way trip's drive time, and a multi-stop
+// trip's last leave-by, can't be shorter than the straight-line distance
+// needs at [maxStraightLineMetresPerMinute].
+//
+// Only new bookings are checked: stored ones are read with parseTripPlan as
+// they were accepted.
+func (p *tripPlan) checkBookable(tripType string) error {
+	switch tripType {
+	case TripRoundTrip:
+		if p.Hours < 1 || p.Hours > maxHireHours {
+			return fmt.Errorf("%w: hire a driver for 1 to %d hours", ErrInvalidBooking, maxHireHours)
+		}
+		want := int64(roundTripFareRupees(p.ScheduledAt, p.Hours, p.luxury())) * 100
+		if p.QuotedFarePaise != 0 && p.QuotedFarePaise != want {
+			return ErrFareMismatch
+		}
+		p.QuotedFarePaise = want
+	case TripOneWay:
+		d := p.Destination
+		metres := geo.HaversineMeters(p.Pickup.Lat, p.Pickup.Lng, d.Lat, d.Lng)
+		if p.EstimatedMinutes < 0 || float64(p.EstimatedMinutes) < metres/maxStraightLineMetresPerMinute {
+			return ErrTripTooShort
+		}
+	case TripMultiStop:
+		from, prev, metres := p.Pickup, p.ScheduledAt, 0.0
+		for _, s := range p.Stops {
+			if s.DepartBy == nil {
+				return fmt.Errorf("%w: every stop needs a leave-by time", ErrInvalidBooking)
+			}
+			if !s.DepartBy.After(prev) {
+				return fmt.Errorf("%w: each leave-by time must come after the one before", ErrInvalidBooking)
+			}
+			metres += geo.HaversineMeters(from.Lat, from.Lng, s.Place.Lat, s.Place.Lng)
+			from, prev = s.Place, *s.DepartBy
+		}
+		if prev.Sub(p.ScheduledAt).Minutes() < metres/maxStraightLineMetresPerMinute {
+			return ErrTripTooShort
+		}
+	}
+	return nil
+}
+
+// luxury reports whether the trip is priced on the luxury tariff.
+func (p tripPlan) luxury() bool {
+	return p.Car != nil && p.Car.CarType == string(domain.CarTypeLuxury)
+}
+
+// roundTripFareRupees is the fare the customer app quotes for a round trip:
+// the hourly tariff plus the late-night surcharge.
+func roundTripFareRupees(start time.Time, hours int, luxury bool) int {
+	return hourlyTariffRupees(hours, luxury) + nightSurchargeRupees(start, hours)
+}
+
+// chargeForTimeUsed is what a trip the customer ended early costs: the
+// hourly tariff, with the night surcharge, for the time from started to
+// ended — each started hour counting as a whole one, at least one — and
+// never more than booked, the fare as booked. One-way and multi-stop trips
+// are charged the same way: their fares are hourly estimates too.
+func chargeForTimeUsed(p tripPlan, booked int64, started, ended time.Time) int64 {
+	minutes := max(int(ended.Sub(started)/time.Minute), 0)
+	hours := min(max((minutes+59)/60, 1), maxHireHours)
+	return min(int64(roundTripFareRupees(started, hours, p.luxury()))*100, booked)
+}
+
+// nightSurchargeRupees is the customer app's nightSurchargeFor: nothing
+// unless some of the hire runs at or after 22:00 IST on the start's day;
+// then a flat fee plus a rate per night hour, a part hour counting as whole.
+// A ride that starts after 22:00 is night for its whole length.
+func nightSurchargeRupees(start time.Time, hours int) int {
+	s := start.In(ist)
+	finish := s.Add(time.Duration(hours) * time.Hour)
+	nightStart := time.Date(s.Year(), s.Month(), s.Day(), nightFromHour, 0, 0, 0, ist)
+	if s.After(nightStart) {
+		nightStart = s
+	}
+	if !finish.After(nightStart) {
+		return 0
+	}
+	minutes := int(finish.Sub(nightStart) / time.Minute)
+	nightHours := (minutes + 59) / 60
+	if nightHours == 0 {
+		return 0
+	}
+	return nightFlatRupees + nightHourlyRupees*nightHours
 }
 
 // hourlyTariffRupees is the customer app's RoundTripTariff.fareFor: flat

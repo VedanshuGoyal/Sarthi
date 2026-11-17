@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -26,8 +27,13 @@ func NewRouter(
 	payments *service.PaymentService,
 	payouts *service.PayoutService,
 	stats *service.StatsService,
+	ops *service.OpsService,
 	webhook WebhookVerifier,
 	adminToken string,
+	corsOrigins []string,
+	ready func(context.Context) error,
+	erasure AccountEraser,
+	apps AppPolicy,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -39,12 +45,30 @@ func NewRouter(
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
 	pay := NewPaymentHandler(payments, bookings, webhook)
-	adm := NewAdminHandler(payouts, driverKYC, notify, stats)
+	adm := NewAdminHandler(payouts, driverKYC, notify, stats, ops)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	// Readiness: the process is up AND can reach a migrated Postgres. redeploy.sh and
+	// the watchdog gate on this; /healthz stays a plain liveness probe.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if ready != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := ready(ctx); err != nil {
+				slog.Error("readyz: not ready", "error", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	})
+
+	// The client compatibility contract (app_version.go): each app reads its
+	// minimum and latest build, and where to download it, at startup.
+	mux.HandleFunc("GET /app/config", appConfig(apps))
 
 	// Public onboarding endpoints.
 	mux.HandleFunc("POST /auth/otp", h.RequestOTP)
@@ -71,10 +95,12 @@ func NewRouter(
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 	mux.HandleFunc("GET /me/bookings", requireAuth(sessions, bk.List))
 
-	// Before the trip starts the customer can cancel it; once it's done they
-	// rate the driver; while the driver is on the way (or driving) they can
-	// see where the driver is.
+	// Before the trip starts the customer can cancel it (free until the
+	// driver reaches the pickup); during it they can end it early and pay
+	// for the time used; once it's done they rate the driver; while the
+	// driver is on the way (or driving) they can see where the driver is.
 	mux.HandleFunc("POST /me/bookings/{id}/cancel", requireAuth(sessions, bk.Cancel))
+	mux.HandleFunc("POST /me/bookings/{id}/end", requireAuth(sessions, bk.End))
 	mux.HandleFunc("POST /me/bookings/{id}/rating", requireAuth(sessions, bk.Rate))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-location", requireAuth(sessions, bk.DriverLocation))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-photo", requireAuth(sessions, bk.DriverPhoto))
@@ -105,6 +131,19 @@ func NewRouter(
 	// The back-office web page. Public HTML: every call it makes needs the
 	// admin token, which the person using it pastes in.
 	mux.HandleFunc("GET /admin", AdminPage)
+
+	// money+ops: the back office's booking tools (list, assign, cancel,
+	// settle a ride paid outside the app), the payments to-do list and the
+	// audit trail, behind ADMIN_TOKEN; and each driver's payout statement,
+	// scoped to their session.
+	money := NewDriverMoneyHandler(payouts)
+	mux.HandleFunc("GET /admin/bookings", requireAdmin(adminToken, adm.AdminBookings))
+	mux.HandleFunc("POST /admin/bookings/{id}/assign", requireAdmin(adminToken, adm.AssignBooking))
+	mux.HandleFunc("POST /admin/bookings/{id}/cancel", requireAdmin(adminToken, adm.CancelBooking))
+	mux.HandleFunc("POST /admin/bookings/{id}/settle", requireAdmin(adminToken, adm.SettleBooking))
+	mux.HandleFunc("GET /admin/payments/attention", requireAdmin(adminToken, adm.PaymentAttention))
+	mux.HandleFunc("GET /admin/actions", requireAdmin(adminToken, adm.AdminActions))
+	mux.HandleFunc("GET /driver/payouts", requireAuth(driverSessions, money.Payouts))
 
 	// Driver app: the same phone/OTP registration flow as the customer app,
 	// but a separate account type/session (see DriverAuthHandler).
@@ -149,41 +188,25 @@ func NewRouter(
 	mux.HandleFunc("PUT /driver/push-token", requireAuth(driverSessions, pt.SaveDriver))
 	mux.HandleFunc("DELETE /driver/push-token", requireAuth(driverSessions, pt.ForgetDriver))
 
-	return withCORS(logRequests(mux))
-}
+	// privacy: account deletion (DPDP erasure; the Play Store wants it in
+	// the app). Each app deletes its own account, the back office any
+	// account. Accounts are anonymised; rides and payments are kept.
+	pv := NewPrivacyHandler(erasure, adm.audit)
+	mux.HandleFunc("DELETE /me/account", requireAuth(sessions, pv.DeleteCustomer))
+	mux.HandleFunc("DELETE /driver/account", requireAuth(driverSessions, pv.DeleteDriver))
+	mux.HandleFunc("POST /admin/accounts/{kind}/{id}/erase", requireAdmin(adminToken, pv.AdminErase))
 
-// withCORS makes the API reachable from the Flutter web app, which runs on a
-// different origin (localhost:<random>) and so triggers browser CORS checks.
-// It reflects the request Origin and answers the preflight OPTIONS request
-// directly — the method-aware mux registers no OPTIONS routes, so OPTIONS would
-// otherwise 405. Permissive by design for local dev; restrict the allowed
-// origins before deploying.
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Max-Age", "600")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// logRequests is a tiny access-log middleware.
-func logRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		slog.Info("request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"duration", time.Since(start).String(),
-		)
-	})
+	// Outermost first: CORS answers preflights, every request is logged with
+	// its status, app builds below the minimum are told to update, admin
+	// callers are audited and throttled, public login routes are
+	// rate-limited, and bodies are size-capped before any handler reads.
+	var handler http.Handler = mux
+	handler = withDeadline(handler)
+	handler = limitBodies(handler, isUpload)
+	handler = rateLimit(handler, authRateLimits())
+	handler = guardAdmin(handler, newWindowLimiter(10, 15*time.Minute))
+	handler = requireMinBuild(handler, apps)
+	handler = logRequests(handler)
+	handler = securityHeaders(handler)
+	return withCORS(handler, corsOrigins)
 }

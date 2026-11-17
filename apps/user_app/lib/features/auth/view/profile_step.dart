@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../auth_providers.dart';
+import '../view_model/registration_view_model.dart';
+import 'consent_checkbox.dart';
 
 /// Step 3 — collect the customer's name, email, and date of birth to create
 /// the account.
@@ -71,11 +73,15 @@ class _ProfileStepState extends ConsumerState<ProfileStep> {
         error != null && (error.contains('birth') || error.contains('old'))
         ? vm.errorText
         : null;
+    final consentError = vm.errorText == RegistrationViewModel.consentRequired
+        ? vm.errorText
+        : null;
     final generalError =
         vm.errorText != null &&
             nameError == null &&
             emailError == null &&
-            dobError == null
+            dobError == null &&
+            consentError == null
         ? vm.errorText
         : null;
 
@@ -115,6 +121,12 @@ class _ProfileStepState extends ConsumerState<ProfileStep> {
           errorText: dobError,
           prefixIcon: const Icon(Icons.cake_outlined),
           suffixIcon: const Icon(Icons.calendar_today_outlined),
+        ),
+        const SizedBox(height: 12),
+        ConsentCheckbox(
+          value: vm.consented,
+          onChanged: vm.isLoading ? null : vm.onConsentChanged,
+          errorText: consentError,
         ),
         if (generalError != null) ...[
           const SizedBox(height: 16),

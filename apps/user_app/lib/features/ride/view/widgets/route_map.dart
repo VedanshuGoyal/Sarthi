@@ -63,8 +63,6 @@ class _RouteMapState extends State<RouteMap> {
   String? _mapStyle;
   bool _styleRequested = false;
 
-  static const _originAsset = 'assets/markers/pin_origin.png';
-  static const _destinationAsset = 'assets/markers/pin_destination.png';
   static const _mapStyleAsset = 'assets/map_styles/soft_map_style.json';
 
   static LatLng _toLatLng(GeoPoint p) => LatLng(p.latitude, p.longitude);
@@ -91,10 +89,9 @@ class _RouteMapState extends State<RouteMap> {
           .loadString(_mapStyleAsset)
           .then((style) {
             if (mounted) {
-              setState(() {
-                _mapStyle = style;
-                _map?.setMapStyle(_mapStyle);
-              });
+              // Handed to `GoogleMap.style` on rebuild; the plugin applies it
+              // to the live map, so no controller call is needed.
+              setState(() => _mapStyle = style);
             }
           })
           .catchError((e) {
@@ -136,7 +133,7 @@ class _RouteMapState extends State<RouteMap> {
       ..style = PaintingStyle.stroke;
 
     final Paint shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.4)
+      ..color = Colors.black.withValues(alpha: 0.4)
       ..style = PaintingStyle.fill;
 
     final Paint ringPaint = Paint()
@@ -212,13 +209,6 @@ class _RouteMapState extends State<RouteMap> {
     _map?.dispose();
     super.dispose();
   }
-
-  /// True once a cloud Map ID is configured, so the map can render Google's
-  /// [AdvancedMarker]s — which the Maps SDK (Android, iOS, and web) only draws
-  /// on a Map-ID'd map. Without one we fall back to legacy [Marker]s, which
-  /// still render everywhere. Both the map's [GoogleMapMarkerType] and every
-  /// marker's class must agree with this flag (the plugin asserts it).
-  bool get _advancedMarkers => GoogleMapsConfig.advancedMarkersEnabled;
 
   Set<Marker> get _markers => {
     _pin(
@@ -347,6 +337,7 @@ class _RouteMapState extends State<RouteMap> {
             // Force legacy markers so the SDK accepts our local JSON styling
             markerType: GoogleMapMarkerType.marker,
             mapId: null,
+            style: _mapStyle,
             polylines: _lines(tokens.accent),
             // A static overview: no gestures, so the parent list scrolls
             // freely and the frame the camera picks is what the user sees.
@@ -359,9 +350,6 @@ class _RouteMapState extends State<RouteMap> {
             myLocationButtonEnabled: false,
             onMapCreated: (map) {
               _map = map;
-              if (_mapStyle != null) {
-                map.setMapStyle(_mapStyle);
-              }
               _frameRoute(map);
             },
           );

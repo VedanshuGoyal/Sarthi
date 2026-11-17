@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:checks/checks.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:user_app/features/auth/data/auth_repository.dart';
 import 'package:user_app/features/auth/view_model/registration_view_model.dart';
 
@@ -30,6 +34,7 @@ void main() {
       check(vm.step).equals(RegistrationStep.profile);
 
       vm.onDateOfBirthChanged(DateTime(2000, 1, 1));
+      vm.onConsentChanged(true);
       await vm.submitProfile(name: 'Asha Sharma', email: 'asha@example.com');
       check(vm.step).equals(RegistrationStep.done);
       check(vm.user).isNotNull();
@@ -63,6 +68,7 @@ void main() {
       check(vm.step).equals(RegistrationStep.profile);
 
       vm.onDateOfBirthChanged(DateTime(2000, 1, 1));
+      vm.onConsentChanged(true);
       await vm.submitProfile(name: 'Asha Sharma', email: 'asha@example.com');
       check(vm.step).equals(RegistrationStep.done);
       check(vm.token).equals('tok-new');
@@ -234,6 +240,59 @@ void main() {
         ).equals(RegistrationViewModel.maxOtpAttempts);
 
         vm.dispose();
+      },
+    );
+
+    test('a second verify while one is in flight is ignored', () async {
+      // The keyboard's "done" key stays live under the disabled button.
+      final gate = Completer<void>();
+      var verifies = 0;
+      final backend = fakeBackendClient(registeredPhones: {'+919876543210'});
+      final vm = RegistrationViewModel(
+        repository: AuthRepository(
+          client: MockClient((request) async {
+            if (request.url.path == '/auth/otp/verify') {
+              verifies++;
+              await gate.future;
+            }
+            final copy = http.Request(request.method, request.url)
+              ..headers.addAll(request.headers)
+              ..body = request.body;
+            return http.Response.fromStream(await backend.send(copy));
+          }),
+        ),
+      );
+      vm.onPhoneChanged('9876543210');
+      await vm.submitPhone();
+
+      final first = vm.submitOtp(AuthRepository.devOtp);
+      final second = vm.submitOtp(AuthRepository.devOtp);
+      gate.complete();
+      await Future.wait([first, second]);
+
+      check(verifies).equals(1);
+      check(vm.step).equals(RegistrationStep.done);
+      check(vm.errorText).isNull();
+      vm.dispose();
+    });
+
+    test(
+      'signing in disposes the flow mid-request without a notify after',
+      () async {
+        // Signing in swaps the registration screen out, which disposes this
+        // autoDispose view model before the request's own tail runs.
+        late final RegistrationViewModel vm;
+        vm = RegistrationViewModel(
+          repository: AuthRepository(
+            client: fakeBackendClient(registeredPhones: {'+919876543210'}),
+          ),
+          onSignedIn: (_) async => vm.dispose(),
+        );
+        vm.onPhoneChanged('9876543210');
+        await vm.submitPhone();
+
+        await vm.submitOtp(AuthRepository.devOtp);
+        check(vm.step).equals(RegistrationStep.done);
       },
     );
   });

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
+	"github.com/sarthi/server/internal/repository"
+	"github.com/sarthi/server/internal/secret"
 )
 
 // IdentityVerifier checks a driver's documents at source (kyc/surepass).
@@ -23,6 +25,12 @@ type IdentityVerifier interface {
 // MaxChecksPerDay caps each kind of check per driver per rolling day. Every
 // check is a paid call to the provider.
 const MaxChecksPerDay = 5
+
+// MaxPaidChecksPerDay caps paid checks across all drivers per rolling day,
+// so a burst of new accounts can't drain the provider balance and stop real
+// onboarding. My estimate: about 60 drivers finishing onboarding a day at
+// three checks each plus retries; raise it once real sign-ups need more.
+const MaxPaidChecksPerDay = 200
 
 var (
 	// ErrVerificationUnavailable: the provider isn't configured or couldn't
@@ -44,6 +52,8 @@ var (
 	ErrLicenseRejected = errors.New("this licence can't be used")
 	// ErrBankAccountInvalid: the penny drop found no such account.
 	ErrBankAccountInvalid = errors.New("we couldn't verify this account, check the account number and IFSC")
+	// ErrAadhaarFirst: licence and bank checks come after DigiLocker.
+	ErrAadhaarFirst = fmt.Errorf("%w: verify your Aadhaar with DigiLocker first", ErrInvalidProfile)
 	// ErrIdentityLocked: name, date of birth and gender come from the Aadhaar.
 	ErrIdentityLocked = errors.New("your name, date of birth and gender come from your Aadhaar and can't be changed")
 )
@@ -55,6 +65,7 @@ func (s *DriverKYCService) StartDigiLocker(ctx context.Context, driverID string)
 	if s.verifier == nil {
 		return domain.DigiLockerSession{}, ErrVerificationUnavailable
 	}
+	defer s.lockChecks(driverID, domain.CheckDigiLocker)()
 	profile, err := s.store.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DigiLockerSession{}, err
@@ -133,11 +144,30 @@ func (s *DriverKYCService) CompleteDigiLocker(ctx context.Context, driverID stri
 		return domain.DriverKYC{}, fmt.Errorf("%w: driver must be at least %d years old", ErrInvalidProfile, MinDriverAge)
 	}
 
-	if err := s.store.SaveAadhaarVerification(ctx, driverID, rec); err != nil {
+	// One Aadhaar, one driver — by what DigiLocker verified, not the digits
+	// typed, of which DigiLocker only confirms the last four.
+	err = s.store.SaveAadhaarVerification(ctx, driverID, rec, aadhaarIdentity(s.pepper, rec))
+	if errors.Is(err, repository.ErrAadhaarTaken) {
+		s.recordCheck(ctx, driverID, domain.CheckDigiLocker, clientID, domain.CheckRejected,
+			"this Aadhaar is already verified for another driver")
+		slog.WarnContext(ctx, "kyc: aadhaar identity already registered", "driverID", driverID)
+		s.endDigiLocker(ctx, driverID)
+		return domain.DriverKYC{}, err
+	}
+	if err != nil {
 		return domain.DriverKYC{}, err
 	}
 	s.recordCheck(ctx, driverID, domain.CheckDigiLocker, clientID, domain.CheckVerified, "")
 	return s.Load(ctx, driverID)
+}
+
+// aadhaarIdentity fingerprints what DigiLocker verified — the Aadhaar's name
+// (upper-cased, spaces collapsed), date of birth and last 4 digits — so the
+// same person can't verify a second account behind different typed digits.
+func aadhaarIdentity(pepper []byte, rec domain.AadhaarRecord) string {
+	name := strings.Join(strings.Fields(strings.ToUpper(rec.Name)), " ")
+	return secret.Fingerprint(pepper,
+		"aadhaar-identity:"+name+"|"+rec.DateOfBirth.Format(time.DateOnly)+"|"+rec.Last4)
 }
 
 // endDigiLocker forgets a session that has been read, so a retry starts a
@@ -158,9 +188,15 @@ func (s *DriverKYCService) VerifyDrivingLicense(ctx context.Context, driverID, n
 	if s.verifier == nil {
 		return domain.DriverKYC{}, ErrVerificationUnavailable
 	}
+	defer s.lockChecks(driverID, domain.CheckDrivingLicense)()
 	profile, err := s.store.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverKYC{}, err
+	}
+	// The licence is looked up with the Aadhaar's date of birth, and a paid
+	// lookup isn't offered to an account that hasn't proved who it is.
+	if profile.AadhaarVerifiedAt == nil {
+		return domain.DriverKYC{}, ErrAadhaarFirst
 	}
 	if profile.DateOfBirth == nil {
 		return domain.DriverKYC{}, fmt.Errorf("%w: add your date of birth first", ErrInvalidProfile)
@@ -235,6 +271,13 @@ func (s *DriverKYCService) verifyBankAccount(ctx context.Context, driverID, numb
 	if s.verifier == nil {
 		return domain.BankAccountRecord{}, ErrVerificationUnavailable
 	}
+	profile, err := s.store.FindProfile(ctx, driverID)
+	if err != nil {
+		return domain.BankAccountRecord{}, err
+	}
+	if profile.AadhaarVerifiedAt == nil {
+		return domain.BankAccountRecord{}, ErrAadhaarFirst
+	}
 	if err := s.checkAllowance(ctx, driverID, domain.CheckBankAccount); err != nil {
 		return domain.BankAccountRecord{}, err
 	}
@@ -253,14 +296,34 @@ func (s *DriverKYCService) verifyBankAccount(ctx context.Context, driverID, numb
 	return rec, nil
 }
 
-// checkAllowance refuses a check once the driver has used today's attempts.
+// lockChecks makes driverID's checks of kind run one at a time, from the
+// allowance count through the provider call to recording it, so parallel
+// requests can't all pass the count before any is recorded. It returns the
+// unlock.
+func (s *DriverKYCService) lockChecks(driverID string, kind domain.KYCCheckKind) (unlock func()) {
+	return s.checkLocks.lock(driverID + "/" + string(kind))
+}
+
+// checkAllowance refuses a check once the driver has used today's attempts,
+// or every driver together has used today's budget. Call it under
+// lockChecks.
 func (s *DriverKYCService) checkAllowance(ctx context.Context, driverID string, kind domain.KYCCheckKind) error {
-	n, err := s.store.CountChecks(ctx, driverID, kind, s.now().Add(-24*time.Hour))
+	since := s.now().Add(-24 * time.Hour)
+	n, err := s.store.CountChecks(ctx, driverID, kind, since)
 	if err != nil {
 		return err
 	}
 	if n >= MaxChecksPerDay {
 		return ErrTooManyChecks
+	}
+	total, err := s.store.CountAllChecks(ctx, since)
+	if err != nil {
+		return err
+	}
+	if total >= MaxPaidChecksPerDay {
+		slog.ErrorContext(ctx, "kyc: today's budget of paid checks is used up",
+			"limit", MaxPaidChecksPerDay, "driverID", driverID, "kind", kind)
+		return ErrVerificationUnavailable
 	}
 	return nil
 }
@@ -280,7 +343,10 @@ func (s *DriverKYCService) recordCheck(
 func reviewIssues(kyc domain.DriverKYC) []string {
 	var issues []string
 	p := kyc.Profile
-	if p.LicenseName != "" && !namesMatch(p.FullName, p.LicenseName) {
+	switch {
+	case p.LicenseName == "":
+		issues = append(issues, "licence holder's name not on record")
+	case !namesMatch(p.FullName, p.LicenseName):
 		issues = append(issues, fmt.Sprintf("licence name %q differs from Aadhaar name %q", p.LicenseName, p.FullName))
 	}
 	if p.LicenseValidUntil == nil {
@@ -288,6 +354,15 @@ func reviewIssues(kyc domain.DriverKYC) []string {
 	}
 	if len(p.LicenseClasses) == 0 {
 		issues = append(issues, "licence vehicle classes not on record")
+	}
+	// The face customers will see: once a driver has been cleared, a new
+	// photo is for a person to compare, not for the checks to wave through.
+	if p.ClearedSelfieSHA256 != "" {
+		for _, d := range kyc.Documents {
+			if d.Kind == domain.DocumentSelfie && d.SHA256 != p.ClearedSelfieSHA256 {
+				issues = append(issues, "photo changed since the driver was last cleared; check it's the same person")
+			}
+		}
 	}
 	if b := kyc.BankAccount; b != nil {
 		switch {
@@ -306,8 +381,11 @@ func (s *DriverKYCService) ListKYCReviews(ctx context.Context, status domain.KYC
 }
 
 // DecideKYC records a reviewer's decision. A rejection needs a note — it is
-// what the driver is shown.
-func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string) error {
+// what the driver is shown — and holds the driver for a person until a
+// reviewer verifies them. expected is the status the reviewer saw; when set
+// and the driver has moved on, nothing changes and the error is
+// [repository.ErrKYCChanged].
+func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, status domain.KYCStatus, note string, expected domain.KYCStatus) error {
 	note = strings.TrimSpace(note)
 	switch status {
 	case domain.KYCVerified:
@@ -318,5 +396,20 @@ func (s *DriverKYCService) DecideKYC(ctx context.Context, driverID string, statu
 	default:
 		return fmt.Errorf("%w: status must be verified or rejected", ErrInvalidProfile)
 	}
-	return s.store.DecideKYC(ctx, driverID, status, note)
+	if err := s.store.ReviewKYC(ctx, driverID, status, note, expected); err != nil {
+		return err
+	}
+	// Off the road now: the rides they hold go back to other drivers rather
+	// than wait on someone who can't take them. The decision stands either
+	// way, so a failure here is only logged.
+	if status == domain.KYCRejected && s.rides != nil {
+		n, err := s.rides.ReleaseHeldRides(ctx, driverID)
+		if err != nil {
+			slog.ErrorContext(ctx, "kyc: releasing a rejected driver's rides", "driverID", driverID, "error", err)
+		}
+		if n > 0 {
+			slog.InfoContext(ctx, "kyc: released a rejected driver's rides", "driverID", driverID, "rides", n)
+		}
+	}
+	return nil
 }

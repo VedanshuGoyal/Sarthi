@@ -27,6 +27,7 @@ final pushRegistrationProvider = Provider<PushRegistration>((ref) {
   return PushRegistration(
     push: ref.watch(pushServiceProvider),
     repository: PushTokenRepository(
+      client: ref.watch(backendClientProvider),
       tokenGetter: () =>
           ref.read(driverAuthControllerProvider).valueOrNull?.token,
     ),

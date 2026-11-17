@@ -1,8 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:checks/checks.dart';
+import 'package:driver_app/features/auth/data/driver_session_storage.dart';
+import 'package:driver_app/features/auth/domain/driver.dart';
+import 'package:driver_app/features/auth/domain/driver_auth_session.dart';
+import 'package:driver_app/features/auth/driver_auth_controller.dart';
 import 'package:driver_app/features/documents/data/document_file_store.dart';
 import 'package:driver_app/features/documents/data/driver_kyc_repository.dart';
+import 'package:driver_app/features/documents/document_providers.dart';
 import 'package:driver_app/features/documents/domain/digilocker_session.dart';
 import 'package:driver_app/features/documents/domain/document_kind.dart';
 import 'package:driver_app/features/documents/domain/document_step.dart';
@@ -10,6 +16,7 @@ import 'package:driver_app/features/documents/domain/driver_kyc.dart';
 import 'package:driver_app/features/documents/domain/gender.dart';
 import 'package:driver_app/features/documents/domain/vehicle_type.dart';
 import 'package:driver_app/features/documents/view_model/document_registration_view_model.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -18,10 +25,12 @@ void main() {
   setUp(() => tempDir = Directory.systemTemp.createTempSync('kyc_test'));
   tearDown(() => tempDir.deleteSync(recursive: true));
 
+  /// The bytes of every test photo.
+  const photo = [0xff, 0xd8, 0xff, 0xe0];
+
   /// A capture standing in for what `image_picker` hands back.
   String writePickedPhoto([String name = 'picked.jpg']) {
-    final file = File('${tempDir.path}/$name')
-      ..writeAsBytesSync([0xff, 0xd8, 0xff, 0xe0]);
+    final file = File('${tempDir.path}/$name')..writeAsBytesSync(photo);
     return file.path;
   }
 
@@ -128,25 +137,29 @@ void main() {
   });
 
   group('capturePhoto', () {
-    test('copies the capture somewhere durable and uploads it', () async {
-      final repository = _FakeKycRepository(
-        kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
-      );
-      final vm = viewModel(repository);
-      final picked = writePickedPhoto();
+    test(
+      'uploads a durable copy, then deletes it once the backend has it',
+      () async {
+        final repository = _FakeKycRepository(
+          kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
+        );
+        final vm = viewModel(repository);
+        final picked = writePickedPhoto();
 
-      await vm.capturePhoto(DocumentKind.selfie, picked);
+        await vm.capturePhoto(DocumentKind.selfie, picked);
 
-      check(repository.uploaded).unorderedEquals([DocumentKind.selfie]);
-      check(
-        vm.data.uploadStateFor(DocumentKind.selfie),
-      ).equals(DocumentUploadState.uploaded);
-
-      // The stored path must not be the picker's, which the OS can reclaim.
-      final stored = vm.data.capturePathFor(DocumentKind.selfie);
-      check(stored).isNotNull().not((it) => it.equals(picked));
-      check(File(stored!).existsSync()).isTrue();
-    });
+        check(repository.uploaded).unorderedEquals([DocumentKind.selfie]);
+        check(
+          vm.data.uploadStateFor(DocumentKind.selfie),
+        ).equals(DocumentUploadState.uploaded);
+        // Sent from the durable copy, not the picker's, which the OS can
+        // reclaim; and that copy is gone once the backend has the image.
+        final sent = repository.uploadedPaths.single;
+        check(sent).not((it) => it.equals(picked));
+        check(File(sent).existsSync()).isFalse();
+        check(vm.data.capturePathFor(DocumentKind.selfie)).isNull();
+      },
+    );
 
     test('marks the upload failed and keeps the file for a retry', () async {
       final repository = _FakeKycRepository(
@@ -184,11 +197,35 @@ void main() {
       ).unorderedEquals([DocumentKind.aadhaar, DocumentKind.aadhaar]);
     });
 
+    // F14: the retry used to copy the stored capture onto itself, which
+    // truncates it, so every retry sent an empty file.
+    test('a retry sends the photo itself, not an emptied copy', () async {
+      final repository = _FakeKycRepository(
+        failWith: const KycException('upload failed'),
+      );
+      final vm = viewModel(repository);
+      await vm.capturePhoto(DocumentKind.aadhaar, writePickedPhoto());
+      final stored = vm.data.capturePathFor(DocumentKind.aadhaar)!;
+
+      repository.failWith = const KycException('upload failed again');
+      await vm.retryUpload(DocumentKind.aadhaar);
+      check(File(stored).readAsBytesSync()).deepEquals(photo);
+
+      repository.failWith = null;
+      await vm.retryUpload(DocumentKind.aadhaar);
+
+      check(repository.uploadedBytes).deepEquals([photo, photo, photo]);
+      check(
+        vm.data.uploadStateFor(DocumentKind.aadhaar),
+      ).equals(DocumentUploadState.uploaded);
+    });
+
     test(
       'a retake replaces the previous capture rather than piling up',
       () async {
+        // Failing uploads, so the captures stay on the phone.
         final repository = _FakeKycRepository(
-          kyc: const DriverKyc(uploadedKinds: {DocumentKind.aadhaar}),
+          failWith: const KycException('upload failed'),
         );
         final vm = viewModel(repository);
 
@@ -209,6 +246,161 @@ void main() {
         check(captures).length.equals(1);
       },
     );
+  });
+
+  group('a selfie taken while Android killed the app', () {
+    test('is uploaded on the next load, once', () async {
+      final repository = _FakeKycRepository();
+      final lost = writePickedPhoto('lost.jpg');
+      var asked = 0;
+      final vm = DocumentRegistrationViewModel(
+        repository: repository,
+        files: DocumentFileStore(directory: tempDir),
+        lostCaptures: () async {
+          asked++;
+          return lost;
+        },
+      );
+
+      await vm.load();
+      await pumpEventQueue();
+      await vm.load();
+      await pumpEventQueue();
+
+      check(asked).equals(1);
+      check(repository.uploaded).deepEquals([DocumentKind.selfie]);
+      check(repository.uploadedBytes.single).deepEquals(photo);
+    });
+
+    test('nothing lost, nothing sent', () async {
+      final repository = _FakeKycRepository();
+      final vm = DocumentRegistrationViewModel(
+        repository: repository,
+        files: DocumentFileStore(directory: tempDir),
+        lostCaptures: () async => null,
+      );
+
+      await vm.load();
+      await pumpEventQueue();
+
+      check(repository.uploaded).isEmpty();
+    });
+  });
+
+  group('DocumentFileStore', () {
+    test('persisting the stored capture again leaves it intact', () async {
+      final store = DocumentFileStore(directory: tempDir);
+      final stored = await store.persist(
+        DocumentKind.selfie,
+        writePickedPhoto(),
+      );
+
+      final again = await store.persist(DocumentKind.selfie, stored);
+
+      check(again).equals(stored);
+      check(
+        File(stored).readAsBytesSync(),
+      ).deepEquals([0xff, 0xd8, 0xff, 0xe0]);
+    });
+  });
+
+  group('per driver', () {
+    DriverAuthSession session(String id) => DriverAuthSession(
+      token: 'tok-$id',
+      driver: Driver(id: id, phoneE164: '+919800000001', name: 'Driver $id'),
+    );
+
+    test('the next driver on this phone starts unverified', () async {
+      final repository = _FakeKycRepository(
+        kyc: const DriverKyc(status: KycStatus.verified, fullName: 'Asha'),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          driverSessionStorageProvider.overrideWithValue(
+            _MemorySessionStorage(session('d1')),
+          ),
+          driverKycRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(driverAuthControllerProvider.future);
+
+      final first = container.read(documentRegistrationViewModelProvider);
+      await first.setVehicleType(VehicleType.both);
+      check(first.isVerified).isTrue();
+
+      final auth = container.read(driverAuthControllerProvider.notifier);
+      await auth.signOut();
+      await auth.signIn(session('d2'));
+
+      final second = container.read(documentRegistrationViewModelProvider);
+      check(identical(first, second)).isFalse();
+      check(second.isVerified).isFalse();
+      check(second.kyc.fullName).isEmpty();
+    });
+
+    test('a request settling after a sign-out notifies no one', () async {
+      final repository = _GatedKycRepository(kyc: _completeKyc);
+      final vm = viewModel(repository);
+
+      final verifying = vm.verifyDrivingLicense('MP0920190012345');
+      // Signing out replaces the view model while the check is in flight.
+      vm.dispose();
+      repository.gate.complete();
+
+      check(await verifying).isTrue();
+    });
+  });
+
+  group('double submits', () {
+    test('a retake while the photo is still uploading is ignored', () async {
+      final repository = _FakeKycRepository(
+        kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
+      );
+      final vm = viewModel(repository);
+
+      await Future.wait([
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('first.jpg')),
+        vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('second.jpg')),
+      ]);
+
+      check(repository.uploaded).deepEquals([DocumentKind.selfie]);
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.uploaded);
+
+      // Once it has landed, a retake goes through again.
+      await vm.capturePhoto(DocumentKind.selfie, writePickedPhoto('third.jpg'));
+      check(repository.uploaded).length.equals(2);
+    });
+
+    test('a capture that cannot be stored fails instead of hanging', () async {
+      final repository = _FakeKycRepository();
+      final vm = viewModel(repository);
+
+      await vm.capturePhoto(DocumentKind.selfie, '${tempDir.path}/gone.jpg');
+
+      check(
+        vm.data.uploadStateFor(DocumentKind.selfie),
+      ).equals(DocumentUploadState.failed);
+      check(vm.error).isNotNull();
+      check(repository.uploaded).isEmpty();
+    });
+
+    test('a second check while one is in flight is not sent', () async {
+      final repository = _FakeKycRepository(kyc: _completeKyc);
+      final vm = viewModel(repository);
+
+      final results = await Future.wait([
+        vm.verifyDrivingLicense('MP0920190012345'),
+        vm.verifyDrivingLicense('MP0920190012345'),
+      ]);
+
+      check(repository.verifiedLicenses).length.equals(1);
+      check(results).deepEquals([true, false]);
+      check(vm.isSaving).isFalse();
+      check(vm.error).isNull();
+    });
   });
 
   group('saving a step', () {
@@ -424,6 +616,12 @@ class _FakeKycRepository implements DriverKycRepository {
   /// Every kind uploaded, in order, including repeats from a retry.
   final List<DocumentKind> uploaded = [];
 
+  /// The bytes of each upload's file, read when it was sent.
+  final List<List<int>> uploadedBytes = [];
+
+  /// The file each upload was sent from.
+  final List<String> uploadedPaths = [];
+
   /// Every license number sent for checking.
   final List<String> verifiedLicenses = [];
 
@@ -439,6 +637,8 @@ class _FakeKycRepository implements DriverKycRepository {
   @override
   Future<DriverKyc> uploadDocument(DocumentKind kind, String path) async {
     uploaded.add(kind);
+    uploadedBytes.add(File(path).readAsBytesSync());
+    uploadedPaths.add(path);
     return _respond();
   }
 
@@ -476,4 +676,33 @@ class _FakeKycRepository implements DriverKycRepository {
 
   @override
   Future<DriverKyc> submit() async => _respond();
+}
+
+/// A [_FakeKycRepository] whose licence check waits for [gate].
+class _GatedKycRepository extends _FakeKycRepository {
+  _GatedKycRepository({super.kyc});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<DriverKyc> verifyDrivingLicense(String number) async {
+    await gate.future;
+    return super.verifyDrivingLicense(number);
+  }
+}
+
+/// A session store held in memory, starting with [_session].
+class _MemorySessionStorage implements DriverSessionStorage {
+  _MemorySessionStorage(this._session);
+
+  DriverAuthSession? _session;
+
+  @override
+  Future<DriverAuthSession?> read() async => _session;
+
+  @override
+  Future<void> write(DriverAuthSession session) async => _session = session;
+
+  @override
+  Future<void> clear() async => _session = null;
 }

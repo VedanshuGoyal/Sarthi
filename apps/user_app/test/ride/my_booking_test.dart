@@ -53,6 +53,33 @@ void main() {
     check(b.canCancel).isFalse();
   });
 
+  test('a ride the driver closed as a no-show says so, with why', () {
+    final b = MyBooking.tryParse(
+      bookingJson(
+        status: 'cancelled',
+        cancelledBy: 'no_show',
+        cancelReason: 'The driver waited at the pickup until 10:15 AM',
+      ),
+    )!;
+    check(b.cancellationSummary).equals(
+      'Closed as a no-show · The driver waited at the pickup until 10:15 AM',
+    );
+    final steps = rideTimeline(b);
+    check(steps.last.label).equals('Closed as a no-show');
+    check(steps.last.state).equals(MilestoneState.ended);
+  });
+
+  test("a driver's number the server has hidden is no number at all", () {
+    final json = bookingJson(status: 'completed');
+    (json['driver'] as Map<String, dynamic>)['phoneE164'] = '';
+    final b = MyBooking.tryParse(json)!;
+    check(b.driverName).equals('Ravi Kumar');
+    check(b.driverPhone).isNull();
+    check(
+      MyBooking.tryParse(bookingJson())!.driverPhone,
+    ).equals('+919800000001');
+  });
+
   test('an old payload without the new fields still parses', () {
     final b = MyBooking.tryParse({
       'id': 'old',
@@ -74,6 +101,172 @@ void main() {
     check(b.createdAt).isNull();
     check(b.myRating).isNull();
     check(b.canCancel).isTrue();
+  });
+
+  group('receipt', () {
+    test('a paid ride carries how it was paid and its fare parts', () {
+      final b = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          tripType: 'roundTrip',
+          paymentStatus: 'paid',
+          payment: {
+            'mode': 'UPI_INTENT',
+            'utr': '412345678901',
+            'transactionId': 'T2411170001',
+            'merchantOrderId': 'MOJUD_b1_m3k9',
+            'paidAt': '2030-10-26T08:00:00Z',
+          },
+          fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+        ),
+      )!;
+      final p = b.payment!;
+      check(p.mode).equals('UPI_INTENT');
+      check(p.modeLabel).equals('UPI');
+      check(p.utr).equals('412345678901');
+      check(p.reference).equals('412345678901');
+      check(p.merchantOrderId).equals('MOJUD_b1_m3k9');
+      check(p.paidAt).equals(DateTime.utc(2030, 10, 26, 8).toLocal());
+      check(b.fareBreakdown!.basePaise).equals(54000);
+      check(b.fareBreakdown!.nightPaise).equals(10000);
+      check(b.fareBreakdown!.nightRupees).equals(100);
+    });
+
+    test('names every way a ride can be paid', () {
+      String label(String mode) => RidePayment(mode: mode).modeLabel;
+      check(label('UPI_QR')).equals('UPI');
+      check(label('')).equals('UPI');
+      check(label('CASH')).equals('Cash');
+      check(label('WAIVED')).equals('Waived by MOJUD');
+      check(label('NET_BANKING')).equals('Net Banking');
+      check(label('CARD')).equals('Card');
+    });
+
+    test('the reference falls back to the transaction id', () {
+      final p = RidePayment.tryParse({
+        'mode': 'UPI_COLLECT',
+        'transactionId': 'T1',
+        'utr': '  ',
+      })!;
+      check(p.utr).isNull();
+      check(p.reference).equals('T1');
+      check(p.merchantOrderId).isNull();
+    });
+
+    test('a missing or garbled block reads as absent', () {
+      final b = MyBooking.tryParse(bookingJson(paymentStatus: 'paid'))!;
+      check(b.payment).isNull();
+      check(b.fareBreakdown).isNull();
+
+      check(RidePayment.tryParse('paid')).isNull();
+      final odd = RidePayment.tryParse({'mode': 7, 'paidAt': 'yesterday'})!;
+      check(odd.mode).equals('');
+      check(odd.paidAt).isNull();
+
+      check(FareBreakdown.tryParse({'basePaise': 'lots'})).isNull();
+      check(FareBreakdown.tryParse({'nightPaise': 100})).isNull();
+      check(
+        FareBreakdown.tryParse({'basePaise': 100, 'nightPaise': -1}),
+      ).isNull();
+      check(FareBreakdown.tryParse({'basePaise': 24000})!.nightPaise).equals(0);
+    });
+  });
+
+  group('cancellation charges', () {
+    test('at the pickup, the booking says what cancelling now costs', () {
+      final b = MyBooking.tryParse(
+        bookingJson(status: 'arrived', cancellationFeePaise: 5000),
+      )!;
+      check(b.cancellationFeePaise).equals(5000);
+      check(b.cancelFeeNowPaise).equals(5000);
+      check(b.hasCancellationFee).isFalse();
+      check(b.canPay).isFalse();
+      check(b.bookedFarePaise).isNull();
+    });
+
+    test('before the pickup, and on old payloads, cancelling is free', () {
+      for (final json in [
+        bookingJson(),
+        bookingJson(status: 'requested', withDriver: false),
+        bookingJson(status: 'arrived'),
+      ]) {
+        final b = MyBooking.tryParse(json)!;
+        check(b.cancellationFeePaise).equals(0);
+        check(b.cancelFeeNowPaise).equals(0);
+      }
+    });
+
+    test('a ride cancelled with a fee is due for the fee, then paid', () {
+      final due = MyBooking.tryParse(
+        bookingJson(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+      )!;
+      check(due.hasCancellationFee).isTrue();
+      check(due.chargePaise).equals(5000);
+      check(due.paymentStatus).equals(RidePaymentStatus.due);
+      check(due.canPay).isTrue();
+      // Nothing left to cancel, so nothing it would cost.
+      check(due.cancelFeeNowPaise).equals(0);
+
+      final paid = MyBooking.tryParse(
+        bookingJson(
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'paid',
+        ),
+      )!;
+      check(paid.paymentStatus).equals(RidePaymentStatus.paid);
+      check(paid.canPay).isFalse();
+    });
+
+    test('a ride cancelled for free has nothing to pay', () {
+      final b = MyBooking.tryParse(bookingJson(status: 'cancelled'))!;
+      check(b.hasCancellationFee).isFalse();
+      check(b.chargePaise).equals(0);
+      check(b.canPay).isFalse();
+    });
+
+    test('a trip ended early carries the booked fare beside the charge', () {
+      final b = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          farePaise: 24000,
+          bookedFarePaise: 64000,
+          paymentStatus: 'due',
+        ),
+      )!;
+      check(b.endedEarly).isTrue();
+      check(b.farePaise).equals(24000);
+      check(b.bookedFarePaise).equals(64000);
+      check(b.chargePaise).equals(24000);
+      check(b.canPay).isTrue();
+      check(
+        MyBooking.tryParse(bookingJson(status: 'completed'))!.endedEarly,
+      ).isFalse();
+    });
+
+    test('garbled amounts read as absent', () {
+      final b = MyBooking.tryParse({
+        ...bookingJson(status: 'arrived'),
+        'cancellationFeePaise': 'fifty',
+        'bookedFarePaise': -1,
+      })!;
+      check(b.cancellationFeePaise).equals(0);
+      check(b.bookedFarePaise).isNull();
+    });
+
+    test('only a trip in progress can be ended early', () {
+      for (final status in BookingStatus.values) {
+        final b = MyBooking.tryParse(bookingJson(status: status.wireName))!;
+        check(
+          because: status.name,
+          b.canEndTrip,
+        ).equals(status == BookingStatus.inProgress);
+      }
+    });
   });
 
   test('a driver nobody has rated yet has no average', () {

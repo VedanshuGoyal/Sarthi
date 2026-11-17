@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Sarthi database backup every night
+
+[Timer]
+# 03:30 IST: quiet hours, and before unattended-upgrades (~06:00) can restart Postgres.
+OnCalendar=*-*-* 03:30:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

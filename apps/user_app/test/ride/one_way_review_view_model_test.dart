@@ -105,7 +105,10 @@ void main() {
 
       check(vm.canConfirm).isTrue();
       final json = vm.trip!.toJson();
-      check(json['scheduledAt']).equals('2026-07-30T09:30:00.000');
+      check(
+        json['scheduledAt'],
+      ).equals(DateTime(2026, 7, 30, 9, 30).toUtc().toIso8601String());
+      check(json['scheduledAt'] as String).endsWith('Z');
       check(json['estimatedTravelMinutes']).equals(120);
       final car = json['car'] as Map<String, dynamic>;
       check(car['registration']).equals('DL01AB1234');

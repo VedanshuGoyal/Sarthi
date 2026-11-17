@@ -63,7 +63,7 @@
 - `completedRides` windows are IST calendar days ending now, by `completed_at`, status `completed`:
   - `today` from today 00:00 IST; `last7Days` from 00:00 IST six days ago (7 days incl. today); `last30Days` from 00:00 IST 29 days ago.
   - `grossFarePaise` = sum of `fare_paise`.
-  - `commissionPaise` = `round(grossFarePaise × commission)` at the current rate, rounded half-up like `PaymentService.commission`. An estimate on fares, not the commission actually booked on payments.
+  - `commissionPaise` = `round((grossFarePaise − fares settled by hand) × commission)` at the current rate, rounded half-up like `PaymentService.commission`. Rides settled by hand (cash or waived) earn MOJUD nothing, so they're left out. An estimate on fares, not the commission actually booked on payments.
 - `payoutsDue`: same filter as `GET /admin/payouts/due` at now — paid, not paid out, driver still on the row. `amountPaise` = Σ(`paid_paise` − `commission_paise`); `drivers` = distinct drivers owed; `rides` = rides owed.
 
 ### Error codes

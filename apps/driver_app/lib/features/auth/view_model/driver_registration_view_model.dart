@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/config/legal.dart';
 import '../data/driver_auth_repository.dart';
 import '../domain/auth_validators.dart';
 import '../domain/driver.dart';
@@ -78,6 +79,10 @@ class DriverRegistrationViewModel extends ChangeNotifier {
   /// Sent as a bearer token on authenticated requests.
   String? _token;
   String? get token => _token;
+
+  /// The one-time ticket the server handed back when this device verified a
+  /// new number; registering sends it, proving it is the same device.
+  String? _registrationTicket;
 
   /// Number of digits the OTP screen should collect.
   int get otpLength => DriverAuthRepository.otpLength;
@@ -160,6 +165,7 @@ class DriverRegistrationViewModel extends ChangeNotifier {
           // Returning driver — log in and go straight to home.
           await _completeSignIn(result.session!);
         } else {
+          _registrationTicket = result.registrationTicket;
           _step = DriverRegistrationStep.name;
         }
       } on OtpInvalidatedException {
@@ -204,6 +210,8 @@ class DriverRegistrationViewModel extends ChangeNotifier {
     _otpAttempts = 0;
     _resendLocked = false;
     _otpInvalidated = false;
+    // A fresh code ends the server's pass, and the ticket with it.
+    _registrationTicket = null;
   }
 
   /// Locks resends for [wait] (cap reached), surfacing a live countdown.
@@ -237,21 +245,41 @@ class DriverRegistrationViewModel extends ChangeNotifier {
           _resendCount = 0;
         }
       }
-      notifyListeners();
+      _notify();
     });
   }
 
   // --- Step 3: name ------------------------------------------------------
 
-  /// Validates the name, registers the account, and finishes the flow.
+  /// Shown when the driver tries to register without agreeing.
+  static const String consentRequired =
+      'Agree to the Terms and Privacy Policy to create your account.';
+
+  /// Whether the driver ticked "I agree to the Terms and Privacy Policy".
+  /// Registration is refused until they have.
+  bool _hasConsented = false;
+  bool get hasConsented => _hasConsented;
+
+  void setConsent(bool value) {
+    if (value == _hasConsented) return;
+    _hasConsented = value;
+    if (value && _errorText == consentRequired) _errorText = null;
+    notifyListeners();
+  }
+
+  /// Validates the name and consent, registers the account (recording the
+  /// [Legal.consentVersion] agreed to), and finishes the flow.
   Future<void> submitName(String name) async {
     final error = AuthValidators.name(name);
     if (error != null) return _fail(error);
+    if (!_hasConsented) return _fail(consentRequired);
 
     await _run(() async {
       final session = await _repository.register(
         phoneE164: phoneE164,
         name: name,
+        consentVersion: Legal.consentVersion,
+        registrationTicket: _registrationTicket,
       );
       await _completeSignIn(session);
     });
@@ -286,8 +314,11 @@ class DriverRegistrationViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _resendTimer?.cancel();
     super.dispose();
   }
@@ -296,7 +327,14 @@ class DriverRegistrationViewModel extends ChangeNotifier {
 
   /// Runs [action] with the loading flag set, mapping [AuthException]s to
   /// [errorText] and unexpected errors to a generic message.
+  ///
+  /// Ignored while another request is in flight: the keyboard's "done" key
+  /// stays live under the disabled button, and a second verify or register
+  /// would race the first. Signing in swaps this flow's screen out (and so
+  /// disposes this view model) before the request settles, so nothing is
+  /// notified after that.
   Future<void> _run(Future<void> Function() action) async {
+    if (_isLoading) return;
     _isLoading = true;
     _errorText = null;
     notifyListeners();
@@ -308,12 +346,16 @@ class DriverRegistrationViewModel extends ChangeNotifier {
       _errorText = 'Something went wrong. Please try again.';
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
   void _fail(String message) {
     _errorText = message;
     notifyListeners();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 }

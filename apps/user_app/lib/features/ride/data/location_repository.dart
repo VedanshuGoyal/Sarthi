@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:geolocator/geolocator.dart';
@@ -402,9 +403,32 @@ class LocationRepository {
     throw const LocationException('Unexpected response from the maps service.');
   }
 
+  /// How long to wait for a fresh fix. Indoors a high-accuracy fix can take
+  /// minutes or never come, and the pickup row and map picker wait on it.
+  static const Duration fixTimeout = Duration(seconds: 12);
+
+  /// How old a last-known fix may be and still stand in for a fresh one.
+  static const Duration _lastKnownMaxAge = Duration(minutes: 5);
+
   /// Default [PositionFetcher]: checks services + permission, then reads a
-  /// single high-accuracy fix from the Geolocator plugin.
+  /// single high-accuracy fix from the Geolocator plugin. Never hangs past
+  /// [fixTimeout] — a recent last-known fix stands in, else it fails — and
+  /// every plugin failure comes out as a [LocationException], so callers'
+  /// spinners always stop.
   static Future<GeoPoint> _devicePosition() async {
+    try {
+      return await _readDevicePosition();
+    } on LocationException {
+      rethrow;
+    } catch (_) {
+      // A permission prompt already open, a platform error, a timeout.
+      throw const LocationException(
+        "Couldn't find your location. Search for your pickup instead.",
+      );
+    }
+  }
+
+  static Future<GeoPoint> _readDevicePosition() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const LocationServiceDisabledException(
         'Location is turned off. Switch it on to use your current spot.',
@@ -426,9 +450,21 @@ class LocationRepository {
       );
     }
 
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
+    Position position;
+    try {
+      position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      ).timeout(fixTimeout);
+    } on TimeoutException {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last == null ||
+          DateTime.now().difference(last.timestamp) > _lastKnownMaxAge) {
+        rethrow;
+      }
+      position = last;
+    }
     return GeoPoint(latitude: position.latitude, longitude: position.longitude);
   }
 }

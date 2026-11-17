@@ -41,6 +41,14 @@ func (r *SessionRepository) Delete(ctx context.Context, token string) error {
 	return nil
 }
 
+// DeleteForUser removes every session of userID (account erasure).
+func (r *SessionRepository) DeleteForUser(ctx context.Context, userID string) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("deleting sessions: %w", err)
+	}
+	return nil
+}
+
 // ListActive returns every still-valid (unexpired) session. Used on boot to warm
 // the in-memory cache from the durable store.
 func (r *SessionRepository) ListActive(ctx context.Context) ([]domain.Session, error) {

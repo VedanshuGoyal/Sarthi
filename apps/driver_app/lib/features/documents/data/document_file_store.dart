@@ -28,11 +28,17 @@ class DocumentFileStore {
   ///
   /// On web there is no filesystem to copy into — the picker's `blob:` URL is
   /// already all the app has — so the path is returned unchanged.
+  ///
+  /// A [sourcePath] that already is the stored capture is left alone:
+  /// copying a file onto itself truncates it to nothing first.
   Future<String> persist(DocumentKind kind, String sourcePath) async {
     if (kIsWeb) return sourcePath;
 
     final dir = await _directory();
     final destination = File('${dir.path}/${kind.wireName}.jpg');
+    if (File(sourcePath).absolute.path == destination.absolute.path) {
+      return destination.path;
+    }
     await File(sourcePath).copy(destination.path);
     return destination.path;
   }

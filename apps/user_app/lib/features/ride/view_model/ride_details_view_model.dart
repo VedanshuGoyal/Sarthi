@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show ImageProvider;
@@ -52,7 +53,7 @@ List<RideMilestone> rideTimeline(MyBooking b) {
     ('Driver assigned', b.acceptedAt, b.driverName),
     ('Driver arrived', b.arrivedAt, null),
     ('Trip started', b.startedAt, null),
-    ('Completed', b.completedAt, null),
+    (b.endedEarly ? 'Ended early' : 'Completed', b.completedAt, null),
   ];
   // How many steps in the ride got, counting from Booked.
   final reached = switch (b.status) {
@@ -101,9 +102,24 @@ List<RideMilestone> rideTimeline(MyBooking b) {
   ];
 }
 
+/// How a cancel attempt ended.
+enum CancelOutcome {
+  /// The ride is cancelled — with its fee due, if it had one.
+  cancelled,
+
+  /// It wasn't; [RideDetailsViewModel.cancelError] says why.
+  failed,
+
+  /// Nothing changed: cancelling now costs more than the customer was
+  /// shown (the driver reached the pickup meanwhile). Ask again, showing
+  /// [RideDetailsViewModel.cancelFeePaise].
+  feeChanged,
+}
+
 /// The ride details screen: one booking from the customer's list, with
-/// cancelling, paying for it by UPI once it's done, rating the driver, and —
-/// in the tracking window — the driver's live location.
+/// cancelling, ending the trip early, paying for it (or its cancellation
+/// fee) by UPI, rating the driver, and — in the tracking window — the
+/// driver's live location.
 ///
 /// The booking itself comes from [MyBookingsViewModel], so the screen moves
 /// along with every list refresh; a cancel or rating puts the server's reply
@@ -129,7 +145,13 @@ class RideDetailsViewModel extends ChangeNotifier {
        _location = initialLocation,
        _locationChecked = initialLocation != null {
     _booking = _bookings.byId(bookingId);
+    _confirming = _bookings.isConfirmingPayment(bookingId);
     _bookings.addListener(_onBookingsChanged);
+    // Opening a ride that's due: it may have been paid while the app was
+    // away (Android can kill it behind the UPI app before it hears back).
+    if ((_booking?.canPay ?? false) && _checkout != null && !_confirming) {
+      _openCheck = _syncPayment(bookingId, attempts: 1);
+    }
   }
 
   final BookingRepository _repository;
@@ -172,11 +194,19 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   void _onBookingsChanged() {
     final latest = _bookings.byId(bookingId);
-    if (latest == null || identical(latest, _booking)) return;
+    final confirming = _bookings.isConfirmingPayment(bookingId);
+    final confirmingChanged = confirming != _confirming;
+    _confirming = confirming;
+    if (latest == null || identical(latest, _booking)) {
+      if (confirmingChanged) _notify();
+      return;
+    }
     final statusChanged = latest.status != _booking?.status;
     _booking = latest;
+    if (!latest.canCancel) _quotedFeePaise = null;
     // A new stage of the ride may be trackable even if the last wasn't.
     if (statusChanged) _notTracking = false;
+    if (latest.paymentStatus == RidePaymentStatus.paid) _payError = null;
     _syncPolling();
     _notify();
   }
@@ -318,24 +348,66 @@ class RideDetailsViewModel extends ChangeNotifier {
   bool _isCancelling = false;
   String? _cancelError;
 
+  /// The fee the server said cancelling costs when it refused a cancel for
+  /// less — in case the list hasn't caught up with the driver's arrival.
+  int? _quotedFeePaise;
+
   bool get isCancelling => _isCancelling;
 
   /// Why the last cancel failed, safe to show.
   String? get cancelError => _cancelError;
 
-  /// Cancels the ride with the customer's [reason]; true once it's cancelled.
-  /// On success the list holds the cancelled ride and reloads.
-  Future<bool> cancel({String? reason}) async {
+  /// What cancelling now costs, in paise; 0 while it's free. The
+  /// confirmation shows it, and the view sends what it showed to [cancel].
+  int get cancelFeePaise {
     final b = _booking;
-    if (b == null || !b.canCancel || _isCancelling) return false;
+    if (b == null || !b.canCancel) return 0;
+    return max(b.cancelFeeNowPaise, _quotedFeePaise ?? 0);
+  }
+
+  /// Cancels the ride with the customer's [reason], agreeing to pay at most
+  /// [acceptFeePaise] — the fee the confirmation showed them. On success the
+  /// list holds the cancelled ride and reloads.
+  ///
+  /// When cancelling costs more than that by now (the driver just reached
+  /// the pickup), nothing is cancelled: the list is refreshed and the
+  /// outcome is [CancelOutcome.feeChanged], so the view asks again with
+  /// [cancelFeePaise]. A fee is never taken that the customer didn't see.
+  Future<CancelOutcome> cancel({
+    String? reason,
+    required int acceptFeePaise,
+  }) async {
+    final b = _booking;
+    if (b == null || !b.canCancel || _isCancelling) {
+      return CancelOutcome.failed;
+    }
     _isCancelling = true;
     _cancelError = null;
     _notify();
     try {
-      _bookings.applyUpdate(await _repository.cancel(b.id, reason: reason));
+      _bookings.applyUpdate(
+        await _repository.cancel(
+          b.id,
+          reason: reason,
+          acceptFeePaise: acceptFeePaise,
+        ),
+      );
+      _quotedFeePaise = null;
       unawaited(_bookings.load());
-      return true;
+      return CancelOutcome.cancelled;
     } on BookingActionException catch (e) {
+      if (e.code == BookingErrorCode.cancellationFee) {
+        if (e.feePaise case final fee?) _quotedFeePaise = fee;
+        // Show where the ride is now (the driver at the pickup) when asking
+        // again.
+        await _bookings.load();
+        if (cancelFeePaise > acceptFeePaise) return CancelOutcome.feeChanged;
+        // Refused for a fee neither the server nor the list names: don't
+        // offer the same free cancel again.
+        _cancelError =
+            'Cancelling now has a fee. Pull down to refresh, then try again.';
+        return CancelOutcome.failed;
+      }
       _cancelError = switch (e.code) {
         BookingErrorCode.wrongState =>
           'This ride has already started or finished, so it can no longer '
@@ -345,9 +417,53 @@ class RideDetailsViewModel extends ChangeNotifier {
       };
       // The ride moved on without us; show where it is now.
       if (e.code == BookingErrorCode.wrongState) unawaited(_bookings.load());
-      return false;
+      return CancelOutcome.failed;
     } finally {
       _isCancelling = false;
+      _notify();
+    }
+  }
+
+  // --- Ending the trip early -------------------------------------------------
+
+  bool _isEnding = false;
+  String? _endError;
+
+  bool get isEndingTrip => _isEnding;
+
+  /// Why the last "End trip now" failed, safe to show.
+  String? get endTripError => _endError;
+
+  /// Whether "End trip now" should be offered: the trip is in progress.
+  bool get canEndTrip => _booking?.canEndTrip ?? false;
+
+  /// Ends the trip now; true once it's ended. The customer then pays by the
+  /// hour for the time used, never more than the booked fare: the list
+  /// holds the completed ride, due for payment, and reloads.
+  Future<bool> endTrip() async {
+    final b = _booking;
+    if (b == null || !b.canEndTrip || _isEnding) return false;
+    _isEnding = true;
+    _endError = null;
+    _notify();
+    try {
+      _bookings.applyUpdate(await _repository.endTrip(b.id));
+      unawaited(_bookings.load());
+      return true;
+    } on BookingActionException catch (e) {
+      final movedOn =
+          e.code == BookingErrorCode.cannotEnd ||
+          e.code == BookingErrorCode.wrongState;
+      _endError = switch (e.code) {
+        _ when movedOn => "This trip isn't in progress any more.",
+        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        _ => e.message,
+      };
+      // The driver may have ended it already; show where it is now.
+      if (movedOn) unawaited(_bookings.load());
+      return false;
+    } finally {
+      _isEnding = false;
       _notify();
     }
   }
@@ -420,26 +536,49 @@ class RideDetailsViewModel extends ChangeNotifier {
   bool _isPaying = false;
   String? _payError;
 
+  /// Whether the list is still confirming a payment the UPI app said went
+  /// through (see [MyBookingsViewModel.confirmPayment]).
+  bool _confirming = false;
+
+  /// The check made on opening a due ride; [pay] waits for it.
+  Future<MyBooking?>? _openCheck;
+
+  static const String _stillConfirming =
+      "We're still confirming your payment with the bank. This ride will "
+      'show as paid in a minute or two.';
+
   bool get isPaying => _isPaying;
 
-  /// Why the last payment didn't complete, safe to show.
-  String? get payError => _payError;
+  /// Why the last payment didn't complete, safe to show — or, while a
+  /// payment is being confirmed, that it is.
+  String? get payError => _payError ?? (_confirming ? _stillConfirming : null);
 
-  /// Whether the pay button should work: the ride is due and the app can
-  /// open the payment page.
-  bool get canPay => (_booking?.canPay ?? false) && _checkout != null;
+  /// Whether the pay button should work: the ride is due, the app can open
+  /// the payment page, and no payment that went through is still being
+  /// confirmed — paying again then could take the money twice.
+  bool get canPay =>
+      (_booking?.canPay ?? false) && _checkout != null && !_confirming;
 
-  /// Opens the UPI payment page for the completed ride, then has the server
-  /// check with the gateway; true once the ride is paid. Whatever the page
-  /// says when it closes, only the server's check counts.
+  /// Opens the UPI payment page for the completed ride (or the cancelled
+  /// ride's fee — the server sets the amount), then has the server check
+  /// with the gateway; true once it's paid. Whatever the page says when it
+  /// closes, only the server's check counts.
   Future<bool> pay() async {
-    final b = _booking;
+    var b = _booking;
     final checkout = _checkout;
-    if (b == null || checkout == null || !b.canPay || _isPaying) return false;
+    if (b == null || checkout == null || !canPay || _isPaying) return false;
     _isPaying = true;
     _payError = null;
     _notify();
     try {
+      // The open check may have found it paid: never start a second order.
+      if (_openCheck case final check?) {
+        _openCheck = null;
+        await check;
+        if (_disposed) return false;
+        b = _booking ?? b;
+        if (!b.canPay) return b.paymentStatus == RidePaymentStatus.paid;
+      }
       final PaymentCheckout order;
       try {
         order = await _repository.startPayment(b.id);
@@ -449,16 +588,21 @@ class RideDetailsViewModel extends ChangeNotifier {
         await _syncPayment(b.id, attempts: 1);
         return true;
       }
+      // The customer backed out while the order was being made: don't throw
+      // a payment page up over wherever they went instead.
+      if (_disposed) return false;
       final outcome = await checkout.open(order, flowId: flowId);
       final latest = await _syncPayment(
         b.id,
         attempts: outcome == CheckoutOutcome.success ? 5 : 1,
       );
       if (latest?.paymentStatus == RidePaymentStatus.paid) return true;
+      // The UPI app says it went through: keep checking, with Pay off.
+      if (outcome == CheckoutOutcome.success) {
+        unawaited(_bookings.confirmPayment(b.id));
+      }
       _payError = switch (outcome) {
-        CheckoutOutcome.success =>
-          "We're still confirming your payment with the bank. This ride "
-              'will show as paid in a minute or two.',
+        CheckoutOutcome.success => _stillConfirming,
         CheckoutOutcome.failure =>
           "The payment didn't go through. Please try again.",
         CheckoutOutcome.interrupted => 'Payment cancelled.',
@@ -484,9 +628,14 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   /// Asks the server to re-check the payment up to [attempts] times,
   /// [paySyncEvery] apart, until it's paid; puts each reply in the list.
+  ///
+  /// Keeps going if the customer leaves the screen meanwhile: the payment
+  /// has already gone through at the gateway, and until the server has
+  /// checked, the Activity list (which outlives this screen) offers "Pay"
+  /// for it again.
   Future<MyBooking?> _syncPayment(String id, {required int attempts}) async {
     MyBooking? latest;
-    for (var i = 0; i < attempts && !_disposed; i++) {
+    for (var i = 0; i < attempts; i++) {
       if (i > 0) await Future<void>.delayed(paySyncEvery);
       try {
         latest = await _repository.syncPayment(id);

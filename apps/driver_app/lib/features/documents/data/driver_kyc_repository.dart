@@ -48,7 +48,7 @@ class DriverKycRepository {
   /// Loads the driver's whole document state.
   Future<DriverKyc> load() async {
     final body = await _send('GET', '/driver/kyc');
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Saves whichever typed fields a step collected. Omitted arguments are left
@@ -74,7 +74,7 @@ class DriverKycRepository {
         'drivingLicenseNumber': drivingLicenseNumber.trim(),
     };
     final body = await _send('PATCH', '/driver/kyc/profile', payload: payload);
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Opens a DigiLocker session for the Aadhaar check. The Aadhaar number must
@@ -86,7 +86,7 @@ class DriverKycRepository {
       '/driver/kyc/digilocker',
       payload: const {},
     );
-    return DigiLockerSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _parse(body, DigiLockerSession.fromJson);
   }
 
   /// Reads the DigiLocker session's result. Throws a [KycException] with code
@@ -97,7 +97,7 @@ class DriverKycRepository {
       '/driver/kyc/digilocker/complete',
       payload: const {},
     );
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Saves the licence number and has the backend look it up against the
@@ -108,7 +108,7 @@ class DriverKycRepository {
       '/driver/kyc/driving-license',
       payload: {'number': number.trim().toUpperCase()},
     );
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Saves the payout details once the backend has checked the account with
@@ -128,7 +128,7 @@ class DriverKycRepository {
         'ifscCode': ifscCode.trim().toUpperCase(),
       },
     );
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Uploads the image at [path] as the driver's [kind] document.
@@ -145,7 +145,7 @@ class DriverKycRepository {
       bytes: bytes,
       contentType: 'image/jpeg',
     );
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Submits the completed Document View. The backend answers `verified` when
@@ -154,17 +154,40 @@ class DriverKycRepository {
   /// missing — when the backend finds a step outstanding.
   Future<DriverKyc> submit() async {
     final body = await _send('POST', '/driver/kyc/submit', payload: const {});
-    return DriverKyc.fromJson(jsonDecode(body) as Map<String, dynamic>);
+    return _kycFrom(body);
   }
 
   /// Reads the captured image. On web the picker's path is a `blob:` URL,
-  /// which has to be fetched rather than opened as a file.
+  /// which has to be fetched rather than opened as a file. A capture that's
+  /// gone (cleared storage, a deleted file) is a [KycException] like any
+  /// other failed upload, so the photo shows as failed rather than stuck.
   Future<Uint8List> _readBytes(String path) async {
-    if (kIsWeb) {
-      final response = await _client.get(Uri.parse(path));
-      return response.bodyBytes;
+    try {
+      if (kIsWeb) {
+        final response = await _client.get(Uri.parse(path));
+        return response.bodyBytes;
+      }
+      return await File(path).readAsBytes();
+    } catch (_) {
+      throw const KycException(
+        "Couldn't read the photo. Please take it again.",
+      );
     }
-    return File(path).readAsBytes();
+  }
+
+  DriverKyc _kycFrom(String body) => _parse(body, DriverKyc.fromJson);
+
+  /// Decodes a 2xx body with [fromJson]. A body that isn't the expected
+  /// shape is a [KycException], not a raw parse error that would skip the
+  /// view model's error handling and leave its spinner up.
+  static T _parse<T>(String body, T Function(Map<String, dynamic>) fromJson) {
+    try {
+      return fromJson(jsonDecode(body) as Map<String, dynamic>);
+    } catch (_) {
+      throw const KycException(
+        'The server sent an unexpected reply. Please try again.',
+      );
+    }
   }
 
   /// Sends a request and returns the body on 2xx, throwing [KycException]
@@ -218,7 +241,8 @@ class DriverKycRepository {
       final String m when m.isNotEmpty => m,
       _ => 'Something went wrong. Please try again.',
     };
-    return KycException(message, code: body['code'] as String?);
+    final code = body['code'];
+    return KycException(message, code: code is String ? code : null);
   }
 
   /// Formats a date the way the API expects it: a plain calendar date, with no

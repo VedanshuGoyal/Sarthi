@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../driver_auth_providers.dart';
+import 'consent_checkbox.dart';
 
 /// Step 3 — collect the driver's name to finish creating the account.
 ///
@@ -49,11 +50,18 @@ class _NameStepState extends ConsumerState<NameStep> {
           prefixIcon: const Icon(Icons.person_outline),
           onSubmitted: (_) => _submit(),
         ),
+        const SizedBox(height: 8),
+        ConsentCheckbox(
+          value: vm.hasConsented,
+          enabled: !vm.isLoading,
+          onChanged: vm.setConsent,
+        ),
       ],
       footer: SarthiPrimaryButton(
         label: 'Create account',
         isLoading: vm.isLoading,
-        onPressed: _submit,
+        // Disabled until the driver agrees to the Terms and Privacy Policy.
+        onPressed: vm.hasConsented ? _submit : null,
       ),
     );
   }

@@ -16,8 +16,8 @@ import (
 // ErrPaymentsOff is returned when no payment gateway is configured.
 var ErrPaymentsOff = errors.New("payments aren't set up yet")
 
-// ErrNotPayable is returned when a customer tries to pay for a ride that
-// isn't completed, or has no fare to pay.
+// ErrNotPayable is returned when a customer tries to pay for a booking
+// that owes nothing: not completed, or cancelled free.
 var ErrNotPayable = fmt.Errorf("you can pay for a ride once it's completed: %w",
 	repository.ErrBookingStateConflict)
 
@@ -41,6 +41,11 @@ const (
 	// order alone until the customer has had a moment with it.
 	sweepWindow = 24 * time.Hour
 	sweepMinAge = time.Minute
+
+	// checkoutReuseMargin is how long an open checkout must still have to
+	// run to be handed out again rather than replaced: time to finish a UPI
+	// payment (my estimate).
+	checkoutReuseMargin = 2 * time.Minute
 )
 
 // PaymentGateway is the slice of the gateway this service drives
@@ -108,10 +113,13 @@ func NewPaymentService(gateway PaymentGateway, store PaymentStore, bookings Cust
 // Enabled reports whether a gateway is configured.
 func (s *PaymentService) Enabled() bool { return s.gateway != nil }
 
-// Checkout opens a UPI checkout for userID's completed booking and returns
-// what the app hands the gateway's SDK. A checkout the customer already
-// paid through is found first, so paying twice is refused with
-// [ErrAlreadyPaid] rather than charged.
+// Checkout opens a UPI checkout for userID's completed booking — or the fee
+// of one cancelled at the pickup — and returns what the app hands the
+// gateway's SDK. A checkout the customer already paid through is found
+// first, so paying twice is refused with
+// [ErrAlreadyPaid] rather than charged; one still open at the gateway (a
+// collect request waiting on the customer's UPI app, say) is handed out
+// again instead of opening a second payable order.
 func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string) (domain.PaymentCheckout, error) {
 	if s.gateway == nil {
 		return domain.PaymentCheckout{}, ErrPaymentsOff
@@ -121,52 +129,82 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 		return domain.PaymentCheckout{}, err
 	}
 	b := ub.Booking
-	if b.Status != domain.RideStatusCompleted {
+	if b.PaymentStatus() == "" {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}
 	paid := b.PaidAt != nil
+	var open []domain.PaymentOrder
 	if !paid {
 		// A checkout from an earlier tap may have gone through meanwhile.
-		if paid, err = s.syncBooking(ctx, b.ID); err != nil {
+		if paid, open, err = s.syncBooking(ctx, b.ID); err != nil {
 			return domain.PaymentCheckout{}, err
 		}
 	}
 	if paid {
 		return domain.PaymentCheckout{}, ErrAlreadyPaid
 	}
-	amount := b.FarePaise
+	amount := b.AmountDue()
 	if amount < minPaymentPaise {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}
 
 	now := s.now()
+	if o, ok := reusableCheckout(open, amount, now); ok {
+		slog.InfoContext(ctx, "payment: checkout reopened",
+			"bookingId", b.ID, "userId", userID, "merchantOrderId", o.MerchantOrderID, "amountPaise", amount)
+		return s.checkoutFor(o), nil
+	}
 	merchantOrderID := newMerchantOrderID(b.ID, now)
 	order, err := s.gateway.CreateOrder(ctx, merchantOrderID, amount, orderLifetime)
 	if err != nil {
 		return domain.PaymentCheckout{}, err
 	}
-	if err := s.store.InsertOrder(ctx, domain.PaymentOrder{
+	o := domain.PaymentOrder{
 		MerchantOrderID: merchantOrderID,
 		BookingID:       b.ID,
 		UserID:          userID,
 		AmountPaise:     amount,
 		ProviderOrderID: order.ProviderOrderID,
+		CheckoutToken:   order.Token,
 		ExpiresAt:       order.ExpiresAt,
-	}); err != nil {
+	}
+	if err := s.store.InsertOrder(ctx, o); err != nil {
 		return domain.PaymentCheckout{}, err
 	}
 	slog.InfoContext(ctx, "payment: checkout opened",
 		"bookingId", b.ID, "userId", userID, "merchantOrderId", merchantOrderID, "amountPaise", amount)
+	return s.checkoutFor(o), nil
+}
+
+// checkoutFor is what the app needs to open order o.
+func (s *PaymentService) checkoutFor(o domain.PaymentOrder) domain.PaymentCheckout {
 	return domain.PaymentCheckout{
 		Provider:        s.gateway.Name(),
 		Environment:     s.gateway.Environment(),
 		MerchantID:      s.gateway.MerchantID(),
-		OrderID:         order.ProviderOrderID,
-		Token:           order.Token,
-		MerchantOrderID: merchantOrderID,
-		AmountPaise:     amount,
-		ExpiresAt:       order.ExpiresAt,
-	}, nil
+		OrderID:         o.ProviderOrderID,
+		Token:           o.CheckoutToken,
+		MerchantOrderID: o.MerchantOrderID,
+		AmountPaise:     o.AmountPaise,
+		ExpiresAt:       o.ExpiresAt,
+	}
+}
+
+// reusableCheckout picks, from orders the gateway says are still open, the
+// one to hand out again: for amount, with its token on file and at least
+// checkoutReuseMargin to run. The latest-expiring wins.
+func reusableCheckout(open []domain.PaymentOrder, amount int64, now time.Time) (domain.PaymentOrder, bool) {
+	var best domain.PaymentOrder
+	found := false
+	for _, o := range open {
+		if o.AmountPaise != amount || o.CheckoutToken == "" || o.ExpiresAt.Before(now.Add(checkoutReuseMargin)) {
+			continue
+		}
+		if !found || o.ExpiresAt.After(best.ExpiresAt) {
+			best, found = o, true
+		}
+	}
+	return best, found
 }
 
 // Sync re-checks userID's booking's open checkouts with the gateway — the
@@ -182,7 +220,19 @@ func (s *PaymentService) Sync(ctx context.Context, userID, bookingID string) err
 	if ub.Booking.PaidAt != nil {
 		return nil
 	}
-	_, err = s.syncBooking(ctx, bookingID)
+	_, _, err = s.syncBooking(ctx, bookingID)
+	return err
+}
+
+// SyncBooking re-checks bookingID's pending checkouts with the gateway, for
+// the back office before it settles the ride by hand: an order the
+// customer paid meanwhile is recorded, one that lapsed is failed. Nothing
+// to do with payments off.
+func (s *PaymentService) SyncBooking(ctx context.Context, bookingID string) error {
+	if s.gateway == nil {
+		return nil
+	}
+	_, _, err := s.syncBooking(ctx, bookingID)
 	return err
 }
 
@@ -203,7 +253,7 @@ func (s *PaymentService) OrderUpdated(ctx context.Context, merchantOrderID strin
 	if o.State != domain.PaymentPending {
 		return nil
 	}
-	_, err = s.settle(ctx, o)
+	_, _, err = s.settle(ctx, o)
 	return err
 }
 
@@ -221,7 +271,7 @@ func (s *PaymentService) Sweep(ctx context.Context) int {
 	}
 	settled := 0
 	for _, o := range orders {
-		state, err := s.settle(ctx, o)
+		state, _, err := s.settle(ctx, o)
 		if err != nil {
 			slog.WarnContext(ctx, "payment: sweep could not check order",
 				"merchantOrderId", o.MerchantOrderID, "error", err)
@@ -252,50 +302,55 @@ func (s *PaymentService) RunSweeper(ctx context.Context) {
 }
 
 // syncBooking settles bookingID's pending orders and reports whether one of
-// them paid it.
-func (s *PaymentService) syncBooking(ctx context.Context, bookingID string) (bool, error) {
+// them paid it, and which are still open at the gateway.
+func (s *PaymentService) syncBooking(ctx context.Context, bookingID string) (bool, []domain.PaymentOrder, error) {
 	orders, err := s.store.PendingForBooking(ctx, bookingID)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	paid := false
+	var open []domain.PaymentOrder
 	for _, o := range orders {
-		state, err := s.settle(ctx, o)
+		state, stillOpen, err := s.settle(ctx, o)
 		if err != nil {
-			return paid, err
+			return paid, nil, err
 		}
 		paid = paid || state == domain.PaymentCompleted
+		if stillOpen {
+			open = append(open, o)
+		}
 	}
-	return paid, nil
+	return paid, open, nil
 }
 
 // settle asks the gateway about o and records what it says, returning the
-// order's state afterwards.
-func (s *PaymentService) settle(ctx context.Context, o domain.PaymentOrder) (domain.PaymentState, error) {
+// order's state afterwards and whether the gateway still has it open for
+// payment.
+func (s *PaymentService) settle(ctx context.Context, o domain.PaymentOrder) (domain.PaymentState, bool, error) {
 	st, err := s.gateway.OrderStatus(ctx, o.MerchantOrderID)
 	if err != nil {
-		return domain.PaymentPending, err
+		return domain.PaymentPending, false, err
 	}
 	now := s.now()
 	switch st.State {
 	case domain.PaymentPending:
-		return domain.PaymentPending, nil
+		return domain.PaymentPending, true, nil
 	case domain.PaymentFailed:
 		if err := s.store.FailOrder(ctx, o.MerchantOrderID, st, now); err != nil {
-			return domain.PaymentPending, err
+			return domain.PaymentPending, false, err
 		}
 		slog.InfoContext(ctx, "payment: order failed", "merchantOrderId", o.MerchantOrderID, "bookingId", o.BookingID)
-		return domain.PaymentFailed, nil
+		return domain.PaymentFailed, false, nil
 	}
 	// Completed. The gateway's amount must be what we asked for.
 	if st.AmountPaise != o.AmountPaise {
 		slog.ErrorContext(ctx, "payment: completed order's amount doesn't match; left pending for a manual check",
 			"merchantOrderId", o.MerchantOrderID, "want", o.AmountPaise, "got", st.AmountPaise)
-		return domain.PaymentPending, nil
+		return domain.PaymentPending, false, nil
 	}
 	outcome, b, err := s.store.CompleteOrder(ctx, o, st, s.commission(st.AmountPaise), now)
 	if err != nil {
-		return domain.PaymentPending, err
+		return domain.PaymentPending, false, err
 	}
 	switch outcome {
 	case domain.SettledPaidTwice:
@@ -310,7 +365,7 @@ func (s *PaymentService) settle(ctx context.Context, o domain.PaymentOrder) (dom
 			s.alerts.PaymentReceived(ctx, b)
 		}
 	}
-	return domain.PaymentCompleted, nil
+	return domain.PaymentCompleted, false, nil
 }
 
 // commission is MOJUD's cut of amount, rounded to the nearest paisa.

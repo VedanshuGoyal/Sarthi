@@ -36,7 +36,7 @@ type recentPickupsResponse struct {
 func (h *RecentPickupHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.List(r.Context(), userIDFrom(r.Context()))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not load recent pickups")
+		serverError(w, "could not load recent pickups", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, recentPickupsResponse{Recents: items})
@@ -61,7 +61,7 @@ func (h *RecentPickupHandler) Remember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not save pickup")
+		serverError(w, "could not save pickup", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, recentPickupsResponse{Recents: items})

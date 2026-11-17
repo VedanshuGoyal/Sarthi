@@ -65,6 +65,10 @@ class DriverDocuments {
   DriverDocuments withCapture(DocumentKind kind, String path) =>
       copyWith(capturePaths: {...capturePaths, kind: path});
 
+  /// Returns a copy with no capture for [kind].
+  DriverDocuments withoutCapture(DocumentKind kind) =>
+      copyWith(capturePaths: {...capturePaths}..remove(kind));
+
   /// Returns a copy with [kind]'s upload state replaced.
   DriverDocuments withUploadState(
     DocumentKind kind,

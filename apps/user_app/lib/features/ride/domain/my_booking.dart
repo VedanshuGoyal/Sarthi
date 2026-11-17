@@ -31,12 +31,12 @@ enum BookingStatus {
       this != completed && this != cancelled && this != expired;
 }
 
-/// Where the money for a completed ride stands.
+/// Where the money for a completed ride — or for a cancellation fee — stands.
 enum RidePaymentStatus {
-  /// Not completed yet — nothing to pay.
+  /// Not completed yet, or cancelled for free — nothing to pay.
   none(''),
 
-  /// Completed; the customer hasn't paid.
+  /// Completed, or cancelled with a fee; the customer hasn't paid.
   due('due'),
 
   /// The customer has paid.
@@ -66,6 +66,12 @@ const List<String> cancelReasons = [
 /// The reason that lets the customer type their own.
 const String otherCancelReason = 'Other';
 
+/// What cancelling costs once the driver is at the pickup, under the
+/// cancellation policy (owner's decision, 17 Nov 2026). Only used to tell the
+/// customer before the driver gets there; what a cancel actually costs is
+/// the server's `cancellationFeePaise` on the booking.
+const int pickupCancellationFeePaise = 5000;
+
 /// The longest cancel reason the server accepts.
 const int maxCancelReasonLength = 200;
 
@@ -88,6 +94,87 @@ class BookingStop {
   /// The errand, in the customer's words.
   final String task;
   final DateTime? departBy;
+}
+
+/// How a paid ride was paid, for its receipt: the gateway's payment mode
+/// (`UPI_INTENT`, `UPI_QR`, …) or `CASH` / `WAIVED` for a ride MOJUD settled
+/// by hand, with the references a dispute would need.
+class RidePayment {
+  const RidePayment({
+    required this.mode,
+    this.utr,
+    this.transactionId,
+    this.merchantOrderId,
+    this.paidAt,
+  });
+
+  /// As the server sent it; may be empty.
+  final String mode;
+  final String? utr;
+  final String? transactionId;
+  final String? merchantOrderId;
+  final DateTime? paidAt;
+
+  /// How the customer paid, in words: "UPI", "Cash", "Waived by MOJUD", or
+  /// the gateway's mode made readable ("NET_BANKING" → "Net Banking").
+  String get modeLabel {
+    final m = mode.trim().toUpperCase();
+    if (m.isEmpty || m.startsWith('UPI')) return 'UPI';
+    if (m == 'CASH') return 'Cash';
+    if (m == 'WAIVED') return 'Waived by MOJUD';
+    return [
+      for (final word in m.split('_'))
+        if (word.isNotEmpty) '${word[0]}${word.substring(1).toLowerCase()}',
+    ].join(' ');
+  }
+
+  /// The bank's UTR, else the gateway's transaction id; null when neither.
+  String? get reference => utr ?? transactionId;
+
+  /// Reads a booking's `payment` block, or null when it's missing or not an
+  /// object.
+  static RidePayment? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final mode = json['mode'];
+    final paidAt = json['paidAt'];
+    return RidePayment(
+      mode: mode is String ? mode : '',
+      utr: _text(json['utr']),
+      transactionId: _text(json['transactionId']),
+      merchantOrderId: _text(json['merchantOrderId']),
+      paidAt: paidAt is String ? DateTime.tryParse(paidAt)?.toLocal() : null,
+    );
+  }
+
+  static String? _text(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value.trim() : null;
+}
+
+/// What a Round Trip's fare is made of: the hourly tariff and the late-night
+/// surcharge, in paise. The server only sends it when the two add up to the
+/// fare.
+class FareBreakdown {
+  const FareBreakdown({required this.basePaise, this.nightPaise = 0});
+
+  final int basePaise;
+  final int nightPaise;
+
+  int get baseRupees => (basePaise / 100).round();
+  int get nightRupees => (nightPaise / 100).round();
+
+  /// Reads a booking's `fareBreakdown` block, or null when it's missing or
+  /// malformed.
+  static FareBreakdown? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final base = json['basePaise'];
+    final night = json['nightPaise'];
+    if (base is! num || base <= 0) return null;
+    if (night != null && (night is! num || night < 0)) return null;
+    return FareBreakdown(
+      basePaise: base.toInt(),
+      nightPaise: (night as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// The stars (1–5) and optional note one side of a ride gave the other.
@@ -142,6 +229,10 @@ class MyBooking {
     this.myRating,
     this.paymentStatus = RidePaymentStatus.none,
     this.paidAt,
+    this.payment,
+    this.fareBreakdown,
+    this.cancellationFeePaise = 0,
+    this.bookedFarePaise,
   });
 
   final String id;
@@ -205,7 +296,40 @@ class MyBooking {
   final RidePaymentStatus paymentStatus;
   final DateTime? paidAt;
 
+  /// How a paid ride was paid, for its receipt; null until it's paid, and
+  /// from servers that don't say.
+  final RidePayment? payment;
+
+  /// A Round Trip's base fare and night surcharge; null when not sent.
+  final FareBreakdown? fareBreakdown;
+
+  /// While the driver waits at the pickup: what cancelling now costs. On a
+  /// cancelled ride: the fee charged, paid like a fare (see
+  /// [paymentStatus]). 0 when there's none.
+  final int cancellationFeePaise;
+
+  /// The fare as booked, on a trip the customer ended early — [farePaise]
+  /// is then the charge for the time used. Null on every other booking.
+  final int? bookedFarePaise;
+
   int get fareRupees => (farePaise / 100).round();
+
+  /// Whether this ride was cancelled with a fee to pay, or paid.
+  bool get hasCancellationFee =>
+      status == BookingStatus.cancelled && cancellationFeePaise > 0;
+
+  /// What cancelling right now costs: the fee once the driver is at the
+  /// pickup, 0 before then (and from servers without the fee).
+  int get cancelFeeNowPaise => canCancel ? cancellationFeePaise : 0;
+
+  /// Whether the customer ended the trip before its booked end.
+  bool get endedEarly =>
+      status == BookingStatus.completed && bookedFarePaise != null;
+
+  /// What the customer pays for this booking: the cancellation fee of a
+  /// cancelled ride, the fare of any other.
+  int get chargePaise =>
+      status == BookingStatus.cancelled ? cancellationFeePaise : farePaise;
 
   /// The driver's first name, for friendlier lines ("Ravi is 2 km away").
   String? get driverFirstName {
@@ -221,11 +345,15 @@ class MyBooking {
       status == BookingStatus.accepted ||
       status == BookingStatus.arrived;
 
-  /// Whether the trip is finished and waiting for the customer to pay.
+  /// Whether the customer has something to pay for this booking: a
+  /// finished trip's fare, or the fee of a ride cancelled at the pickup.
   bool get canPay =>
-      status == BookingStatus.completed &&
+      (status == BookingStatus.completed || hasCancellationFee) &&
       paymentStatus == RidePaymentStatus.due &&
-      farePaise >= 100;
+      chargePaise >= 100;
+
+  /// Whether the customer may end the trip now, paying for the time used.
+  bool get canEndTrip => status == BookingStatus.inProgress;
 
   /// Whether the trip is finished and waiting for the customer's stars.
   bool get canRate => status == BookingStatus.completed && myRating == null;
@@ -254,6 +382,8 @@ class MyBooking {
     null || '' => null,
     'customer' => 'Cancelled by you',
     'driver' => 'Cancelled by your driver',
+    // The driver waited at the pickup and the customer never came.
+    'no_show' => 'Closed as a no-show',
     _ => 'Cancelled',
   };
 
@@ -271,6 +401,10 @@ class MyBooking {
     'multiStop' => TripType.multiStop,
     _ => TripType.roundTrip,
   };
+
+  /// A positive amount in paise, or null for a missing or non-positive one.
+  static int? _paise(Object? value) =>
+      value is num && value > 0 ? value.toInt() : null;
 
   static DateTime? _time(Object? value) =>
       value is String ? DateTime.tryParse(value)?.toLocal() : null;
@@ -366,7 +500,10 @@ class MyBooking {
           ? _byName(Transmission.values, car['transmission'])
           : null,
       driverName: driver is Map ? driver['name'] as String? : null,
-      driverPhone: driver is Map ? driver['phoneE164'] as String? : null,
+      // Blank once the ride has been over a while: the number is gone.
+      driverPhone: driver is Map
+          ? _nonEmpty(driver['phoneE164'] as String?)
+          : null,
       // The server omits the average until someone rates the driver.
       driverRating: driver is Map && ratingCount > 0
           ? (driver['rating'] as num?)?.toDouble()
@@ -387,6 +524,10 @@ class MyBooking {
       myRating: _rating(json['myRating']),
       paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
       paidAt: _time(json['paidAt']),
+      payment: RidePayment.tryParse(json['payment']),
+      fareBreakdown: FareBreakdown.tryParse(json['fareBreakdown']),
+      cancellationFeePaise: _paise(json['cancellationFeePaise']) ?? 0,
+      bookedFarePaise: _paise(json['bookedFarePaise']),
     );
   }
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -31,16 +32,18 @@ func NewAuthHandler(auth *service.AuthService, sessions SessionRevoker) *AuthHan
 }
 
 // authResponse is the wire shape for a completed auth step. For a not-yet-
-// registered number after OTP verify, only Registered (false) is sent; once
-// logged in it also carries the token and user.
+// registered number after OTP verify, Registered (false) and the one-time
+// registrationTicket to send to Register are sent; once logged in it carries
+// the token and user.
 type authResponse struct {
-	Registered bool         `json:"registered"`
-	Token      string       `json:"token,omitempty"`
-	User       *domain.User `json:"user,omitempty"`
+	Registered         bool         `json:"registered"`
+	RegistrationTicket string       `json:"registrationTicket,omitempty"`
+	Token              string       `json:"token,omitempty"`
+	User               *domain.User `json:"user,omitempty"`
 }
 
 func newAuthResponse(r service.AuthResult) authResponse {
-	resp := authResponse{Registered: r.Registered}
+	resp := authResponse{Registered: r.Registered, RegistrationTicket: r.RegistrationTicket}
 	if r.Registered {
 		user := r.User
 		resp.Token = r.Token
@@ -96,7 +99,7 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	result, err := h.auth.VerifyOTP(r.Context(), req.PhoneE164, req.Code)
+	result, err := h.auth.VerifyOTP(r.Context(), req.PhoneE164, req.Code, sendsRegistrationTicket(r, AppUser))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -109,6 +112,12 @@ type registerRequest struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
 	DateOfBirth string `json:"dateOfBirth"` // "YYYY-MM-DD"
+	// ConsentVersion is the Terms/Privacy version agreed to, e.g. "2026-11".
+	// Optional: builds before it was added don't send it.
+	ConsentVersion string `json:"consentVersion"`
+	// RegistrationTicket is the one OTP verify returned; required from
+	// user_app build 9 on.
+	RegistrationTicket string `json:"registrationTicket"`
 }
 
 // Register handles POST /auth/register.
@@ -130,6 +139,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Email:       req.Email,
 		DateOfBirth: dob,
+
+		ConsentVersion:     req.ConsentVersion,
+		RegistrationTicket: req.RegistrationTicket,
+		TicketRequired:     sendsRegistrationTicket(r, AppUser),
 	})
 	if err != nil {
 		writeServiceError(w, err)
@@ -152,7 +165,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 // Logout handles POST /auth/logout — revoke the caller's session token.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := h.sessions.Revoke(r.Context(), tokenFrom(r.Context())); err != nil {
-		writeError(w, http.StatusInternalServerError, "could not log out")
+		serverError(w, "could not log out", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, nil)
@@ -162,7 +175,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.auth.ListUsers(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not list users")
+		serverError(w, "could not list users", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, users)
@@ -170,15 +183,24 @@ func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 // writeServiceError maps domain/service errors to HTTP status codes.
 func writeServiceError(w http.ResponseWriter, err error) {
-	var locked *service.OTPLockedError
+	var (
+		locked *service.OTPLockedError
+		budget *service.SMSBudgetError
+	)
 	switch {
 	case errors.As(err, &locked):
 		writeErrorCode(w, http.StatusTooManyRequests, "otp_resend_locked",
 			locked.Error(), int(locked.RetryAfter.Seconds()))
+	case errors.As(err, &budget):
+		// The day's SMS spend is used up for every caller: a plain 429, as
+		// the rate limiter answers.
+		writeRateLimited(w, budget.RetryAfter)
 	case errors.Is(err, service.ErrOTPInvalidated):
 		writeErrorCode(w, http.StatusTooManyRequests, "otp_invalidated", err.Error(), 0)
 	case errors.Is(err, service.ErrInvalidOTP):
 		writeErrorCode(w, http.StatusUnauthorized, "otp_incorrect", err.Error(), 0)
+	case errors.Is(err, service.ErrOTPNotVerified):
+		writeErrorCode(w, http.StatusUnauthorized, "otp_not_verified", err.Error(), 0)
 	case errors.Is(err, repository.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, "account not found")
 	case errors.Is(err, repository.ErrPhoneTaken):
@@ -186,9 +208,11 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrInvalidPhone),
 		errors.Is(err, service.ErrInvalidName),
 		errors.Is(err, service.ErrInvalidEmail),
-		errors.Is(err, service.ErrInvalidDOB):
+		errors.Is(err, service.ErrInvalidDOB),
+		errors.Is(err, service.ErrInvalidConsent):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
+		slog.Error("auth: unexpected error", "error", err)
 		writeError(w, http.StatusInternalServerError, "something went wrong")
 	}
 }

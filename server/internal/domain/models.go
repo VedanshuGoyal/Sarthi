@@ -176,8 +176,11 @@ type DriverProfile struct {
 	Transmission         DriverTransmission `json:"transmission,omitempty"`
 	AadhaarLast4         string             `json:"aadhaarLast4,omitempty"`
 	DrivingLicenseNumber string             `json:"drivingLicenseNumber,omitempty"`
-	KYCStatus            KYCStatus          `json:"kycStatus"`
-	KYCSubmittedAt       *time.Time         `json:"kycSubmittedAt,omitempty"`
+	// AadhaarFingerprint is the keyed hash of the typed Aadhaar number, so an
+	// unchanged re-save can be told from a new number. Never serialised.
+	AadhaarFingerprint string     `json:"-"`
+	KYCStatus          KYCStatus  `json:"kycStatus"`
+	KYCSubmittedAt     *time.Time `json:"kycSubmittedAt,omitempty"`
 
 	// AadhaarVerifiedAt is when DigiLocker confirmed the Aadhaar. From then on
 	// FullName, DateOfBirth and Gender are the Aadhaar's and can't be edited.
@@ -194,6 +197,12 @@ type DriverProfile struct {
 	// KYCReviewNote says why a submission is waiting on a person, or why it
 	// was rejected.
 	KYCReviewNote string `json:"kycReviewNote,omitempty"`
+	// KYCRejectedAt is when a reviewer last rejected the driver; until a
+	// reviewer verifies them, their own submissions only reach a person.
+	KYCRejectedAt *time.Time `json:"kycRejectedAt,omitempty"`
+	// ClearedSelfieSHA256 is the hash of the selfie on file when the driver
+	// was last cleared; empty until the first clearance.
+	ClearedSelfieSHA256 string `json:"-"`
 }
 
 // DriverBankAccount is where a driver's earnings are paid. The account number
@@ -209,6 +218,10 @@ type DriverBankAccount struct {
 	// VerifiedName the name the bank holds for it.
 	VerifiedAt   *time.Time `json:"verifiedAt,omitempty"`
 	VerifiedName string     `json:"verifiedName,omitempty"`
+
+	// AccountNumberEncrypted is the sealed full number, never sent out; the
+	// service opens it only to tell an unchanged re-save from a new account.
+	AccountNumberEncrypted []byte `json:"-"`
 }
 
 // DriverKYC is the whole Document View as the app needs to render it: what has
@@ -307,12 +320,38 @@ type Booking struct {
 	PaidPaise       int64      `json:"paidPaise,omitempty"`
 	CommissionPaise int64      `json:"commissionPaise,omitempty"`
 	PayoutID        string     `json:"payoutId,omitempty"`
+
+	// CancellationFeePaise is the fee charged when the customer cancelled
+	// after the driver reached the pickup; zero for a free cancellation.
+	// BookedFarePaise is the fare as booked when the customer ended the trip
+	// early (FarePaise is then the charge for the time used); zero otherwise.
+	CancellationFeePaise int64 `json:"cancellationFeePaise,omitempty"`
+	BookedFarePaise      int64 `json:"bookedFarePaise,omitempty"`
 }
 
-// PaymentStatus is where the money for b stands; empty until it's completed.
+// CancellationFeePaise is what a customer pays for cancelling once the
+// driver has reached the pickup (₹50). Before that, cancelling is free.
+const CancellationFeePaise int64 = 5000
+
+// AmountDue is what the customer owes for b: the fare of a completed ride,
+// the fee of a cancellation that charged one, nothing otherwise. Paid or
+// not — see [Booking.PaymentStatus].
+func (b Booking) AmountDue() int64 {
+	switch {
+	case b.Status == RideStatusCompleted:
+		return b.FarePaise
+	case b.Status == RideStatusCancelled:
+		return b.CancellationFeePaise
+	default:
+		return 0
+	}
+}
+
+// PaymentStatus is where the money for b stands; empty until there is
+// something to pay — the ride is completed, or cancelled with a fee.
 func (b Booking) PaymentStatus() RidePaymentStatus {
 	switch {
-	case b.Status != RideStatusCompleted:
+	case b.Status != RideStatusCompleted && (b.Status != RideStatusCancelled || b.CancellationFeePaise == 0):
 		return ""
 	case b.PayoutID != "":
 		return RidePaymentPaidOut
@@ -325,6 +364,10 @@ func (b Booking) PaymentStatus() RidePaymentStatus {
 
 // CancelledByCustomer is the cancelled_by of a ride the customer cancelled.
 const CancelledByCustomer = "customer"
+
+// CancelledByNoShow is the cancelled_by of a ride the driver closed because
+// the customer never came to the pickup.
+const CancelledByNoShow = "no_show"
 
 // RideRating is the stars (1–5) one side of a completed ride gave the other,
 // with an optional note.
@@ -373,6 +416,8 @@ type RideDriver struct {
 type UserBooking struct {
 	Booking Booking
 	Driver  *RideDriver
+	// Payment is how the ride was paid, once it is.
+	Payment *BookingPayment
 }
 
 // CustomerBooking is a booking as the customer app shows it: what was booked,
@@ -410,6 +455,20 @@ type CustomerBooking struct {
 	// customer has paid for it; PaidAt is when.
 	PaymentStatus RidePaymentStatus `json:"paymentStatus,omitempty"`
 	PaidAt        *time.Time        `json:"paidAt,omitempty"`
+
+	// Payment is the receipt of a paid ride: how it was paid and the
+	// references to quote; nil until it's paid. FareBreakdown splits a round
+	// trip's fare into tariff and night surcharge, when they add up to it.
+	Payment       *BookingPayment `json:"payment,omitempty"`
+	FareBreakdown *FareBreakdown  `json:"fareBreakdown,omitempty"`
+
+	// CancellationFeePaise: while the driver waits at the pickup, what
+	// cancelling now costs; on a cancelled booking, the fee it charged
+	// (PaymentStatus then covers it). BookedFarePaise is set when the
+	// customer ended the trip early: the fare as booked, FarePaise being
+	// the charge for the time used.
+	CancellationFeePaise int64 `json:"cancellationFeePaise,omitempty"`
+	BookedFarePaise      int64 `json:"bookedFarePaise,omitempty"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.
@@ -439,8 +498,14 @@ type RideCar struct {
 // details parsed into typed places, times and the car, plus the lifecycle
 // timestamps. Customer is set only for the driver the ride is assigned to;
 // DistanceM only on the open-requests feed, when the driver shared a location.
+//
+// Approximate marks an open request as drivers see it before accepting:
+// each place is its locality with coordinates rounded to about a kilometre,
+// stops carry no errand and the car no registration. The exact addresses,
+// plate and customer come with the accepted ride.
 type DriverRide struct {
 	ID               string        `json:"id"`
+	Approximate      bool          `json:"approximate,omitempty"`
 	TripType         string        `json:"tripType"`
 	Status           RideStatus    `json:"status"`
 	ScheduledAt      time.Time     `json:"scheduledAt"`
@@ -463,23 +528,40 @@ type DriverRide struct {
 	CancelledBy      string        `json:"cancelledBy,omitempty"`
 	CancelReason     string        `json:"cancelReason,omitempty"`
 
+	// NoShowAt is when, waiting at the pickup, the driver may close the ride
+	// as a no-show (POST /driver/rides/{id}/no_show). Set only while they're
+	// at the pickup.
+	NoShowAt *time.Time `json:"noShowAt,omitempty"`
+
 	// MyRating is what this driver rated the customer, once they have.
 	MyRating *RideRating `json:"myRating,omitempty"`
 
-	// PaymentStatus is "due" until the customer pays for the completed ride,
-	// "paid" once they have, and "paid_out" once the driver's share went out.
-	// SharePaise is the driver's part of a paid ride: the payment less
-	// MOJUD's commission.
+	// PaymentStatus is "due" until the customer pays for the completed ride
+	// (or the fee of a cancellation at the pickup), "paid" once they have,
+	// and "paid_out" once the driver's share went out. SharePaise is the
+	// driver's part of a paid ride: the payment less MOJUD's commission.
 	PaymentStatus RidePaymentStatus `json:"paymentStatus,omitempty"`
 	PaidAt        *time.Time        `json:"paidAt,omitempty"`
 	SharePaise    int64             `json:"sharePaise,omitempty"`
+
+	// CancellationFeePaise is the fee of a ride the customer cancelled once
+	// the driver was at the pickup. BookedFarePaise is set on a trip the
+	// customer ended early: the fare as booked, FarePaise being the charge
+	// for the time used.
+	CancellationFeePaise int64 `json:"cancellationFeePaise,omitempty"`
+	BookedFarePaise      int64 `json:"bookedFarePaise,omitempty"`
 }
 
 // EarningsPeriod is what a driver earned over one window: the summed fares of
-// rides completed in it.
+// rides completed in it, and NetPaise, the driver's share of them — for a
+// ride the customer paid, the payment less MOJUD's commission; for one still
+// unpaid, the fare less commission at today's rate; the whole fare of a ride
+// the customer paid them in cash, and the usual share of one MOJUD waived
+// (MOJUD pays it).
 type EarningsPeriod struct {
 	FarePaise int64 `json:"farePaise"`
 	Rides     int   `json:"rides"`
+	NetPaise  int64 `json:"netPaise"`
 }
 
 // DriverEarnings is the earnings panel's summary. Windows are calendar

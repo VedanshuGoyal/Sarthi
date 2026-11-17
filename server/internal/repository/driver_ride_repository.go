@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
@@ -41,7 +40,8 @@ const bookingColumns = `id, user_id, trip_type, details, created_at, status,
 	driver_rating, coalesce(driver_rating_note, ''),
 	customer_rating, coalesce(customer_rating_note, ''),
 	paid_at, coalesce(paid_paise, 0), coalesce(commission_paise, 0),
-	coalesce(payout_id::text, '')`
+	coalesce(payout_id::text, ''),
+	coalesce(cancellation_fee_paise, 0), coalesce(booked_fare_paise, 0)`
 
 // bookingColumnsB is bookingColumns read through the `b` alias.
 const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
@@ -51,7 +51,8 @@ const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, 
 	b.driver_rating, coalesce(b.driver_rating_note, ''),
 	b.customer_rating, coalesce(b.customer_rating_note, ''),
 	b.paid_at, coalesce(b.paid_paise, 0), coalesce(b.commission_paise, 0),
-	coalesce(b.payout_id::text, '')`
+	coalesce(b.payout_id::text, ''),
+	coalesce(b.cancellation_fee_paise, 0), coalesce(b.booked_fare_paise, 0)`
 
 // rideColumns is bookingColumnsB plus the customer's name and phone from `u`
 // and their average rating from drivers — the shape scanRide reads.
@@ -71,11 +72,13 @@ var timestampColumn = map[domain.RideStatus]string{
 // lifecycle. Every state change is a single conditional UPDATE, so two
 // drivers racing for the same ride can't both win.
 type DriverRideRepository struct {
-	pool *pgxpool.Pool
+	pool DB
+	// commissionBP is what Earnings takes off unpaid fares (money+ops).
+	commissionBP int64
 }
 
-// NewDriverRideRepository wires the repository to a connection pool.
-func NewDriverRideRepository(pool *pgxpool.Pool) *DriverRideRepository {
+// NewDriverRideRepository wires the repository to a pool (or a transaction).
+func NewDriverRideRepository(pool DB) *DriverRideRepository {
 	return &DriverRideRepository{pool: pool}
 }
 
@@ -179,6 +182,27 @@ func (r *DriverRideRepository) Advance(ctx context.Context, id, driverID string,
 	return rb, nil
 }
 
+// NoShow closes driverID's ride as a customer no-show at at, with reason:
+// cancelled by "no_show", the start code cleared. Only a ride the driver is
+// waiting at the pickup of; [ErrRideStateConflict] otherwise — including
+// when the customer cancelled or the trip started first.
+func (r *DriverRideRepository) NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error) {
+	q := `
+		WITH b AS (
+		    UPDATE bookings
+		    SET status = 'cancelled', cancelled_at = $3, cancelled_by = $4,
+		        cancel_reason = nullif($5, ''), start_otp = NULL
+		    WHERE id = $1 AND driver_id = $2 AND status = 'arrived'
+		    RETURNING *)
+		SELECT ` + rideColumns + `
+		FROM b JOIN users u ON u.id = b.user_id`
+	rb, err := scanRide(r.pool.QueryRow(ctx, q, id, driverID, at, domain.CancelledByNoShow, reason))
+	if err != nil {
+		return domain.RideBooking{}, rideErr(err, ErrRideStateConflict, "closing a no-show")
+	}
+	return rb, nil
+}
+
 // Release hands an accepted (not yet started) ride back to the open pool and
 // hides it from driverID's own feed, in one transaction.
 func (r *DriverRideRepository) Release(ctx context.Context, id, driverID string) error {
@@ -231,10 +255,27 @@ func (r *DriverRideRepository) Decline(ctx context.Context, id, driverID string)
 	return insertDecline(ctx, r.pool, id, driverID)
 }
 
+// netShare is one completed ride's share for its driver (see
+// [domain.EarningsPeriod]), with $5 the commission in basis points for
+// rides not paid yet — rounded as PaymentService.commission rounds.
+const netShare = `CASE
+	WHEN paid_at IS NULL THEN fare_paise - (fare_paise * $5 + 5000) / 10000
+	WHEN paid_mode = 'cash' THEN fare_paise
+	ELSE coalesce(paid_paise, 0) - coalesce(commission_paise, 0)
+END`
+
+// SetCommissionBasisPoints sets the commission (COMMISSION_PERCENT in basis
+// points) Earnings takes off rides the customer hasn't paid yet. Unset, a
+// driver's net share of an unpaid ride is its whole fare.
+func (r *DriverRideRepository) SetCommissionBasisPoints(bp int64) { r.commissionBP = bp }
+
 // Earnings sums driverID's completed rides over all time and since each of
-// the given window starts, along with their average rating from customers
-// (ratings are only given on completed rides) and where their money stands:
-// unpaid by the customer, owed to the driver, or paid out.
+// the given window starts — the fares and the driver's net share of them —
+// along with their average rating from customers (ratings are only given on
+// completed rides) and where their money stands: unpaid by the customer,
+// owed to the driver, or paid out. Cancellation fees count in where the
+// money stands, not in the rides or fares. A ride settled in cash is never
+// owed by MOJUD; a waived one is, like a paid one.
 func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	const q = `
 		SELECT
@@ -246,25 +287,30 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		    count(*) FILTER (WHERE completed_at >= $3),
 		    coalesce(sum(fare_paise) FILTER (WHERE completed_at >= $4), 0),
 		    count(*) FILTER (WHERE completed_at >= $4),
-		    coalesce(sum(fare_paise), 0),
-		    count(*),
-		    coalesce(sum(fare_paise) FILTER (WHERE paid_at IS NULL), 0),
+		    coalesce(sum(fare_paise) FILTER (WHERE status = 'completed'), 0),
+		    count(*) FILTER (WHERE status = 'completed'),
+		    coalesce(sum(` + owedPaise + `) FILTER (WHERE paid_at IS NULL), 0),
 		    count(*) FILTER (WHERE paid_at IS NULL),
-		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
-		        FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL), 0),
-		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL),
+		    coalesce(sum(paid_paise - coalesce(commission_paise, 0)) FILTER (WHERE paid_at IS NOT NULL
+		        AND payout_id IS NULL AND paid_mode IS DISTINCT FROM 'cash'), 0),
+		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS DISTINCT FROM 'cash'),
 		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
 		        FILTER (WHERE payout_id IS NOT NULL), 0),
-		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1)
+		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $2), 0),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $3), 0),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $4), 0),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE status = 'completed'), 0)
 		FROM bookings
-		WHERE driver_id = $1 AND status = 'completed'`
+		WHERE driver_id = $1
+		  AND (status = 'completed' OR (status = 'cancelled' AND cancellation_fee_paise IS NOT NULL))`
 
 	var (
 		e       domain.DriverEarnings
 		average *float64
 		rated   int
 	)
-	err := r.pool.QueryRow(ctx, q, driverID, today, week, month).Scan(
+	err := r.pool.QueryRow(ctx, q, driverID, today, week, month, r.commissionBP).Scan(
 		&average, &rated,
 		&e.Today.FarePaise, &e.Today.Rides,
 		&e.Week.FarePaise, &e.Week.Rides,
@@ -273,6 +319,7 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		&e.Payments.AwaitingCustomerPaise, &e.Payments.AwaitingCustomerRides,
 		&e.Payments.DuePaise, &e.Payments.DueRides,
 		&e.Payments.PaidOutPaise, &e.Payments.LastPayoutAt,
+		&e.Today.NetPaise, &e.Week.NetPaise, &e.Month.NetPaise, &e.Total.NetPaise,
 	)
 	if err != nil {
 		return domain.DriverEarnings{}, fmt.Errorf("summing earnings: %w", err)
@@ -281,6 +328,20 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		e.Rating = &domain.RatingSummary{Average: *average, Count: rated}
 	}
 	return e, nil
+}
+
+// DeclinedBy lists the drivers who declined ride id or handed it back.
+func (r *DriverRideRepository) DeclinedBy(ctx context.Context, id string) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT driver_id::text FROM booking_declines WHERE booking_id = $1`, id)
+	if err != nil {
+		return nil, rideErr(err, ErrRideNotFound, "listing who declined a ride")
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, rideErr(err, ErrRideNotFound, "listing who declined a ride")
+	}
+	return ids, nil
 }
 
 // execer is what insertDecline needs from a pool or a transaction.
@@ -353,6 +414,7 @@ func (r *bookingRow) targets(extra ...any) []any {
 		&r.driverStars, &r.driverNote,
 		&r.customerStars, &r.customerNote,
 		&b.PaidAt, &b.PaidPaise, &b.CommissionPaise, &b.PayoutID,
+		&b.CancellationFeePaise, &b.BookedFarePaise,
 	}, extra...)
 }
 

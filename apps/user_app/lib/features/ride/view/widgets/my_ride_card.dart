@@ -10,10 +10,11 @@ import 'start_code_panel.dart';
 
 /// One booking. While it's active: the driver (with a call button that hands
 /// off to the phone's dialer) and the start code; once it's completed: who
-/// drove, the fare, whether it's paid — or a "Pay by UPI" button — and the
-/// stars given — or a "Rate your trip" prompt;
-/// once cancelled: who cancelled and why. Renders data only; [onTap] opens
-/// the ride and [onRate] its rating.
+/// drove, the fare (and that it ended early, if it did), whether it's paid —
+/// or a "Pay by UPI" button — and the stars given — or a "Rate your trip"
+/// prompt; once cancelled: who cancelled and why, and any cancellation fee
+/// with its own "Pay by UPI" button while it's due. Renders data only;
+/// [onTap] opens the ride and [onRate] its rating.
 class MyRideCard extends StatelessWidget {
   const MyRideCard({
     super.key,
@@ -30,8 +31,8 @@ class MyRideCard extends StatelessWidget {
   final ImageProvider? driverPhoto;
   final VoidCallback? onTap;
 
-  /// Pays for a completed ride that's due; defaults to [onTap], which opens
-  /// the ride and its pay button.
+  /// Pays for a completed ride (or a cancellation fee) that's due; defaults
+  /// to [onTap], which opens the ride and its pay button.
   final VoidCallback? onPay;
 
   /// Asks for the stars of an unrated, completed ride.
@@ -96,21 +97,18 @@ class MyRideCard extends StatelessWidget {
             ),
           const SizedBox(height: Skyline.s12),
           if (b.status == BookingStatus.completed) ...[
-            _CompletedRow(
-              driverName: b.driverName,
-              fare: RideFormat.fare(b),
+            _ChargeRow(
+              label: b.driverName == null
+                  ? 'Trip completed'
+                  : 'Driven by ${b.driverName}',
+              amount: RideFormat.fare(b),
               paid: b.paymentStatus == RidePaymentStatus.paid,
             ),
+            if (RideFormat.endedEarly(b) case final early?)
+              Text('Ended early. $early', style: t.body(size: 13)),
             const SizedBox(height: Skyline.s8),
             if (b.paymentStatus == RidePaymentStatus.due) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  onPressed: onPay ?? onTap,
-                  icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-                  label: Text('Pay ₹${b.fareRupees} by UPI'),
-                ),
-              ),
+              _PayButton(amountPaise: b.chargePaise, onPressed: onPay ?? onTap),
               const SizedBox(height: Skyline.s4),
             ],
             if (b.myRating case final rating?)
@@ -133,14 +131,29 @@ class MyRideCard extends StatelessWidget {
                   label: const Text('Rate your trip'),
                 ),
               ),
-          ] else if (b.status == BookingStatus.cancelled)
+          ] else if (b.status == BookingStatus.cancelled) ...[
             Text(
               b.cancellationSummary ?? 'This ride was cancelled.',
               style: t.body(size: 13),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-            )
-          else if (b.status == BookingStatus.expired)
+            ),
+            if (b.hasCancellationFee) ...[
+              const SizedBox(height: Skyline.s8),
+              _ChargeRow(
+                label: 'Cancellation fee',
+                amount: RideFormat.rupees(b.cancellationFeePaise),
+                paid: b.paymentStatus == RidePaymentStatus.paid,
+              ),
+              if (b.paymentStatus == RidePaymentStatus.due) ...[
+                const SizedBox(height: Skyline.s8),
+                _PayButton(
+                  amountPaise: b.chargePaise,
+                  onPressed: onPay ?? onTap,
+                ),
+              ],
+            ],
+          ] else if (b.status == BookingStatus.expired)
             Text(
               'No driver accepted in time. Please book again.',
               style: t.body(size: 13),
@@ -180,16 +193,35 @@ class MyRideCard extends StatelessWidget {
   }
 }
 
-/// A completed trip's footer: who drove, what it cost, and whether it's paid.
-class _CompletedRow extends StatelessWidget {
-  const _CompletedRow({
-    required this.driverName,
-    required this.fare,
+/// "Pay ₹640 by UPI", for whatever the booking owes.
+class _PayButton extends StatelessWidget {
+  const _PayButton({required this.amountPaise, this.onPressed});
+
+  final int amountPaise;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: FilledButton.tonalIcon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+      label: Text('Pay ${RideFormat.rupees(amountPaise)} by UPI'),
+    ),
+  );
+}
+
+/// A finished booking's footer: what was charged — who drove, or that it's
+/// a cancellation fee — how much, and whether it's paid.
+class _ChargeRow extends StatelessWidget {
+  const _ChargeRow({
+    required this.label,
+    required this.amount,
     this.paid = false,
   });
 
-  final String? driverName;
-  final String fare;
+  final String label;
+  final String amount;
   final bool paid;
 
   @override
@@ -199,7 +231,7 @@ class _CompletedRow extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            driverName == null ? 'Trip completed' : 'Driven by $driverName',
+            label,
             style: t.body(size: 13),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -212,7 +244,7 @@ class _CompletedRow extends StatelessWidget {
           Text('Paid', style: t.label(color: t.success)),
           const SizedBox(width: Skyline.s8),
         ],
-        Text(fare, style: t.title(15)),
+        Text(amount, style: t.title(15)),
       ],
     );
   }

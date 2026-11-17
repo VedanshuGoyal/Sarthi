@@ -24,6 +24,6 @@ class TripStop {
   Map<String, dynamic> toJson() => {
     'location': location.toJson(),
     'task': task,
-    'departBy': departBy.toIso8601String(),
+    'departBy': departBy.toUtc().toIso8601String(),
   };
 }

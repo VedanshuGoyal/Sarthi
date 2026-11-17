@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/big"
 	"time"
 
@@ -49,6 +50,43 @@ var ErrStartOTPIncorrect = errors.New("that code doesn't match — ask the custo
 // allowance: the ride gets a new code, which the customer's app now shows.
 var ErrStartOTPReset = errors.New("too many wrong codes — the customer's app now shows a new one")
 
+// ErrStartLocked is matched (errors.Is) by a [*StartLockedError]: the ride
+// has had too many wrong codes and refuses any for a while.
+var ErrStartLocked = errors.New("too many wrong codes for this ride")
+
+// StartLockedError says how long a locked ride refuses start codes.
+type StartLockedError struct{ RetryAfter time.Duration }
+
+func (e *StartLockedError) Error() string {
+	return fmt.Sprintf("too many wrong codes for this ride — try again in %d minutes",
+		int(math.Ceil(e.RetryAfter.Minutes())))
+}
+
+// Is makes errors.Is(err, ErrStartLocked) true.
+func (e *StartLockedError) Is(target error) bool { return target == ErrStartLocked }
+
+// ErrNoShowTooEarly is matched (errors.Is) by a [*NoShowTooEarlyError]: the
+// driver hasn't waited at the pickup long enough to call a no-show.
+var ErrNoShowTooEarly = errors.New("wait a little longer for the customer")
+
+// NoShowTooEarlyError says when the driver may close the ride as a no-show.
+type NoShowTooEarlyError struct {
+	At   time.Time
+	Wait time.Duration
+}
+
+func (e *NoShowTooEarlyError) Error() string {
+	return fmt.Sprintf("give the customer until %s before closing the ride as a no-show", formatClock(e.At))
+}
+
+// Is makes errors.Is(err, ErrNoShowTooEarly) true.
+func (e *NoShowTooEarlyError) Is(target error) bool { return target == ErrNoShowTooEarly }
+
+// noShowWait is how long a driver waits at the pickup — from the later of
+// arriving and the booked start — before they may close the ride as a
+// no-show.
+const noShowWait = 15 * time.Minute
+
 const (
 	// requestRadiusM is how far from the driver an open ride may start and
 	// still appear in their feed — roughly a metro area, since rides are
@@ -73,6 +111,7 @@ type DriverRideStore interface {
 	SetStartOTP(ctx context.Context, id, driverID, startOTP string) error
 	Advance(ctx context.Context, id, driverID string, from, to domain.RideStatus, at time.Time) (domain.RideBooking, error)
 	Release(ctx context.Context, id, driverID string) error
+	NoShow(ctx context.Context, id, driverID string, at time.Time, reason string) (domain.RideBooking, error)
 	Decline(ctx context.Context, id, driverID string) error
 	RateCustomer(ctx context.Context, id, driverID string, rating domain.RideRating) error
 	Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error)
@@ -92,11 +131,12 @@ type DriverPresence interface {
 }
 
 // StartCodeGuard caps wrong start-code attempts per ride
-// (memstore.OTPGuard, keyed by ride id).
+// (memstore.StartCodeGuard, keyed by ride id): after a few wrong codes the
+// code is replaced, and after a few replacements the ride is locked.
 type StartCodeGuard interface {
-	Begin(key string)
-	RecordFailure(key string) (invalidated bool)
-	Succeed(key string)
+	Allow(ride string) (ok bool, retryAfter time.Duration)
+	RecordFailure(ride string) (replace bool, lockedFor time.Duration)
+	Succeed(ride string)
 }
 
 // LiveLocationSink keeps the positions drivers' apps share while on a ride
@@ -115,6 +155,7 @@ type RideAlerter interface {
 	DriverArrived(ctx context.Context, userID, driverID string, ride domain.DriverRide)
 	DriverReleased(ctx context.Context, b domain.Booking, plan tripPlan, driverID string)
 	RideCompleted(ctx context.Context, userID string, ride domain.DriverRide)
+	CustomerNoShow(ctx context.Context, userID string, ride domain.DriverRide)
 }
 
 // LatLng is a point the driver app reports.
@@ -135,8 +176,13 @@ type DriverRideService struct {
 	codes    StartCodeGuard
 	live     LiveLocationSink
 	alerts   RideAlerter
+	duty     DutyStore // nil: duty lives in presence only
 	now      func() time.Time
 	newCode  func() (string, error)
+
+	// drivers serialises each driver's accepts and starts: both check the
+	// driver's other rides, then write, and two at once could both pass.
+	drivers keyedLocks
 }
 
 // NewDriverRideService wires the service to its store, the KYC profile
@@ -159,7 +205,10 @@ func NewDriverRideService(store DriverRideStore, profiles DriverProfileReader, p
 // Requests returns the open rides driverID can take, soonest first — those
 // starting more than acceptCutoff from now. With a
 // location, rides further than requestRadiusM are left out and each carries
-// its distance. The customer's details stay hidden until a ride is accepted.
+// its distance. Until a ride is accepted it is approximate (see
+// coarseRide): localities instead of addresses, no plate, no customer — and
+// the distance is to the rounded pickup, so asking from three places
+// doesn't pin down the house.
 func (s *DriverRideService) Requests(ctx context.Context, driverID string, at *LatLng) ([]domain.DriverRide, error) {
 	profile, err := s.clearedProfile(ctx, driverID)
 	if err != nil {
@@ -197,7 +246,7 @@ func (s *DriverRideService) MyRides(ctx context.Context, driverID string) ([]dom
 	}
 	out := []domain.DriverRide{}
 	for _, rb := range rows {
-		if ride, _, ok := toDriverRide(rb, true); ok {
+		if ride, ok := s.assigned(rb); ok {
 			out = append(out, ride)
 		}
 	}
@@ -206,14 +255,26 @@ func (s *DriverRideService) MyRides(ctx context.Context, driverID string) ([]dom
 
 // Accept assigns the open ride rideID to driverID, provided they're cleared,
 // drive its gearbox, and have nothing else booked over the same hours.
+//
+// It is replay-safe: accepting a ride the driver already holds (a retry
+// after a lost reply, a double tap) returns it as it stands, rather than
+// telling them they lost it.
 func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
 	profile, err := s.clearedProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
+	// From reading the ride to the accept, one at a time per driver: a
+	// double-fired accept on two overlapping rides can't win both, and one
+	// fired twice on the same ride sees the first one's result.
+	defer s.drivers.lock(driverID)()
 	target, err := s.store.FindByID(ctx, rideID)
 	if err != nil {
 		return domain.DriverRide{}, err
+	}
+	if held, ok := s.heldBy(target, driverID); ok {
+		slog.InfoContext(ctx, "ride accept replayed", "driverId", driverID, "rideId", rideID)
+		return held, nil
 	}
 	if target.Booking.Status != domain.RideStatusRequested {
 		return domain.DriverRide{}, repository.ErrRideUnavailable
@@ -234,7 +295,7 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, err
 	}
 	for _, rb := range mine {
-		if !holdsDriver(rb.Booking.Status) {
+		if !holdsDriver(rb.Booking.Status) || rb.Booking.ID == rideID {
 			continue
 		}
 		other, otherPlan, ok := toDriverRide(rb, false)
@@ -250,12 +311,19 @@ func (s *DriverRideService) Accept(ctx context.Context, driverID, rideID string)
 		return domain.DriverRide{}, err
 	}
 	rb, err := s.store.Accept(ctx, rideID, driverID, s.now(), code)
+	if errors.Is(err, repository.ErrRideUnavailable) {
+		// Lost the race — unless to this same driver, by another path.
+		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil {
+			if held, ok := s.heldBy(now, driverID); ok {
+				return held, nil
+			}
+		}
+	}
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	s.codes.Begin(rideID)
 	slog.InfoContext(ctx, "ride accepted", "driverId", driverID, "rideId", rideID)
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	if s.alerts != nil {
 		s.alerts.DriverAssigned(ctx, rb.Booking.UserID, ride, profile.FullName)
 	}
@@ -278,8 +346,13 @@ func (s *DriverRideService) Arrive(ctx context.Context, driverID, rideID string)
 //
 // Wrong codes are capped per ride (StartCodeGuard); the attempt that uses up
 // the allowance replaces the code, so guessing never gets easier and the
-// customer simply reads out the new one.
+// customer simply reads out the new one. A ride whose codes keep being used
+// up is locked for a while ([ErrStartLocked]), so 10,000 guesses can't be
+// scripted.
 func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp string) (domain.DriverRide, error) {
+	// One at a time per driver, from the "nothing else underway" check to
+	// the start.
+	defer s.drivers.lock(driverID)()
 	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
 	if err != nil {
 		return domain.DriverRide{}, err
@@ -293,13 +366,22 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 			target = &mine[i]
 		}
 	}
+	// Already started (a retry after a lost reply): nothing to check again.
+	if target != nil && target.Booking.Status == domain.RideStatusInProgress {
+		ride, _ := s.assigned(*target)
+		return ride, nil
+	}
 	if target == nil || target.Booking.Status != domain.RideStatusArrived {
 		return domain.DriverRide{}, repository.ErrRideStateConflict
 	}
 
+	if ok, wait := s.codes.Allow(rideID); !ok {
+		return domain.DriverRide{}, &StartLockedError{RetryAfter: wait}
+	}
 	want := target.Booking.StartOTP
 	if want == "" || subtle.ConstantTimeCompare([]byte(otp), []byte(want)) != 1 {
-		if !s.codes.RecordFailure(rideID) {
+		replace, lockedFor := s.codes.RecordFailure(rideID)
+		if !replace {
 			return domain.DriverRide{}, ErrStartOTPIncorrect
 		}
 		code, err := s.newCode()
@@ -309,7 +391,11 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 		if err := s.store.SetStartOTP(ctx, rideID, driverID, code); err != nil {
 			return domain.DriverRide{}, err
 		}
-		s.codes.Begin(rideID)
+		if lockedFor > 0 {
+			slog.WarnContext(ctx, "ride start locked after repeated wrong codes",
+				"driverId", driverID, "rideId", rideID, "lockedFor", lockedFor)
+			return domain.DriverRide{}, &StartLockedError{RetryAfter: lockedFor}
+		}
 		slog.WarnContext(ctx, "ride start code reset after wrong attempts",
 			"driverId", driverID, "rideId", rideID)
 		return domain.DriverRide{}, ErrStartOTPReset
@@ -325,6 +411,59 @@ func (s *DriverRideService) Start(ctx context.Context, driverID, rideID, otp str
 // Complete finishes a ride that is underway.
 func (s *DriverRideService) Complete(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
 	return s.advance(ctx, driverID, rideID, domain.RideStatusInProgress, domain.RideStatusCompleted)
+}
+
+// NoShow closes the ride driverID is waiting at the pickup of because the
+// customer never came: cancelled by "no_show", so the driver isn't the one
+// who cancelled. Allowed from noShowWait after the later of their arrival
+// and the booked start ([*NoShowTooEarlyError] before then). The customer
+// is told. Asking again once it's closed returns the ride.
+func (s *DriverRideService) NoShow(ctx context.Context, driverID, rideID string) (domain.DriverRide, error) {
+	rb, err := s.store.FindByID(ctx, rideID)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	b := rb.Booking
+	if b.DriverID != driverID {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	if b.Status == domain.RideStatusCancelled && b.CancelledBy == domain.CancelledByNoShow {
+		ride, _ := s.assigned(rb)
+		return ride, nil
+	}
+	if b.Status != domain.RideStatusArrived {
+		return domain.DriverRide{}, repository.ErrRideStateConflict
+	}
+	now := s.now()
+	if at := noShowAt(b); at != nil && now.Before(*at) {
+		return domain.DriverRide{}, &NoShowTooEarlyError{At: *at, Wait: at.Sub(now)}
+	}
+	reason := "The driver waited at the pickup until " + formatClock(now)
+	rb, err = s.store.NoShow(ctx, rideID, driverID, now, reason)
+	if err != nil {
+		return domain.DriverRide{}, err
+	}
+	slog.InfoContext(ctx, "ride closed as a no-show", "driverId", driverID, "rideId", rideID)
+	ride, _ := s.assigned(rb)
+	if s.alerts != nil {
+		s.alerts.CustomerNoShow(ctx, b.UserID, ride)
+	}
+	return ride, nil
+}
+
+// noShowAt is when the driver of arrived booking b may call a no-show:
+// noShowWait after the later of arriving and the booked start. Nil for a
+// booking not at the pickup.
+func noShowAt(b domain.Booking) *time.Time {
+	if b.Status != domain.RideStatusArrived || b.ArrivedAt == nil || b.ScheduledAt == nil {
+		return nil
+	}
+	from := *b.ArrivedAt
+	if b.ScheduledAt.After(from) {
+		from = *b.ScheduledAt
+	}
+	at := from.Add(noShowWait)
+	return &at
 }
 
 // Release hands an accepted ride back to the open pool, before it starts.
@@ -364,7 +503,7 @@ func (s *DriverRideService) RateCustomer(ctx context.Context, driverID, rideID s
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	return ride, nil
 }
 
@@ -393,10 +532,17 @@ func (s *DriverRideService) Earnings(ctx context.Context, driverID string) (doma
 }
 
 // SetDuty puts driverID online (optionally at a location) or takes them
-// offline in the live presence index. Going online requires cleared KYC.
+// offline in the live presence index, and — with a duty store — on their
+// row in PostgreSQL, so a restart remembers. Going online requires cleared
+// KYC. The app calls it every 20 s while on duty, as its heartbeat.
 func (s *DriverRideService) SetDuty(ctx context.Context, driverID string, online bool, at *LatLng) error {
 	if !online {
 		s.presence.Remove(driverID)
+		if s.duty != nil {
+			if err := s.duty.EndDuty(ctx, driverID); err != nil {
+				slog.WarnContext(ctx, "duty: saving off duty failed", "driverId", driverID, "error", err)
+			}
+		}
 		return nil
 	}
 	if _, err := s.clearedProfile(ctx, driverID); err != nil {
@@ -404,18 +550,45 @@ func (s *DriverRideService) SetDuty(ctx context.Context, driverID string, online
 	}
 	s.presence.Register(domain.Driver{ID: driverID, Status: domain.DriverStatusAvailable})
 	if at != nil {
-		return s.presence.UpdateLocation(driverID, domain.Location{Lat: at.Lat, Lng: at.Lng})
+		if err := s.presence.UpdateLocation(driverID, domain.Location{Lat: at.Lat, Lng: at.Lng}); err != nil {
+			return err
+		}
+	}
+	// Presence is what alerts read; the row is for after a restart, so a
+	// failed write is logged rather than failing the heartbeat.
+	if s.duty != nil {
+		var lat, lng *float64
+		if at != nil {
+			lat, lng = &at.Lat, &at.Lng
+		}
+		if err := s.duty.SaveDuty(ctx, driverID, s.now(), lat, lng); err != nil {
+			slog.WarnContext(ctx, "duty: saving on duty failed", "driverId", driverID, "error", err)
+		}
 	}
 	return nil
 }
 
+// SetDutyStore has SetDuty keep duty in PostgreSQL as well as in presence.
+func (s *DriverRideService) SetDutyStore(d DutyStore) { s.duty = d }
+
+// advance moves driverID's ride from one status to the next. It is
+// replay-safe: asking for the status the ride is already in returns the
+// ride, without telling the customer a second time.
 func (s *DriverRideService) advance(ctx context.Context, driverID, rideID string, from, to domain.RideStatus) (domain.DriverRide, error) {
 	rb, err := s.store.Advance(ctx, rideID, driverID, from, to, s.now())
+	if errors.Is(err, repository.ErrRideStateConflict) {
+		if now, ferr := s.store.FindByID(ctx, rideID); ferr == nil &&
+			now.Booking.DriverID == driverID && now.Booking.Status == to {
+			slog.InfoContext(ctx, "ride step replayed", "driverId", driverID, "rideId", rideID, "status", to)
+			ride, _ := s.assigned(now)
+			return ride, nil
+		}
+	}
 	if err != nil {
 		return domain.DriverRide{}, err
 	}
 	slog.InfoContext(ctx, "ride advanced", "driverId", driverID, "rideId", rideID, "status", to)
-	ride, _, _ := toDriverRide(rb, true)
+	ride, _ := s.assigned(rb)
 	if to == domain.RideStatusArrived && s.alerts != nil {
 		s.alerts.DriverArrived(ctx, rb.Booking.UserID, driverID, ride)
 	}
@@ -434,17 +607,62 @@ func newStartOTP() (string, error) {
 	return fmt.Sprintf("%04d", n.Int64()), nil
 }
 
-// clearedProfile returns driverID's profile if their KYC lets them drive:
-// verified, automatically on submission or by a reviewer.
+// clearedProfile returns driverID's profile if their KYC lets them drive
+// (see clearedToDrive).
 func (s *DriverRideService) clearedProfile(ctx context.Context, driverID string) (domain.DriverProfile, error) {
 	p, err := s.profiles.FindProfile(ctx, driverID)
 	if err != nil {
 		return domain.DriverProfile{}, err
 	}
-	if p.KYCStatus != domain.KYCVerified {
-		return domain.DriverProfile{}, ErrDriverNotCleared
+	if err := clearedToDrive(p, s.now()); err != nil {
+		return domain.DriverProfile{}, err
 	}
 	return p, nil
+}
+
+// clearedToDrive says why p may not drive at now, or nil: their KYC must be
+// verified (automatically on submission, or by a reviewer) and their
+// licence, when its expiry is on record, not past it. Licences expire long
+// after the one-off check at verification, so this is asked every time.
+func clearedToDrive(p domain.DriverProfile, now time.Time) error {
+	if p.KYCStatus != domain.KYCVerified {
+		return ErrDriverNotCleared
+	}
+	n := now.In(ist)
+	today := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, time.UTC)
+	if v := p.LicenseValidUntil; v != nil && v.Before(today) {
+		return fmt.Errorf("%w: your driving licence expired on %s; renew it and verify it again",
+			ErrDriverNotCleared, v.Format("2 Jan 2006"))
+	}
+	return nil
+}
+
+// ReleaseHeldRides hands back every ride driverID has accepted but not
+// started, as if they had released each — the customer is told and other
+// drivers alerted while it's still open. Called when a reviewer takes the
+// driver off the road. A ride already underway is left to finish. It
+// returns how many were released.
+func (s *DriverRideService) ReleaseHeldRides(ctx context.Context, driverID string) (int, error) {
+	mine, err := s.store.ListForDriver(ctx, driverID, maxMyRides)
+	if err != nil {
+		return 0, err
+	}
+	released := 0
+	var errs []error
+	for _, rb := range mine {
+		switch rb.Booking.Status {
+		case domain.RideStatusAccepted, domain.RideStatusArrived:
+			if err := s.Release(ctx, driverID, rb.Booking.ID); err != nil {
+				errs = append(errs, fmt.Errorf("releasing ride %s: %w", rb.Booking.ID, err))
+				continue
+			}
+			released++
+		case domain.RideStatusInProgress:
+			slog.WarnContext(ctx, "ride left with a driver who lost clearance: already underway",
+				"driverId", driverID, "rideId", rb.Booking.ID)
+		}
+	}
+	return released, errors.Join(errs...)
 }
 
 // toDriverRide renders a stored booking for the driver app. ok is false for
@@ -485,17 +703,23 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 		CancelledAt:      b.CancelledAt,
 		CancelledBy:      b.CancelledBy,
 		CancelReason:     b.CancelReason,
+		NoShowAt:         noShowAt(b),
 		MyRating:         b.CustomerRating,
 		PaymentStatus:    b.PaymentStatus(),
 		PaidAt:           b.PaidAt,
+
+		CancellationFeePaise: b.CancellationFeePaise,
+		BookedFarePaise:      b.BookedFarePaise,
 	}
 	if b.PaidAt != nil {
 		ride.SharePaise = b.PaidPaise - b.CommissionPaise
 	}
-	if withCustomer {
-		c := rb.Customer
-		ride.Customer = &c
+	if !withCustomer {
+		// Not the driver's ride (yet): where, roughly, and no one to call.
+		return coarseRide(ride), plan, true
 	}
+	c := rb.Customer
+	ride.Customer = &c
 	return ride, plan, true
 }
 
@@ -506,6 +730,41 @@ func canDrive(d domain.DriverTransmission, car *domain.RideCar) bool {
 		return true
 	}
 	return string(d) == car.Transmission
+}
+
+// heldBy returns rb as its driver sees it when driverID holds it — accepted,
+// at the pickup or underway.
+func (s *DriverRideService) heldBy(rb domain.RideBooking, driverID string) (domain.DriverRide, bool) {
+	if rb.Booking.DriverID != driverID || !holdsDriver(rb.Booking.Status) {
+		return domain.DriverRide{}, false
+	}
+	return s.assigned(rb)
+}
+
+// assigned renders rb for the driver it's assigned to: every detail, and
+// the customer — whose number goes once the ride has been over for
+// contactLifetime. ok is false for unreadable details.
+func (s *DriverRideService) assigned(rb domain.RideBooking) (domain.DriverRide, bool) {
+	ride, _, ok := toDriverRide(rb, true)
+	if ok && ride.Customer != nil && contactExpired(rb.Booking, s.now()) {
+		ride.Customer.PhoneE164 = ""
+	}
+	return ride, ok
+}
+
+// contactLifetime is how long after a ride is completed or cancelled each
+// side still sees the other's phone number: enough for a forgotten bag or
+// a question about the bill, not for booking each other off the app.
+const contactLifetime = 2 * time.Hour
+
+// contactExpired reports whether, at now, b ended (completed or cancelled)
+// more than contactLifetime ago.
+func contactExpired(b domain.Booking, now time.Time) bool {
+	ended := b.CompletedAt
+	if ended == nil {
+		ended = b.CancelledAt
+	}
+	return ended != nil && !now.Before(ended.Add(contactLifetime))
 }
 
 // holdsDriver reports whether a ride in status s still occupies its driver.

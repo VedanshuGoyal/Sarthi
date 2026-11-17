@@ -187,7 +187,7 @@ class RouteTimeline extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          compact ? row.place.shortName : row.place.address,
+                          _name(row.place),
                           style: t.title(compact ? 14 : 15),
                           maxLines: compact ? 1 : 3,
                           overflow: TextOverflow.ellipsis,
@@ -203,6 +203,18 @@ class RouteTimeline extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  /// A request's places are already just their area ("Saket, New Delhi"),
+  /// shown whole; an accepted ride's full address is cut to its first part
+  /// on compact cards.
+  String _name(RidePlace place) {
+    if (ride.approximate) {
+      return place.address.isEmpty
+          ? 'Exact place after you accept'
+          : place.address;
+    }
+    return compact ? place.shortName : place.address;
   }
 
   static String _by(DateTime? departBy) =>
@@ -337,36 +349,88 @@ class RideCard extends StatelessWidget {
                   icon: Icons.near_me_rounded,
                   text: '${RideFormat.distance(distance)} away',
                 ),
+              if (ride.approximate)
+                const RideFact(
+                  icon: Icons.lock_outline_rounded,
+                  text: 'Exact address after you accept',
+                ),
             ],
           ),
           if (ride.status == RideStatus.cancelled) ...[
             const SizedBox(height: Skyline.s12),
-            Row(
-              children: [
-                Icon(Icons.cancel_rounded, size: 16, color: t.danger),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    [
-                      ride.cancelledBy == 'customer'
-                          ? 'Cancelled by customer'
-                          : 'Cancelled',
-                      if (ride.cancelReason?.isNotEmpty ?? false)
-                        ride.cancelReason!,
-                    ].join(' · '),
-                    style: t.body(size: 12.5, color: t.danger),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            _CardNote(
+              icon: Icons.cancel_rounded,
+              text: [
+                ride.cancelLabel,
+                if (ride.cancelReason?.isNotEmpty ?? false) ride.cancelReason!,
+              ].join(' · '),
+              color: t.danger,
+              maxLines: 1,
             ),
-          ] else if (footer != null) ...[
-            const SizedBox(height: Skyline.s16),
-            footer!,
+            if (ride.hasCancellationFee) ...[
+              const SizedBox(height: Skyline.s4),
+              _CardNote(
+                icon: Icons.receipt_long_rounded,
+                text: RideFormat.cancellationFee(ride),
+              ),
+            ],
+          ] else ...[
+            if (ride.endedEarly) ...[
+              const SizedBox(height: Skyline.s12),
+              _CardNote(
+                icon: Icons.timer_off_rounded,
+                text:
+                    'Customer ended the trip early · '
+                    '${RideFormat.endedEarly(ride)}',
+              ),
+            ],
+            if (footer != null) ...[
+              const SizedBox(height: Skyline.s16),
+              footer!,
+            ],
           ],
         ],
       ),
+    );
+  }
+}
+
+/// A ride card's closing note — how it was cancelled, a fee, an early end —
+/// as an icon and up to [maxLines] of text.
+class _CardNote extends StatelessWidget {
+  const _CardNote({
+    required this.icon,
+    required this.text,
+    this.color,
+    this.maxLines = 2,
+  });
+
+  final IconData icon;
+  final String text;
+
+  /// The icon and text colour; the muted body colour when null.
+  final Color? color;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return Row(
+      crossAxisAlignment: maxLines == 1
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: color ?? t.inkFaint),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: t.body(size: 12.5, color: color),
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

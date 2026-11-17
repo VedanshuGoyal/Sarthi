@@ -6,7 +6,9 @@ import 'data/cars_api.dart';
 import 'data/cars_repository.dart';
 import 'data/location_repository.dart';
 import 'data/ola_maps_authenticator.dart';
+import 'data/recent_locations_storage.dart';
 import 'data/recent_pickups_api.dart';
+import 'data/saved_cars_storage.dart';
 import 'data/upi_checkout.dart';
 import 'domain/one_way_trip.dart';
 import 'domain/pickup_location.dart';
@@ -40,9 +42,25 @@ final tripSelectionViewModelProvider =
 /// auth state (like [authRepositoryProvider]).
 final locationRepositoryProvider = Provider<LocationRepository>((ref) {
   String? sessionToken() => ref.read(authControllerProvider).valueOrNull?.token;
+  final backend = ref.watch(backendClientProvider);
   return LocationRepository(
-    tokenProvider: OlaMapsAuthenticator(tokenGetter: sessionToken).accessToken,
-    recentsApi: RecentPickupsApi(tokenGetter: sessionToken),
+    client: ref.watch(thirdPartyClientProvider),
+    tokenProvider: OlaMapsAuthenticator(
+      client: backend,
+      tokenGetter: sessionToken,
+    ).accessToken,
+    recentsApi: RecentPickupsApi(client: backend, tokenGetter: sessionToken),
+    recentsCache: SecureRecentLocationsStorage(
+      userId: ref.watch(_userIdProvider),
+    ),
+  );
+});
+
+/// The signed-in customer's id, so the on-device caches below are kept per
+/// account.
+final _userIdProvider = Provider<String?>((ref) {
+  return ref.watch(
+    authControllerProvider.select((s) => s.valueOrNull?.user.id),
   );
 });
 
@@ -51,6 +69,7 @@ final locationRepositoryProvider = Provider<LocationRepository>((ref) {
 /// Overridden in tests with a fake so no real request is made.
 final bookingRepositoryProvider = Provider<BookingRepository>((ref) {
   return BookingRepository(
+    client: ref.watch(backendClientProvider),
     tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
   );
 });
@@ -67,16 +86,23 @@ final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
   },
 );
 
-/// One ride's details screen (and the rating sheet): cancel, pay, rate, and
-/// the driver's live location. A `family` keyed on the booking id — the ride
-/// itself is read from [myBookingsViewModelProvider], so the screen follows
-/// every list refresh. `autoDispose` so leaving the screen stops its polling
-/// and drops a half-written rating.
+/// One ride's details screen (and the rating sheet): cancel, end early,
+/// pay, rate, and the driver's live location. A `family` keyed on the
+/// booking id — the ride itself is read from [myBookingsViewModelProvider],
+/// which the view model listens to, so the screen follows every list
+/// refresh. `autoDispose` so leaving the screen stops its polling and drops
+/// a half-written rating.
+///
+/// It watches the list's `.notifier` — the instance, not its changes — so a
+/// list refresh doesn't rebuild the view model: that would drop the rating
+/// being written, the driver's last fix and a fee the server quoted, and
+/// re-run the payment check made on opening a due ride on every refresh,
+/// each check refreshing the list again.
 final rideDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
     .family<RideDetailsViewModel, String>((ref, bookingId) {
       return RideDetailsViewModel(
         repository: ref.watch(bookingRepositoryProvider),
-        bookings: ref.watch(myBookingsViewModelProvider),
+        bookings: ref.watch(myBookingsViewModelProvider.notifier),
         bookingId: bookingId,
         checkout: ref.watch(upiCheckoutProvider),
         flowId:
@@ -97,8 +123,10 @@ final upiCheckoutProvider = Provider<UpiCheckout>((ref) {
 final carsRepositoryProvider = Provider<CarsRepository>((ref) {
   return CarsRepository(
     api: CarsApi(
+      client: ref.watch(backendClientProvider),
       tokenGetter: () => ref.read(authControllerProvider).valueOrNull?.token,
     ),
+    storage: SecureSavedCarsStorage(userId: ref.watch(_userIdProvider)),
   );
 });
 

@@ -4,22 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sarthi/server/internal/domain"
 )
 
 // BookingRepository persists confirmed bookings submitted from the customer app.
 type BookingRepository struct {
-	pool *pgxpool.Pool
+	db DB
 }
 
-// NewBookingRepository wires the repository to a connection pool.
-func NewBookingRepository(pool *pgxpool.Pool) *BookingRepository {
-	return &BookingRepository{pool: pool}
+// NewBookingRepository wires the repository to a pool (or a transaction).
+func NewBookingRepository(db DB) *BookingRepository {
+	return &BookingRepository{db: db}
 }
 
 // InsertBookingParams is a new booking: what the customer sent, plus the
@@ -31,24 +31,129 @@ type InsertBookingParams struct {
 	ScheduledAt   time.Time
 	FarePaise     int64
 	FareEstimated bool
+
+	// IdempotencyKey is the app's key for this booking attempt, "" for none:
+	// a booking the user already made with it is returned instead.
+	IdempotencyKey string
+	// DuplicateSince, when set, also returns instead of inserting the user's
+	// booking created since then for the same trip type, start and details
+	// that hasn't been cancelled — a retry from an app that sends no key.
+	DuplicateSince time.Time
 }
 
 // Insert records the user's booking as an open ride request and returns the
-// stored row, with the id and created_at the database assigned. Details is
-// written verbatim as JSONB — pgx marshals the map on the way in and
-// unmarshals it back on the way out.
-func (r *BookingRepository) Insert(ctx context.Context, p InsertBookingParams) (domain.Booking, error) {
-	q := `
-		INSERT INTO bookings (user_id, trip_type, details, scheduled_at, fare_paise, fare_estimated)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING ` + bookingColumns
-
-	b, err := scanBooking(r.pool.QueryRow(ctx, q,
-		p.UserID, p.TripType, p.Details, p.ScheduledAt, p.FarePaise, p.FareEstimated))
+// stored row, with the id and created_at the database assigned — or, when
+// p names a booking already made (see IdempotencyKey and DuplicateSince),
+// that one, with existing true. Details is written verbatim as JSONB — pgx
+// marshals the map on the way in and unmarshals it back on the way out.
+//
+// The look-up and the insert run under a per-customer lock, so two copies
+// of one submit racing in can't both miss each other.
+func (r *BookingRepository) Insert(ctx context.Context, p InsertBookingParams) (b domain.Booking, existing bool, err error) {
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return domain.Booking{}, fmt.Errorf("inserting booking: %w", err)
+		return domain.Booking{}, false, fmt.Errorf("inserting booking: %w", err)
 	}
-	return b, nil
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"booking-insert:"+p.UserID); err != nil {
+		return domain.Booking{}, false, fmt.Errorf("inserting booking: %w", err)
+	}
+	b, existing, err = findRepeat(ctx, tx, p)
+	if err != nil {
+		return domain.Booking{}, false, err
+	}
+	if !existing {
+		b, err = scanBooking(tx.QueryRow(ctx, `
+			INSERT INTO bookings
+			    (user_id, trip_type, details, scheduled_at, fare_paise, fare_estimated, idempotency_key)
+			VALUES ($1, $2, $3, $4, $5, $6, nullif($7, ''))
+			RETURNING `+bookingColumns,
+			p.UserID, p.TripType, p.Details, p.ScheduledAt, p.FarePaise, p.FareEstimated, p.IdempotencyKey))
+		if err != nil {
+			return domain.Booking{}, false, fmt.Errorf("inserting booking: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Booking{}, false, fmt.Errorf("inserting booking: %w", err)
+	}
+	return b, existing, nil
+}
+
+// findRepeat looks for the booking p repeats: the user's booking made with
+// the same idempotency key, else (when p.DuplicateSince is set) their
+// latest uncancelled one since then with the same trip type, start and
+// details. JSONB equality ignores key order and spacing.
+func findRepeat(ctx context.Context, tx pgx.Tx, p InsertBookingParams) (domain.Booking, bool, error) {
+	if p.IdempotencyKey != "" {
+		b, err := scanBooking(tx.QueryRow(ctx, `
+			SELECT `+bookingColumns+` FROM bookings
+			WHERE user_id = $1 AND idempotency_key = $2`, p.UserID, p.IdempotencyKey))
+		if err == nil {
+			return b, true, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return domain.Booking{}, false, fmt.Errorf("finding booking by key: %w", err)
+		}
+	}
+	if p.DuplicateSince.IsZero() {
+		return domain.Booking{}, false, nil
+	}
+	b, err := scanBooking(tx.QueryRow(ctx, `
+		SELECT `+bookingColumns+` FROM bookings
+		WHERE user_id = $1 AND trip_type = $2 AND scheduled_at = $3 AND details = $4
+		  AND created_at >= $5 AND status <> 'cancelled'
+		ORDER BY created_at DESC
+		LIMIT 1`, p.UserID, p.TripType, p.ScheduledAt, p.Details, p.DuplicateSince))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Booking{}, false, nil
+	}
+	if err != nil {
+		return domain.Booking{}, false, fmt.Errorf("finding a repeated booking: %w", err)
+	}
+	return b, true, nil
+}
+
+// UnpaidRide returns the id of userID's longest-unpaid booking — a
+// completed ride, or a cancellation that charged a fee — owing at least
+// minPaise (smaller sums can't be paid through the gateway), or "" when
+// everything they owe is paid.
+func (r *BookingRepository) UnpaidRide(ctx context.Context, userID string, minPaise int64) (string, error) {
+	var id string
+	err := r.db.QueryRow(ctx, `
+		SELECT id::text FROM (
+		    SELECT id, completed_at AS owed_since, created_at FROM bookings
+		    WHERE user_id = $1 AND status = 'completed' AND paid_at IS NULL AND fare_paise >= $2
+		    UNION ALL
+		    SELECT id, cancelled_at, created_at FROM bookings
+		    WHERE user_id = $1 AND status = 'cancelled' AND cancellation_fee_paise IS NOT NULL
+		      AND paid_at IS NULL AND cancellation_fee_paise >= $2
+		) owed
+		ORDER BY owed_since NULLS FIRST, created_at
+		LIMIT 1`, userID, minPaise).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("checking for an unpaid ride: %w", err)
+	}
+	return id, nil
+}
+
+// DriverBusyElsewhere reports whether driverID is at the pickup of, or
+// driving, a ride other than bookingID.
+func (r *BookingRepository) DriverBusyElsewhere(ctx context.Context, driverID, bookingID string) (bool, error) {
+	var busy bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+		    SELECT 1 FROM bookings
+		    WHERE driver_id = $1 AND id <> $2 AND status IN ('arrived', 'in_progress'))`,
+		driverID, bookingID).Scan(&busy)
+	if err != nil {
+		return false, fmt.Errorf("checking the driver's other rides: %w", err)
+	}
+	return busy, nil
 }
 
 // ErrBookingNotFound is returned when the customer has no booking with the
@@ -62,25 +167,34 @@ var ErrBookingStateConflict = errors.New("this booking can't make that change ri
 
 // userBookingColumns is bookingColumnsB plus the assigned driver's name and
 // phone from `d`, their average rating from customers and their photo's
-// version (a prefix of the selfie's hash) — the shape scanUserBooking reads.
+// version (a prefix of the selfie's hash), then how the ride was paid —
+// settled by hand (paid_mode) or by the order in `po` — the shape
+// scanUserBooking reads. Select it FROM userBookingTables.
 const userBookingColumns = bookingColumnsB + `,
 	d.name, d.phone_e164,
 	(SELECT avg(x.driver_rating)::float8 FROM bookings x WHERE x.driver_id = b.driver_id),
 	(SELECT count(x.driver_rating) FROM bookings x WHERE x.driver_id = b.driver_id),
 	(SELECT left(dd.sha256, 12) FROM driver_documents dd
-	 WHERE dd.driver_id = b.driver_id AND dd.kind = 'selfie')`
+	 WHERE dd.driver_id = b.driver_id AND dd.kind = 'selfie'),
+	coalesce(b.paid_mode, ''), coalesce(po.merchant_order_id, ''),
+	coalesce(po.payment_mode, ''), coalesce(po.utr, ''), coalesce(po.transaction_id, '')`
+
+// userBookingTables is what userBookingColumns reads from.
+const userBookingTables = `bookings b
+	LEFT JOIN drivers d ON d.id = b.driver_id
+	LEFT JOIN payment_orders po ON po.merchant_order_id = b.payment_order_id`
 
 // ListForUser returns userID's bookings with their assigned drivers, latest
 // scheduled first.
 func (r *BookingRepository) ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error) {
 	q := `
 		SELECT ` + userBookingColumns + `
-		FROM bookings b LEFT JOIN drivers d ON d.id = b.driver_id
+		FROM ` + userBookingTables + `
 		WHERE b.user_id = $1
 		ORDER BY b.scheduled_at DESC NULLS LAST, b.created_at DESC
 		LIMIT $2`
 
-	rows, err := r.pool.Query(ctx, q, userID, limit)
+	rows, err := r.db.Query(ctx, q, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("listing bookings: %w", err)
 	}
@@ -105,30 +219,64 @@ func (r *BookingRepository) ListForUser(ctx context.Context, userID string, limi
 func (r *BookingRepository) FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error) {
 	q := `
 		SELECT ` + userBookingColumns + `
-		FROM bookings b LEFT JOIN drivers d ON d.id = b.driver_id
+		FROM ` + userBookingTables + `
 		WHERE b.id = $1 AND b.user_id = $2`
-	ub, err := scanUserBooking(r.pool.QueryRow(ctx, q, id, userID))
+	ub, err := scanUserBooking(r.db.QueryRow(ctx, q, id, userID))
 	if err != nil {
 		return domain.UserBooking{}, bookingErr(rideErr(err, ErrBookingNotFound, "finding booking"))
 	}
 	return ub, nil
 }
 
+// PickupCancel is whether Cancel may cancel a booking whose driver is
+// already waiting at the pickup, and the fee that charges (0 for none).
+type PickupCancel struct {
+	Allowed  bool
+	FeePaise int64
+}
+
 // Cancel cancels userID's booking id for the customer, provided the trip
-// hasn't started: it must still be requested, accepted or arrived. The
-// driver stays on the row so their rides list shows it as cancelled; the
-// start code is cleared. Returns the cancelled booking,
-// [ErrBookingNotFound], or [ErrBookingStateConflict].
-func (r *BookingRepository) Cancel(ctx context.Context, id, userID, reason string, at time.Time) (domain.Booking, error) {
+// hasn't started: it must still be requested or accepted, or arrived when
+// atPickup allows it — charging atPickup.FeePaise then. The driver stays on
+// the row so their rides list shows it as cancelled; the start code is
+// cleared. Returns the cancelled booking, [ErrBookingNotFound], or
+// [ErrBookingStateConflict] (including an arrived booking atPickup doesn't
+// allow).
+func (r *BookingRepository) Cancel(
+	ctx context.Context, id, userID, reason string, at time.Time, atPickup PickupCancel,
+) (domain.Booking, error) {
+	// SET reads the row as it was, so the fee goes only on a booking that
+	// was at the pickup.
 	q := `
 		UPDATE bookings
 		SET status = 'cancelled', cancelled_at = $3, cancelled_by = $4,
-		    cancel_reason = nullif($5, ''), start_otp = NULL
-		WHERE id = $1 AND user_id = $2 AND status IN ('requested', 'accepted', 'arrived')
+		    cancel_reason = nullif($5, ''), start_otp = NULL,
+		    cancellation_fee_paise = CASE WHEN status = 'arrived' THEN nullif($7::bigint, 0) END
+		WHERE id = $1 AND user_id = $2
+		  AND (status IN ('requested', 'accepted') OR (status = 'arrived' AND $6))
 		RETURNING ` + bookingColumns
-	b, err := scanBooking(r.pool.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason))
+	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason,
+		atPickup.Allowed, atPickup.FeePaise))
 	if err != nil {
 		return domain.Booking{}, r.whyUnchanged(ctx, err, id, userID, "cancelling booking")
+	}
+	return b, nil
+}
+
+// EndEarly completes userID's trip id at at, before its booked end, on the
+// customer's say: the fare becomes farePaise (the charge for the time used)
+// and the booked fare is kept in booked_fare_paise. Only a trip in
+// progress; [ErrBookingNotFound] or [ErrBookingStateConflict] otherwise.
+func (r *BookingRepository) EndEarly(ctx context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error) {
+	q := `
+		UPDATE bookings
+		SET status = 'completed', completed_at = $3,
+		    booked_fare_paise = fare_paise, fare_paise = $4
+		WHERE id = $1 AND user_id = $2 AND status = 'in_progress'
+		RETURNING ` + bookingColumns
+	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, farePaise))
+	if err != nil {
+		return domain.Booking{}, r.whyUnchanged(ctx, err, id, userID, "ending trip")
 	}
 	return b, nil
 }
@@ -143,7 +291,7 @@ func (r *BookingRepository) RateDriver(ctx context.Context, id, userID string, r
 		  AND driver_id IS NOT NULL AND driver_rating IS NULL
 		RETURNING id`
 	var got string
-	if err := r.pool.QueryRow(ctx, q, id, userID, rating.Stars, rating.Note).Scan(&got); err != nil {
+	if err := r.db.QueryRow(ctx, q, id, userID, rating.Stars, rating.Note).Scan(&got); err != nil {
 		return r.whyUnchanged(ctx, err, id, userID, "rating driver")
 	}
 	return nil
@@ -157,7 +305,7 @@ func (r *BookingRepository) whyUnchanged(ctx context.Context, err error, id, use
 		return bookingErr(rideErr(err, ErrBookingNotFound, doing))
 	}
 	var exists bool
-	if err := r.pool.QueryRow(ctx,
+	if err := r.db.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM bookings WHERE id = $1 AND user_id = $2)`,
 		id, userID).Scan(&exists); err != nil {
 		return fmt.Errorf("%s: %w", doing, err)
@@ -184,10 +332,21 @@ func scanUserBooking(row pgx.Row) (domain.UserBooking, error) {
 		average     *float64
 		rated       int
 		photo       *string
+		pay         domain.BookingPayment
+		paidMode    string
 	)
 	br := bookingRow{b: &ub.Booking}
-	err := row.Scan(br.targets(&name, &phone, &average, &rated, &photo)...)
+	err := row.Scan(br.targets(&name, &phone, &average, &rated, &photo,
+		&paidMode, &pay.MerchantOrderID, &pay.Mode, &pay.UTR, &pay.TransactionID)...)
 	br.finish()
+	if at := ub.Booking.PaidAt; at != nil {
+		pay.PaidAt = *at
+		if paidMode != "" {
+			// Settled by hand: no gateway order, nothing to quote.
+			pay = domain.BookingPayment{Mode: strings.ToUpper(paidMode), PaidAt: *at}
+		}
+		ub.Payment = &pay
+	}
 	if name != nil && phone != nil {
 		ub.Driver = &domain.RideDriver{Name: *name, PhoneE164: *phone, RatingCount: rated}
 		if rated > 0 {

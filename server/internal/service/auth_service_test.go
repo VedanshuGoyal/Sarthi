@@ -107,13 +107,23 @@ type fakeLimiter struct {
 	verifyOK  bool          // CheckVerify result
 	invalidat bool          // RecordFailure result
 	failures  int           // RecordFailure call count
+	// beginLocked makes Begin refuse (SMS cap hit); verified is the
+	// ConsumeVerified result (a registration pass exists).
+	beginLocked bool
+	verified    bool
 }
 
-func (f *fakeLimiter) Begin(p string)                      { f.begun = append(f.begun, p) }
+func (f *fakeLimiter) BeginSend(p string) (bool, time.Duration) {
+	f.begun = append(f.begun, p)
+	return !f.beginLocked, f.retry
+}
 func (f *fakeLimiter) Resend(string) (bool, time.Duration) { return f.resendOK, f.retry }
 func (f *fakeLimiter) CheckVerify(string) bool             { return f.verifyOK }
 func (f *fakeLimiter) RecordFailure(string) bool           { f.failures++; return f.invalidat }
 func (f *fakeLimiter) Succeed(p string)                    { f.succeeded = append(f.succeeded, p) }
+func (f *fakeLimiter) ConsumeVerified(string) bool         { return f.verified }
+func (f *fakeLimiter) IssueTicket(string, bool) string     { return "ticket" }
+func (f *fakeLimiter) ConsumeTicket(_, t string) bool      { return f.verified && t == "ticket" }
 
 func adultDOB() time.Time { return time.Now().AddDate(-25, 0, 0) }
 
@@ -160,7 +170,7 @@ func TestOTPLimiterWiring(t *testing.T) {
 		sender := &fakeOTPSender{verifyOK: true}
 		lim := &fakeLimiter{verifyOK: false}
 		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(sender))
-		_, err := s.VerifyOTP(context.Background(), phone, "123456")
+		_, err := s.VerifyOTP(context.Background(), phone, "123456", false)
 		if !errors.Is(err, ErrOTPInvalidated) {
 			t.Fatalf("want ErrOTPInvalidated, got %v", err)
 		}
@@ -172,7 +182,7 @@ func TestOTPLimiterWiring(t *testing.T) {
 	t.Run("a wrong code that hits the cap returns ErrOTPInvalidated", func(t *testing.T) {
 		lim := &fakeLimiter{verifyOK: true, invalidat: true}
 		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(&fakeOTPSender{verifyOK: false}))
-		_, err := s.VerifyOTP(context.Background(), phone, "000000")
+		_, err := s.VerifyOTP(context.Background(), phone, "000000", false)
 		if !errors.Is(err, ErrOTPInvalidated) {
 			t.Fatalf("want ErrOTPInvalidated, got %v", err)
 		}
@@ -184,7 +194,7 @@ func TestOTPLimiterWiring(t *testing.T) {
 	t.Run("a wrong code below the cap stays ErrInvalidOTP", func(t *testing.T) {
 		lim := &fakeLimiter{verifyOK: true, invalidat: false}
 		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(&fakeOTPSender{verifyOK: false}))
-		_, err := s.VerifyOTP(context.Background(), phone, "000000")
+		_, err := s.VerifyOTP(context.Background(), phone, "000000", false)
 		if !errors.Is(err, ErrInvalidOTP) {
 			t.Fatalf("want ErrInvalidOTP, got %v", err)
 		}
@@ -193,7 +203,7 @@ func TestOTPLimiterWiring(t *testing.T) {
 	t.Run("a correct code clears the session", func(t *testing.T) {
 		lim := &fakeLimiter{verifyOK: true}
 		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(&fakeOTPSender{verifyOK: true}))
-		if _, err := s.VerifyOTP(context.Background(), phone, "654321"); err != nil {
+		if _, err := s.VerifyOTP(context.Background(), phone, "654321", false); err != nil {
 			t.Fatalf("VerifyOTP: %v", err)
 		}
 		if len(lim.succeeded) != 1 || lim.succeeded[0] != phone {
@@ -206,7 +216,7 @@ func TestVerifyOTP_DevMode(t *testing.T) {
 	s := NewAuthService(&fakeUserStore{})
 
 	// Unknown number, correct dev code: passes but reports not-yet-registered.
-	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP)
+	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP, false)
 	if err != nil {
 		t.Fatalf("correct OTP should pass, got %v", err)
 	}
@@ -214,10 +224,10 @@ func TestVerifyOTP_DevMode(t *testing.T) {
 		t.Fatalf("unknown number should be Registered=false, got %+v", res)
 	}
 
-	if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000"); !errors.Is(err, ErrInvalidOTP) {
+	if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000", false); !errors.Is(err, ErrInvalidOTP) {
 		t.Fatalf("wrong OTP should be ErrInvalidOTP, got %v", err)
 	}
-	if _, err := s.VerifyOTP(context.Background(), "12345", DevOTP); !errors.Is(err, ErrInvalidPhone) {
+	if _, err := s.VerifyOTP(context.Background(), "12345", DevOTP, false); !errors.Is(err, ErrInvalidPhone) {
 		t.Fatalf("bad phone should be ErrInvalidPhone, got %v", err)
 	}
 }
@@ -228,7 +238,7 @@ func TestVerifyOTP_ExistingNumberLogsIn(t *testing.T) {
 	tokens := &fakeTokenIssuer{}
 	s := NewAuthService(users, WithTokenIssuer(tokens))
 
-	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP)
+	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP, false)
 	if err != nil {
 		t.Fatalf("VerifyOTP: %v", err)
 	}
@@ -278,7 +288,7 @@ func TestVerifyOTP_WithSender(t *testing.T) {
 	t.Run("valid code passes", func(t *testing.T) {
 		sender := &fakeOTPSender{verifyOK: true}
 		s := NewAuthService(&fakeUserStore{}, WithOTPSender(sender))
-		if _, err := s.VerifyOTP(context.Background(), "+919876543210", "654321"); err != nil {
+		if _, err := s.VerifyOTP(context.Background(), "+919876543210", "654321", false); err != nil {
 			t.Fatalf("valid code should pass, got %v", err)
 		}
 		if want := "9876543210:654321"; len(sender.verified) != 1 || sender.verified[0] != want {
@@ -288,7 +298,7 @@ func TestVerifyOTP_WithSender(t *testing.T) {
 
 	t.Run("wrong code maps to ErrInvalidOTP", func(t *testing.T) {
 		s := NewAuthService(&fakeUserStore{}, WithOTPSender(&fakeOTPSender{verifyOK: false}))
-		if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000"); !errors.Is(err, ErrInvalidOTP) {
+		if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000", false); !errors.Is(err, ErrInvalidOTP) {
 			t.Fatalf("want ErrInvalidOTP, got %v", err)
 		}
 	})
@@ -296,7 +306,7 @@ func TestVerifyOTP_WithSender(t *testing.T) {
 	t.Run("provider failure propagates (not an auth error)", func(t *testing.T) {
 		boom := errors.New("provider down")
 		s := NewAuthService(&fakeUserStore{}, WithOTPSender(&fakeOTPSender{verifyErr: boom}))
-		_, err := s.VerifyOTP(context.Background(), "+919876543210", "654321")
+		_, err := s.VerifyOTP(context.Background(), "+919876543210", "654321", false)
 		if !errors.Is(err, boom) {
 			t.Fatalf("want provider error, got %v", err)
 		}
@@ -384,5 +394,45 @@ func TestCurrentUser(t *testing.T) {
 	}
 	if _, err := s.CurrentUser(context.Background(), "nope"); !errors.Is(err, repository.ErrUserNotFound) {
 		t.Fatalf("unknown id should be ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestRegisterRequiresVerifiedOTP(t *testing.T) {
+	adult := time.Now().AddDate(-30, 0, 0)
+	params := RegisterParams{
+		PhoneE164: "+919876543210", Name: "Asha", Email: "asha@example.com", DateOfBirth: adult,
+	}
+
+	t.Run("without a pass the account is not created", func(t *testing.T) {
+		store := &fakeUserStore{}
+		s := NewAuthService(store, WithOTPLimiter(&fakeLimiter{verified: false}))
+		_, err := s.Register(context.Background(), params)
+		if !errors.Is(err, ErrOTPNotVerified) {
+			t.Fatalf("want ErrOTPNotVerified, got %v", err)
+		}
+		if store.created != nil {
+			t.Fatal("no account may be created without a verified code")
+		}
+	})
+
+	t.Run("with a pass the account is created", func(t *testing.T) {
+		s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(&fakeLimiter{verified: true}))
+		if _, err := s.Register(context.Background(), params); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+	})
+}
+
+func TestRequestOTPRefusedPastSendCap(t *testing.T) {
+	sender := &fakeOTPSender{}
+	lim := &fakeLimiter{beginLocked: true, retry: 20 * time.Minute}
+	s := NewAuthService(&fakeUserStore{}, WithOTPLimiter(lim), WithOTPSender(sender))
+	err := s.RequestOTP(context.Background(), "+919876543210")
+	var locked *OTPLockedError
+	if !errors.As(err, &locked) || locked.RetryAfter != 20*time.Minute {
+		t.Fatalf("want *OTPLockedError with retryAfter, got %v", err)
+	}
+	if len(sender.sent) != 0 {
+		t.Fatal("no SMS may be sent past the cap")
 	}
 }

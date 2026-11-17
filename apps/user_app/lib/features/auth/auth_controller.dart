@@ -1,5 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
+import '../../core/config/app_build.dart';
+import '../../core/services/app_http_client.dart';
+import '../update/update_providers.dart';
 import 'data/session_storage.dart';
 import 'domain/auth_session.dart';
 
@@ -51,3 +55,31 @@ class AuthController extends AsyncNotifier<AuthSession?> {
 /// The app-wide session controller.
 final authControllerProvider =
     AsyncNotifierProvider<AuthController, AuthSession?>(AuthController.new);
+
+/// The raw HTTP transport under [backendClientProvider] and
+/// [thirdPartyClientProvider]. Overridden in tests with a mock.
+final httpClientProvider = Provider<http.Client>((ref) => http.Client());
+
+/// The client for every call to the MOJUD backend: time-limited, says which
+/// app and build is calling ([AppBuild.headers]), and a 401 to the current
+/// session signs the customer out (it expired or was revoked). A 401 for an
+/// older session's token — a request still in flight across a sign-out — is
+/// ignored. A 426 `update_required` closes the update gate.
+final backendClientProvider = Provider<http.Client>((ref) {
+  return AppHttpClient(
+    inner: ref.watch(httpClientProvider),
+    headers: AppBuild.headers,
+    onSessionRejected: (token) {
+      final auth = ref.read(authControllerProvider.notifier);
+      if (auth.token == token) auth.signOut();
+    },
+    onUpdateRequired: (url) => ref.read(updateGateProvider).require(url),
+  );
+});
+
+/// The client for third-party APIs (Ola Maps, Google Routes): time-limited
+/// only — their 401s say nothing about our session, and our build headers
+/// are none of their business.
+final thirdPartyClientProvider = Provider<http.Client>((ref) {
+  return AppHttpClient(inner: ref.watch(httpClientProvider));
+});

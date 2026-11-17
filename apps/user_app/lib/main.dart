@@ -4,12 +4,14 @@ import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import 'core/brand/mojud_brand.dart';
+import 'core/config/api_config.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/user_home_shell.dart';
 import 'features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
     show RideSurfaces;
 import 'features/splash/view/splash_screen.dart';
+import 'features/update/view/update_gate.dart';
 
 /// Entry point for the MOJUD customer app.
 ///
@@ -17,6 +19,8 @@ import 'features/splash/view/splash_screen.dart';
 /// server can inspect and drive it during development. This binding is a no-op in
 /// release builds. [ProviderScope] is the Riverpod root for app-wide state.
 Future<void> main() async {
+  // A release build without a server address stops here, not at loopback.
+  ApiConfig.ensureConfigured();
   await MCPToolkitBinding.instance.bootstrapFlutter(
     runApp: () => runApp(const ProviderScope(child: MojudUserApp())),
   );
@@ -36,6 +40,9 @@ class MojudUserApp extends StatelessWidget {
         extensions: [RideSurfaces(wash: SkylineTokens.light.primarySoft)],
       ),
       themeMode: ThemeMode.light,
+      // Above the navigator, so a build the backend no longer serves is
+      // stopped whichever screen is open.
+      builder: (context, child) => UpdateGate(child: child!),
       home: const _AppRoot(),
     );
   }

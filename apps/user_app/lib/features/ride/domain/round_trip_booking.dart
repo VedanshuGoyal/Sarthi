@@ -33,7 +33,7 @@ class RoundTripBooking {
   Map<String, dynamic> toJson() => {
     'pickup': pickup.toJson(),
     'hours': hours,
-    'scheduledAt': scheduledAt.toIso8601String(),
+    'scheduledAt': scheduledAt.toUtc().toIso8601String(),
     'car': car.toJson(),
     'fare': fare,
   };
