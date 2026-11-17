@@ -13,7 +13,10 @@ class MyRidesViewModel extends ChangeNotifier {
 
   final RidesRepository _repository;
 
-  /// Called after a ride is completed, so earnings can refresh.
+  /// Called when one of the driver's rides finishes with money in it, so
+  /// earnings can refresh: completed here, or found on a reload to have
+  /// finished underneath — the customer ended the trip early, or cancelled
+  /// at the pickup with a fee.
   final VoidCallback? _onCompleted;
 
   List<Ride> _rides = const [];
@@ -83,6 +86,9 @@ class MyRidesViewModel extends ChangeNotifier {
   /// and rides changed on this phone while it was in flight (an action's
   /// reply, an accept, a release) keep their newer state: the list the
   /// server sent may predate them.
+  ///
+  /// A ride that was underway and comes back finished with money in it
+  /// (see [_onCompleted]) refreshes earnings.
   Future<void> load() async {
     final seq = ++_loadSeq;
     _isLoading = true;
@@ -92,13 +98,16 @@ class MyRidesViewModel extends ChangeNotifier {
       if (seq != _loadSeq) return;
       final edits = _editsDuringLoad;
       final fetchedIds = {for (final r in fetched) r.id};
-      _rides = [
+      final next = [
         for (final r in fetched)
           if (!edits.containsKey(r.id)) r else ?edits[r.id],
         for (final MapEntry(:key, :value) in edits.entries)
           if (!fetchedIds.contains(key)) ?value,
       ];
+      final finished = _finishedWithMoney(_rides, next);
+      _rides = next;
       _error = null;
+      if (finished && !_disposed) _onCompleted?.call();
     } on RidesException catch (e) {
       if (seq == _loadSeq) _error = e.message;
     } finally {
@@ -183,9 +192,9 @@ class MyRidesViewModel extends ChangeNotifier {
         await load();
         // The step had already happened — an earlier tap went through but
         // its reply was lost — so there's nothing to report.
+        // (A completion found this way has refreshed earnings in [load].)
         final reached = _reachedBy[action];
         if (reached != null && byId(ride.id)?.status == reached) {
-          if (action == RideAction.complete) _onCompleted?.call();
           return null;
         }
       }
@@ -210,6 +219,20 @@ class MyRidesViewModel extends ChangeNotifier {
     RideAction.complete: RideStatus.completed,
     RideAction.noShow: RideStatus.cancelled,
   };
+
+  /// Whether a ride underway in [before] is, in [after], completed or
+  /// cancelled with a fee — money the earnings summary now counts.
+  static bool _finishedWithMoney(List<Ride> before, List<Ride> after) {
+    final underway = {
+      for (final r in before)
+        if (r.status.isActive) r.id,
+    };
+    return after.any(
+      (r) =>
+          underway.contains(r.id) &&
+          (r.status == RideStatus.completed || r.hasCancellationFee),
+    );
+  }
 
   static List<Ride> _sorted(Iterable<Ride> rides, Comparator<Ride> compare) =>
       rides.toList()..sort(compare);

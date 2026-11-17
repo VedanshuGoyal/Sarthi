@@ -21,6 +21,10 @@ Map<String, dynamic> rideJson({
   Map<String, dynamic>? myRating,
   bool approximate = false,
   String? noShowAt,
+  String? paymentStatus,
+  int? sharePaise,
+  int? cancellationFeePaise,
+  int? bookedFarePaise,
 }) => {
   'id': id,
   'tripType': tripType,
@@ -54,6 +58,11 @@ Map<String, dynamic> rideJson({
   if (cancelReason != null) 'cancelReason': cancelReason,
   if (noShowAt != null) 'noShowAt': noShowAt,
   if (myRating != null) 'myRating': myRating,
+  if (paymentStatus != null) 'paymentStatus': paymentStatus,
+  if (sharePaise != null) 'sharePaise': sharePaise,
+  if (cancellationFeePaise != null)
+    'cancellationFeePaise': cancellationFeePaise,
+  if (bookedFarePaise != null) 'bookedFarePaise': bookedFarePaise,
 };
 
 Ride ride({
@@ -66,12 +75,22 @@ Ride ride({
   Map<String, dynamic>? myRating,
   bool approximate = false,
   String? noShowAt,
+  int farePaise = 34000,
+  String? paymentStatus,
+  int? sharePaise,
+  int? cancellationFeePaise,
+  int? bookedFarePaise,
 }) => Ride.tryParse(
   rideJson(
     id: id,
     status: status,
     approximate: approximate,
     noShowAt: noShowAt,
+    farePaise: farePaise,
+    paymentStatus: paymentStatus,
+    sharePaise: sharePaise,
+    cancellationFeePaise: cancellationFeePaise,
+    bookedFarePaise: bookedFarePaise,
     scheduledAt: scheduledAt,
     cancelledAt: cancelledAt,
     cancelledBy: cancelledBy,

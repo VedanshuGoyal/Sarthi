@@ -66,6 +66,10 @@ class RideDetailScreen extends ConsumerWidget {
                   current.status == RideStatus.completed) ...[
                 const SizedBox(height: Skyline.s16),
                 _Progress(ride: current),
+                if (current.endedEarly) ...[
+                  const SizedBox(height: Skyline.s12),
+                  _EndedEarlyNotice(ride: current),
+                ],
               ],
               if (current.status == RideStatus.arrived &&
                   current.noShowAt != null) ...[
@@ -191,7 +195,10 @@ class _Summary extends StatelessWidget {
                 child: Text(
                   [
                     ride.fareEstimated ? 'estimated fare' : 'trip fare',
-                    if (ride.paymentStatus != RidePaymentStatus.none)
+                    // On a cancelled ride the payment is the fee's, shown
+                    // with the cancellation.
+                    if (ride.status == RideStatus.completed &&
+                        ride.paymentStatus != RidePaymentStatus.none)
                       ride.paymentStatus.label.toLowerCase(),
                   ].join(' · '),
                   style: t.body(
@@ -338,8 +345,9 @@ class _RouteCard extends StatelessWidget {
 }
 
 /// The ride's cancellation, when the customer called it off: who, when and
-/// why. Shown in place of the step progress — there's nothing left to step
-/// through.
+/// why — and, when they cancelled at the pickup, the fee they owe and where
+/// its payment stands. Shown in place of the step progress — there's
+/// nothing left to step through.
 class _CancelledNotice extends StatelessWidget {
   const _CancelledNotice({required this.ride});
 
@@ -349,6 +357,7 @@ class _CancelledNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
     final reason = ride.cancelReason;
+    final payment = RideFormat.payment(ride);
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Row(
@@ -375,6 +384,51 @@ class _CancelledNotice extends StatelessWidget {
                     style: t.body(size: 12.5),
                   ),
                 ],
+                if (ride.hasCancellationFee) ...[
+                  const SizedBox(height: Skyline.s12),
+                  Text(
+                    '${RideFormat.paise(ride.cancellationFeePaise!)} '
+                    'cancellation fee',
+                    style: t.title(15),
+                  ),
+                  if (payment.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(payment, style: t.body(size: 13)),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A trip the customer ended before its booked time was up: what they're
+/// charged for the time used, against the fare as booked.
+class _EndedEarlyNotice extends StatelessWidget {
+  const _EndedEarlyNotice({required this.ride});
+
+  final Ride ride;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = SkylineTokens.of(context);
+    return SkylineCard(
+      padding: const EdgeInsets.all(Skyline.s16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.timer_off_rounded, color: t.inkMuted, size: 22),
+          const SizedBox(width: Skyline.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Customer ended the trip early', style: t.title(15)),
+                const SizedBox(height: 2),
+                Text(RideFormat.endedEarly(ride), style: t.body(size: 13)),
               ],
             ),
           ),
@@ -887,16 +941,24 @@ class _ActionBar extends ConsumerWidget {
       if (!confirm || !context.mounted) return;
     }
 
+    final rides = ref.read(myRidesViewModelProvider);
+    // The customer can end the trip while the dialog is open (the
+    // `ride_ended_early` push reloads the rides): it's complete already,
+    // so there's nothing to send.
+    final alreadyDone =
+        action == RideAction.complete &&
+        rides.byId(ride.id)?.status == RideStatus.completed;
+
     final String? error;
     switch (action) {
+      case _ when alreadyDone:
+        error = null;
       case RideAction.accept:
         error = await ref.read(dutyViewModelProvider).accept(ride);
       case RideAction.decline:
         error = await ref.read(dutyViewModelProvider).decline(ride);
       default:
-        error = await ref
-            .read(myRidesViewModelProvider)
-            .act(ride, action, otp: otp);
+        error = await rides.act(ride, action, otp: otp);
     }
     if (!context.mounted) return;
 
@@ -910,14 +972,20 @@ class _ActionBar extends ConsumerWidget {
       if (gone) Navigator.of(context).pop();
       return;
     }
+    // The latest copy: a trip the customer ended early is charged for the
+    // time used, not the fare this screen was built with.
+    final latest = rides.byId(ride.id) ?? ride;
     final done = switch (action) {
       RideAction.accept => 'Ride accepted — it\'s in your upcoming rides.',
       RideAction.decline => 'Request hidden.',
       RideAction.release => 'Ride handed back.',
       RideAction.start => 'Trip started. Drive safe!',
+      RideAction.complete when latest.endedEarly =>
+        'The customer ended the trip early. They can now pay '
+            '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',
       RideAction.complete =>
         'Trip complete. The customer can now pay '
-            '${RideFormat.rupees(ride.fareRupees)} by UPI in their app.',
+            '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',
       _ => null,
     };
     if (done != null) messenger.showSnackBar(SnackBar(content: Text(done)));

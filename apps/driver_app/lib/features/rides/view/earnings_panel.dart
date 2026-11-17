@@ -117,17 +117,22 @@ class EarningsPanel extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                           vertical: Skyline.s8,
                         ),
-                        child: Column(
-                          children: [
-                            for (final (i, ride) in recent.indexed) ...[
-                              if (i > 0)
-                                const Divider(
-                                  indent: Skyline.s16,
-                                  endIndent: Skyline.s16,
-                                ),
-                              _TripRow(ride: ride),
+                        // The rows are tappable: their ink needs a
+                        // Material above the card's fill, not under it.
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: Column(
+                            children: [
+                              for (final (i, ride) in recent.indexed) ...[
+                                if (i > 0)
+                                  const Divider(
+                                    indent: Skyline.s16,
+                                    endIndent: Skyline.s16,
+                                  ),
+                                _TripRow(ride: ride),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                   ],
