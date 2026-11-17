@@ -17,10 +17,12 @@ import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
+import 'package:user_app/features/ride/view/ride_details_screen.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
 import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
 
+import '../support/fake_booking_server.dart';
 import '../support/fake_location_repository.dart';
 
 final _user = AuthUser(
@@ -38,76 +40,90 @@ const _sedan = Car(
   transmission: Transmission.manual,
 );
 
+/// Pumps the Home tab over a backend that answers each booking POST with
+/// [answer] (given how many have arrived so far) and lists [bookings], then
+/// books a two-hour Round Trip through the real flow.
+Future<void> _bookRoundTrip(
+  WidgetTester tester, {
+  required List<http.Request> posts,
+  required http.Response Function(int count) answer,
+  List<Map<String, dynamic>> bookings = const [],
+}) async {
+  tester.view.physicalSize = const Size(1200, 2600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final repository = BookingRepository(
+    baseUrl: 'http://api',
+    tokenGetter: () => 'tok',
+    client: MockClient((request) async {
+      if (request.method != 'POST') {
+        return http.Response(jsonEncode({'bookings': bookings}), 200);
+      }
+      posts.add(request);
+      return answer(posts.length);
+    }),
+  );
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        bookingRepositoryProvider.overrideWithValue(repository),
+        myBookingsViewModelProvider.overrideWith(
+          (ref) => MyBookingsViewModel(
+            repository: repository,
+            initialBookings: const [],
+          ),
+        ),
+        savedCarsViewModelProvider.overrideWith(
+          (ref) => SavedCarsViewModel(
+            repository: CarsRepository(),
+            initialCars: const [_sedan],
+          ),
+        ),
+        tripStartViewModelProvider.overrideWith(
+          (ref) => TripStartViewModel(
+            repository: FakeLocationRepository(),
+            initialStart: const PickupLocation(
+              address: 'Connaught Place, New Delhi',
+              point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
+            ),
+          ),
+        ),
+      ],
+      child: MaterialApp(home: HomeScreen(user: _user)),
+    ),
+  );
+
+  await tester.tap(find.text('Round Trip'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('Select your car'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Confirm booking'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
     "a booking the server refuses says it wasn't booked, and why, then retries",
     (tester) async {
-      tester.view.physicalSize = const Size(1200, 2600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
       // The first submission is refused the way the server refuses a start
       // that's become too soon; the retry goes through.
       final posts = <http.Request>[];
-      final repository = BookingRepository(
-        baseUrl: 'http://api',
-        tokenGetter: () => 'tok',
-        client: MockClient((request) async {
-          if (request.method != 'POST') {
-            return http.Response(jsonEncode({'bookings': []}), 200);
-          }
-          posts.add(request);
-          return posts.length == 1
-              ? http.Response(
-                  jsonEncode({
-                    'error': 'pick a start time at least 45 minutes from now',
-                  }),
-                  400,
-                )
-              : http.Response(jsonEncode({'id': 'b1'}), 201);
-        }),
+      await _bookRoundTrip(
+        tester,
+        posts: posts,
+        answer: (count) => count == 1
+            ? http.Response(
+                jsonEncode({
+                  'error': 'pick a start time at least 45 minutes from now',
+                }),
+                400,
+              )
+            : http.Response(jsonEncode({'id': 'b1'}), 201),
       );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            bookingRepositoryProvider.overrideWithValue(repository),
-            myBookingsViewModelProvider.overrideWith(
-              (ref) => MyBookingsViewModel(
-                repository: repository,
-                initialBookings: const [],
-              ),
-            ),
-            savedCarsViewModelProvider.overrideWith(
-              (ref) => SavedCarsViewModel(
-                repository: CarsRepository(),
-                initialCars: const [_sedan],
-              ),
-            ),
-            tripStartViewModelProvider.overrideWith(
-              (ref) => TripStartViewModel(
-                repository: FakeLocationRepository(),
-                initialStart: const PickupLocation(
-                  address: 'Connaught Place, New Delhi',
-                  point: GeoPoint(latitude: 28.6315, longitude: 77.2167),
-                ),
-              ),
-            ),
-          ],
-          child: MaterialApp(home: HomeScreen(user: _user)),
-        ),
-      );
-
-      await tester.tap(find.text('Round Trip'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Select your car'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(SarthiPrimaryButton, 'Confirm booking'),
-      );
-      await tester.pumpAndSettle();
 
       check(posts).length.equals(1);
       expect(find.textContaining('booked:'), findsNothing);
@@ -124,10 +140,74 @@ void main() {
 
       check(posts).length.equals(2);
       check(posts.last.body).equals(posts.first.body);
+      // The retry is the same attempt, so the server can't book it twice.
+      final key = posts.first.headers['Idempotency-Key'];
+      check(key).isNotNull().isNotEmpty();
+      check(posts.last.headers['Idempotency-Key']).equals(key);
       expect(
         find.text('Round Trip booked: 2 hours, in your DL01AB1234.'),
         findsOneWidget,
       );
     },
   );
+
+  testWidgets('a repeat the server already had still reads as booked', (
+    tester,
+  ) async {
+    final posts = <http.Request>[];
+    await _bookRoundTrip(
+      tester,
+      posts: posts,
+      answer: (_) => http.Response(
+        jsonEncode({'id': 'b1', 'status': 'received', 'duplicate': true}),
+        200,
+      ),
+    );
+    check(posts).length.equals(1);
+    expect(
+      find.text('Round Trip booked: 2 hours, in your DL01AB1234.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an unpaid ride blocks booking and Pay now opens that ride', (
+    tester,
+  ) async {
+    final posts = <http.Request>[];
+    await _bookRoundTrip(
+      tester,
+      posts: posts,
+      answer: (_) => http.Response(
+        jsonEncode({
+          'error': 'pay for your last ride before booking another',
+          'code': 'payment_due',
+          'bookingId': 'unpaid-1',
+        }),
+        409,
+      ),
+      bookings: [
+        bookingJson(
+          id: 'unpaid-1',
+          status: 'completed',
+          paymentStatus: 'due',
+          scheduledAt: '2030-10-20T05:00:00Z',
+        ),
+      ],
+    );
+
+    expect(
+      find.text('Pay for your last ride before booking another.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining("wasn't booked"), findsNothing);
+    expect(find.text('Retry'), findsNothing);
+
+    await tester.tap(find.text('Pay now'));
+    await tester.pumpAndSettle();
+
+    check(find.byType(RideDetailsScreen).evaluate()).isNotEmpty();
+    expect(find.text('Pay ₹640 by UPI'), findsOneWidget);
+    // Paying isn't booking: nothing more was posted.
+    check(posts).length.equals(1);
+  });
 }

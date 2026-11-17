@@ -76,6 +76,75 @@ void main() {
     check(b.canCancel).isTrue();
   });
 
+  group('receipt', () {
+    test('a paid ride carries how it was paid and its fare parts', () {
+      final b = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          tripType: 'roundTrip',
+          paymentStatus: 'paid',
+          payment: {
+            'mode': 'UPI_INTENT',
+            'utr': '412345678901',
+            'transactionId': 'T2411170001',
+            'merchantOrderId': 'MOJUD_b1_m3k9',
+            'paidAt': '2030-10-26T08:00:00Z',
+          },
+          fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+        ),
+      )!;
+      final p = b.payment!;
+      check(p.mode).equals('UPI_INTENT');
+      check(p.modeLabel).equals('UPI');
+      check(p.utr).equals('412345678901');
+      check(p.reference).equals('412345678901');
+      check(p.merchantOrderId).equals('MOJUD_b1_m3k9');
+      check(p.paidAt).equals(DateTime.utc(2030, 10, 26, 8).toLocal());
+      check(b.fareBreakdown!.basePaise).equals(54000);
+      check(b.fareBreakdown!.nightPaise).equals(10000);
+      check(b.fareBreakdown!.nightRupees).equals(100);
+    });
+
+    test('names every way a ride can be paid', () {
+      String label(String mode) => RidePayment(mode: mode).modeLabel;
+      check(label('UPI_QR')).equals('UPI');
+      check(label('')).equals('UPI');
+      check(label('CASH')).equals('Cash');
+      check(label('WAIVED')).equals('Waived by MOJUD');
+      check(label('NET_BANKING')).equals('Net Banking');
+      check(label('CARD')).equals('Card');
+    });
+
+    test('the reference falls back to the transaction id', () {
+      final p = RidePayment.tryParse({
+        'mode': 'UPI_COLLECT',
+        'transactionId': 'T1',
+        'utr': '  ',
+      })!;
+      check(p.utr).isNull();
+      check(p.reference).equals('T1');
+      check(p.merchantOrderId).isNull();
+    });
+
+    test('a missing or garbled block reads as absent', () {
+      final b = MyBooking.tryParse(bookingJson(paymentStatus: 'paid'))!;
+      check(b.payment).isNull();
+      check(b.fareBreakdown).isNull();
+
+      check(RidePayment.tryParse('paid')).isNull();
+      final odd = RidePayment.tryParse({'mode': 7, 'paidAt': 'yesterday'})!;
+      check(odd.mode).equals('');
+      check(odd.paidAt).isNull();
+
+      check(FareBreakdown.tryParse({'basePaise': 'lots'})).isNull();
+      check(FareBreakdown.tryParse({'nightPaise': 100})).isNull();
+      check(
+        FareBreakdown.tryParse({'basePaise': 100, 'nightPaise': -1}),
+      ).isNull();
+      check(FareBreakdown.tryParse({'basePaise': 24000})!.nightPaise).equals(0);
+    });
+  });
+
   test('a driver nobody has rated yet has no average', () {
     final b = MyBooking.tryParse(bookingJson(ratingCount: 0))!;
     check(b.driverRating).isNull();

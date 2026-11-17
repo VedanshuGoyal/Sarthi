@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
@@ -14,11 +15,44 @@ import '../domain/round_trip_booking.dart';
 /// Raised when the booking backend is unreachable or rejects the submission.
 /// The caller decides how to surface it (the home screen notes it in the
 /// confirmation snackbar).
+///
+/// [code] is the server's error tag when it gave one; a [paymentDue] refusal
+/// also names the unpaid ride in [bookingId], so the caller can take the
+/// customer to its Pay button.
 class BookingSubmitException implements Exception {
-  const BookingSubmitException(this.message);
+  const BookingSubmitException(this.message, {this.code, this.bookingId});
+
+  /// The server's `payment_due` refusal: the customer has a completed ride,
+  /// [bookingId], still to pay for.
+  const BookingSubmitException.paymentDue(String this.bookingId)
+    : message = 'Pay for your last ride before booking another.',
+      code = paymentDueCode;
+
+  /// The error tag of a booking refused while a ride is unpaid.
+  static const String paymentDueCode = 'payment_due';
+
   final String message;
+  final String? code;
+  final String? bookingId;
+
+  /// Whether the booking was refused because a finished ride is unpaid.
+  bool get isPaymentDue => code == paymentDueCode && bookingId != null;
+
   @override
   String toString() => 'BookingSubmitException: $message';
+}
+
+/// A fresh random UUID (version 4) from a secure source, sent as the
+/// `Idempotency-Key` of one booking attempt so a retry can't book twice.
+String newIdempotencyKey([Random? random]) {
+  final r = random ?? Random.secure();
+  final bytes = [for (var i = 0; i < 16; i++) r.nextInt(256)];
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  final hex = [for (final b in bytes) b.toRadixString(16).padLeft(2, '0')];
+  return '${hex.sublist(0, 4).join()}-${hex.sublist(4, 6).join()}-'
+      '${hex.sublist(6, 8).join()}-${hex.sublist(8, 10).join()}-'
+      '${hex.sublist(10).join()}';
 }
 
 /// Why the server turned down an action on an existing booking — the `code`
@@ -105,14 +139,21 @@ class BookingRepository {
   /// Default token getter when none is injected — always unauthenticated.
   static String? _noToken() => null;
 
-  Future<void> submitRoundTrip(RoundTripBooking booking) =>
-      _submit('roundTrip', booking.toJson());
+  /// Each submit sends [idempotencyKey] (a fresh one when null): pass the
+  /// same key when retrying the same booking, so a submit that landed but
+  /// whose reply was lost isn't booked twice. Throws
+  /// [BookingSubmitException] — [BookingSubmitException.isPaymentDue] while
+  /// a finished ride is still unpaid.
+  Future<void> submitRoundTrip(
+    RoundTripBooking booking, {
+    String? idempotencyKey,
+  }) => _submit('roundTrip', booking.toJson(), idempotencyKey);
 
-  Future<void> submitOneWay(OneWayTrip trip) =>
-      _submit('oneWay', trip.toJson());
+  Future<void> submitOneWay(OneWayTrip trip, {String? idempotencyKey}) =>
+      _submit('oneWay', trip.toJson(), idempotencyKey);
 
-  Future<void> submitMultiStop(MultiStopTrip trip) =>
-      _submit('multiStop', trip.toJson());
+  Future<void> submitMultiStop(MultiStopTrip trip, {String? idempotencyKey}) =>
+      _submit('multiStop', trip.toJson(), idempotencyKey);
 
   /// The customer's bookings, latest scheduled first, with their status,
   /// assigned driver and start code (`GET /me/bookings`). Throws
@@ -272,26 +313,46 @@ class BookingRepository {
         'The server sent an unexpected reply.',
       ));
 
-  Future<void> _submit(String tripType, Map<String, dynamic> details) async {
+  /// The header naming one booking attempt; the server answers a repeat of
+  /// it (200, `duplicate`) with the booking it already made.
+  static const String idempotencyHeader = 'Idempotency-Key';
+
+  Future<void> _submit(
+    String tripType,
+    Map<String, dynamic> details,
+    String? idempotencyKey,
+  ) async {
     final body = jsonEncode({'tripType': tripType, 'details': details});
     final http.Response response;
     try {
       response = await _client.post(
         Uri.parse('$_baseUrl$_path'),
-        headers: _headers(),
+        headers: {
+          ..._headers(),
+          idempotencyHeader: idempotencyKey ?? newIdempotencyKey(),
+        },
         body: body,
       );
     } catch (_) {
       throw const BookingSubmitException("Can't reach the server.");
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final decoded = _decode(response.body);
+      final code = decoded?['code'];
+      final unpaid = decoded?['bookingId'];
+      if (code == BookingSubmitException.paymentDueCode &&
+          unpaid is String &&
+          unpaid.isNotEmpty) {
+        throw BookingSubmitException.paymentDue(unpaid);
+      }
       // The server says what was wrong ("pick a start time at least 45
       // minutes from now"); that's what the customer needs to fix it.
-      final error = _decode(response.body)?['error'];
+      final error = decoded?['error'];
       throw BookingSubmitException(
         error is String && error.isNotEmpty
             ? _sentence(error)
             : 'Booking request failed (${response.statusCode}).',
+        code: code is String && code.isNotEmpty ? code : null,
       );
     }
   }

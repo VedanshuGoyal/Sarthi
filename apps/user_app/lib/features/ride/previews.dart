@@ -32,6 +32,7 @@ import 'view/widgets/cancel_ride_sheet.dart';
 import 'view/widgets/car_selector_field.dart';
 import 'view/widgets/fare_summary.dart';
 import 'view/widgets/map_pin_card.dart';
+import 'view/widgets/receipt_card.dart';
 import 'view/widgets/time_slot_picker.dart';
 import 'view_model/booking_details_view_model.dart';
 import 'view_model/multi_stop_planner_view_model.dart';
@@ -816,6 +817,33 @@ Widget cancelRideSheetPreview() => Align(
   child: Material(
     child: CancelRideSheet(
       booking: _ride(status: BookingStatus.accepted, otp: '4821'),
+    ),
+  ),
+);
+
+/// A paid Round Trip that ran past 22:00: base fare plus night surcharge,
+/// paid by UPI.
+@Preview(name: 'Receipt', group: 'Ride details', theme: ridePreviewTheme)
+Widget receiptCardPreview() => Padding(
+  padding: const EdgeInsets.all(Skyline.s16),
+  child: ReceiptCard(
+    booking: MyBooking(
+      id: 'preview-paid',
+      tripType: TripType.roundTrip,
+      status: BookingStatus.completed,
+      scheduledAt: DateTime.now().subtract(const Duration(days: 1)),
+      pickupAddress: _bookingPickup.address,
+      hours: 3,
+      farePaise: 46200,
+      paymentStatus: RidePaymentStatus.paid,
+      paidAt: DateTime.now().subtract(const Duration(hours: 20)),
+      payment: RidePayment(
+        mode: 'UPI_INTENT',
+        utr: '412345678901',
+        merchantOrderId: 'MOJUD_3f1c9a2b7d8e4f60a1b2c3d4e5f60718_m3k9x2',
+        paidAt: DateTime.now().subtract(const Duration(hours: 20)),
+      ),
+      fareBreakdown: const FareBreakdown(basePaise: 34000, nightPaise: 12200),
     ),
   ),
 );
