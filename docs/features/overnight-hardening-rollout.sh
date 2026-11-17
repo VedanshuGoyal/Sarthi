@@ -43,9 +43,13 @@ MIGRATIONS=(
   0018_money_fks_restrict.up.sql
   0019_kyc_cleared_selfie.up.sql
   0020_hash_session_tokens.up.sql
+  0021_booking_events.up.sql
+  0022_driver_duty.up.sql
+  0025_booking_payment_due_dedupe.up.sql
+  0026_admin_actions.up.sql
+  0027_payment_orders_pending.up.sql
   0028_consent_and_erasure.up.sql
   0029_retention_indexes.up.sql
-  # WAVE2_MIGRATIONS (0021-0027 to add when those branches merge, in numeric order)
 )
 PUBLISH_APPS="${PUBLISH_APPS:-0}"   # 1 = publish scripts/*-release.apk afterwards
 API="https://api.mojud.life"
@@ -122,6 +126,10 @@ BACKUP="/root/backups/sarthi-$STAMP.sql.gz"
 (cd /tmp && sudo -u postgres pg_dump sarthi) | gzip > "$BACKUP"
 chmod 600 "$BACKUP"
 echo "    $BACKUP ($(du -h "$BACKUP" | cut -f1))"
+
+echo "==> completed rides never paid (they now block that customer's next booking;"
+echo "    settle test rides as 'waived' from /admin → Bookings after the deploy)"
+sudo -u postgres psql -d sarthi -At -c "SELECT count(*) FROM bookings WHERE status='completed' AND paid_at IS NULL"
 
 echo "==> required secrets"
 for v in FAST2SMS_API_KEY FAST2SMS_OTP_ID ADMIN_TOKEN; do
