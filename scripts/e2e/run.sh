@@ -23,7 +23,7 @@ export STORAGE_BACKEND=local STORAGE_LOCAL_DIR="$TMP/blobs"
 export PHONEPE_CLIENT_ID=fake-client PHONEPE_CLIENT_SECRET=fake-secret PHONEPE_CLIENT_VERSION=1
 export PHONEPE_MERCHANT_ID=FAKEMERCHANT PHONEPE_ENV=SANDBOX
 export PHONEPE_TOKEN_URL=http://127.0.0.1:8098/v1/oauth/token PHONEPE_BASE_URL=http://127.0.0.1:8098
-(cd "$ROOT/server" && "$TMP/sarthi-server" >"$TMP/server.log" 2>&1) &
+(cd "$ROOT/server" && exec "$TMP/sarthi-server" >"$TMP/server.log" 2>&1) &
 for _ in $(seq 60); do curl -fsS localhost:8097/readyz >/dev/null 2>&1 && break; sleep 1; done
 
 python3 -I "$HERE/${1:-e2e.py}" "${@:2}" || { echo "--- server log tail"; tail -30 "$TMP/server.log"; exit 1; }
