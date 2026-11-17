@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
 import '../data/kyc_status_store.dart';
+import '../data/lost_capture.dart';
 import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/document_step.dart';
@@ -36,6 +37,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     DocumentFileStore? files,
     KycStatusStore? statusStore,
     String? driverId,
+    this._lostCaptures,
   }) : _files = files ?? DocumentFileStore(),
        _statusStore = statusStore,
        _driverId = driverId {
@@ -49,6 +51,9 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   final DocumentFileStore _files;
   final KycStatusStore? _statusStore;
   final String? _driverId;
+
+  /// A selfie taken while Android had killed the app; asked for once.
+  LostCaptureSource? _lostCaptures;
 
   DriverDocuments _data = const DriverDocuments();
   DriverKyc _kyc = const DriverKyc();
@@ -102,6 +107,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       _setKyc(await _repository.load());
       await _restoreCaptures();
       _error = null;
+      if (_lostCaptures case final source?) {
+        _lostCaptures = null;
+        unawaited(_recoverLostCapture(source));
+      }
     } on KycException catch (e) {
       _error = e.message;
       _loadFailed = true;
@@ -193,6 +202,8 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   }
 
   /// Uploads the stored capture at [path], tracking its state for the tile.
+  /// Once the backend has it the capture is deleted: an ID photo or selfie
+  /// has no business staying on the phone after it's been sent.
   Future<void> _upload(DocumentKind kind, String path) async {
     _data = _data
         .withCapture(kind, path)
@@ -202,7 +213,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
     try {
       _setKyc(await _repository.uploadDocument(kind, path));
-      _data = _data.withUploadState(kind, DocumentUploadState.uploaded);
+      await _files.discard(kind);
+      _data = _data
+          .withoutCapture(kind)
+          .withUploadState(kind, DocumentUploadState.uploaded);
     } on KycException catch (e) {
       _data = _data.withUploadState(kind, DocumentUploadState.failed);
       _error = e.message;
@@ -308,6 +322,14 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     if (store != null && driverId != null) {
       unawaited(store.write(driverId, kyc.status).catchError((_) {}));
     }
+  }
+
+  /// Uploads a selfie the camera took while the app was dead, as if it had
+  /// just been taken.
+  Future<void> _recoverLostCapture(LostCaptureSource source) async {
+    final path = await source();
+    if (path == null || _disposed) return;
+    await capturePhoto(DocumentKind.selfie, path);
   }
 
   Future<void> _restoreStatus(KycStatusStore store, String driverId) async {
