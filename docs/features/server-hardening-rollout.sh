@@ -136,7 +136,13 @@ log "Uptime check (GitHub Actions)"
 ( set -a; . "$TG_ENV"; set +a
   printf '%s' "${TG_TOKEN:?}" | gh secret set MOJUD_TG_TOKEN --repo "$REPO"
   printf '%s' "${TG_CHAT:?}" | gh secret set MOJUD_TG_CHAT --repo "$REPO" )
-gh workflow run uptime.yml --repo "$REPO"
-echo "  started a first run: gh run list --repo $REPO --workflow uptime.yml"
+echo "  ok secrets MOJUD_TG_TOKEN, MOJUD_TG_CHAT"
+if gh api "repos/$REPO/contents/.github/workflows/uptime.yml" --silent 2>/dev/null; then
+  gh workflow run uptime.yml --repo "$REPO"
+  echo "  started a first run: gh run list --repo $REPO --workflow uptime.yml"
+else
+  echo "  note: .github/workflows/uptime.yml isn't on GitHub yet (pushing it needs"
+  echo "        'gh auth refresh -h github.com -s workflow'); it runs once it is"
+fi
 
 log "Done"
