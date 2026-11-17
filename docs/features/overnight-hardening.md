@@ -16,8 +16,8 @@ review of the whole diff); fixes by Claude Code.
 | Privacy | Consent at sign-up (`consentVersion`). Delete account in both apps (anonymise; money records kept). Daily retention sweep. `docs/privacy/data-map.md`. Draft Terms/Privacy pages (placeholders). |
 | Apps | `X-App`/`X-Build` headers, `GET /app/config`, 426 update gate + update screen. Help & safety (112, share trip, support). Timeouts, sign-out on 401, double-submit guards, per-account caches, UTC times, KYC upload/camera recovery, pay-confirming state, release-build guards. |
 | Ops/infra | `/readyz` (DB + newest migrations present); redeploy gates on it. Server timeouts, 60 s request deadline, body limits (413), memory caps (`MemoryMax=400M`), never-give-up restarts, DB retry at boot. Nightly backup + off-box R2 copy + restore drill. Telegram watchdog. Security headers, CORS allow-list. |
-| Charges (17 Nov, owner) | Cancel free until the driver reaches the pickup, ₹50 after; "End trip now" bills the started hours used; no no-show fee; waived rides still pay the driver. See `cancellation-charges.md`. |
-| Tests | Go: all packages + `-race`. user_app 425, driver_app 231 (were 294 / 90). `scripts/e2e/run.sh` full-flow API check: 95/95. |
+| Charges (17 Nov, owner) | Cancel free until the driver reaches the pickup, ₹50 after; "End trip now" bills the started hours used; overtime charged by the hour (15-min grace); no no-show fee; waived rides still pay the driver; unpaid dues carried into the next payment, never blocking a booking. See `cancellation-charges.md`. |
+| Tests | Go: all packages + `-race`. user_app 453, driver_app 245 (were 294 / 90). `scripts/e2e/run.sh` full-flow API check: 102/102. |
 
 ## Owner checklist (in order)
 
@@ -25,8 +25,8 @@ review of the whole diff); fixes by Claude Code.
    `git log --grep='HUMAN REVIEW' e559ec4..overnight/production-ready`.
 2. Commit main's pending apps-page work, then merge `overnight/production-ready` into main and push.
 3. Decided 17 Nov: cancel ₹50 at the pickup (free before), end early by the hour, no no-show fee,
-   no damage cover, prices include GST/TDS, driver paid when the customer doesn't pay. Still open:
-   overtime billing [none: fare fixed at booking], KYC auto-clear [off], start any time after accept [yes].
+   no damage cover, prices include GST/TDS, driver paid when the customer doesn't pay, dues carried
+   (not blocking), overtime charged. Still open: KYC auto-clear [off], start any time after accept [yes].
 4. Fill the `[[placeholders]]` in `scripts/apps-page/legal/*.html` (they won't publish until filled).
 5. `bash docs/features/overnight-hardening-rollout.sh`. It generates real at-rest keys + rekeys,
    migrates 0015–0029, installs units/timers, redeploys, runs the first backup and smoke checks.
