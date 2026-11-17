@@ -108,6 +108,11 @@ type DriverKYCService struct {
 	// checkLocks serialises each driver's paid checks of one kind.
 	checkLocks keyedLocks
 
+	// autoClear lets Submit verify a driver whose checks all agree, with no
+	// person looking (KYC_AUTO_CLEAR). Off by default: at launch every
+	// submission goes to a reviewer.
+	autoClear bool
+
 	now func() time.Time
 }
 
@@ -138,6 +143,11 @@ func (s *DriverKYCService) SetAlerts(a KYCAlerter) { s.alerts = a }
 // (nil releases none). Separate from the constructor because the ride
 // service is built after this one in main.
 func (s *DriverKYCService) SetRideReleaser(r HeldRideReleaser) { s.rides = r }
+
+// SetAutoClear turns on clearing a driver at submission when the Aadhaar,
+// licence and bank account all name the same person (KYC_AUTO_CLEAR=true).
+// Off — the default — every complete submission waits for a reviewer.
+func (s *DriverKYCService) SetAutoClear(on bool) { s.autoClear = on }
 
 // Load returns everything the Document View needs to render its six steps.
 func (s *DriverKYCService) Load(ctx context.Context, driverID string) (domain.DriverKYC, error) {
@@ -511,17 +521,36 @@ func (s *DriverKYCService) SetBankAccount(
 
 // Submit closes the Document View: it re-checks that every step is filled in
 // and verified server-side — the app's own progress tracking is a
-// convenience, not the authority — then clears the driver to drive when the
-// Aadhaar, licence and bank account all name the same person, or leaves them
-// submitted for a person to look at, with the reason in the review note.
+// convenience, not the authority — then leaves the driver submitted for a
+// person to look at, with any reason the checks disagree in the review
+// note. With auto-clear on (SetAutoClear), a driver whose Aadhaar, licence
+// and bank account all name the same person is cleared to drive instead.
 //
 // The decision is made with the driver's row locked, so an edit can't slip
 // in between what was checked and what is written.
 func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.DriverKYC, error) {
-	if err := s.store.DecideSubmission(ctx, driverID, decideSubmission); err != nil {
+	decide := decideSubmission
+	if !s.autoClear {
+		decide = decideForReview
+	}
+	if err := s.store.DecideSubmission(ctx, driverID, decide); err != nil {
 		return domain.DriverKYC{}, err
 	}
 	return s.Load(ctx, driverID)
+}
+
+// decideForReview is decideSubmission with auto-clear off: a driver it
+// would clear goes to a person all the same, with nothing in the note —
+// the checks agreed.
+func decideForReview(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+	status, note, err := decideSubmission(kyc)
+	if err != nil {
+		return "", "", err
+	}
+	if status == domain.KYCVerified {
+		return domain.KYCSubmitted, "", nil
+	}
+	return status, note, nil
 }
 
 // decideSubmission is Submit's rule. A driver a reviewer rejected only ever

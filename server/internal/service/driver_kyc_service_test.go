@@ -983,6 +983,9 @@ func newTestService(t *testing.T) (*DriverKYCService, *fakeKYCStore, *fakeBlob) 
 	store := newFakeKYCStore()
 	blob := newFakeBlob()
 	svc := NewDriverKYCService(store, blob, testCipher(t), []byte("test-pepper"), newFakeVerifier(), testRedirect)
+	// These tests cover the auto-clear rule (KYC_AUTO_CLEAR=true); with it
+	// off, see kyc_auto_clear_test.go.
+	svc.SetAutoClear(true)
 	// Fixed clock so the age checks don't drift with the calendar.
 	svc.now = func() time.Time {
 		return time.Date(2026, time.August, 7, 12, 0, 0, 0, time.UTC)

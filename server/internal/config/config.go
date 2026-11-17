@@ -73,6 +73,11 @@ type Config struct {
 	// Surepass checks drivers' Aadhaar (DigiLocker), licence and bank account.
 	// Without a token those checks are off and no driver can finish KYC.
 	Surepass SurepassConfig
+
+	// KYCAutoClear (KYC_AUTO_CLEAR=true) clears a driver at submission when
+	// every check names the same person. Default false: a person reviews
+	// every submission.
+	KYCAutoClear bool
 }
 
 // DefaultDigiLockerRedirectURL is the page DigiLocker ends on in production.
@@ -234,10 +239,15 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	kycAutoClear, err := envBool("KYC_AUTO_CLEAR")
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
+		KYCAutoClear:          kycAutoClear,
 		AllowDevDefaults:      allowDev,
 		CORSAllowedOrigins:    splitList(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		AdminToken:            adminToken,
@@ -341,6 +351,20 @@ func loadStorage() (StorageConfig, error) {
 	default:
 		return StorageConfig{}, fmt.Errorf("unknown STORAGE_BACKEND %q (want %q or %q)", backend, StorageLocal, StorageS3)
 	}
+}
+
+// envBool reads env var name as a boolean ("true", "1", "false", …); unset
+// or blank is false.
+func envBool(name string) (bool, error) {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false, not %q", name, v)
+	}
+	return b, nil
 }
 
 // splitList parses a comma-separated env value, dropping blanks.
