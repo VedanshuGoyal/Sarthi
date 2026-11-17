@@ -54,6 +54,7 @@ const (
 	ActionBookingSettle = "booking.settle"
 	ActionKYCDecide     = "kyc.decide"
 	ActionPayoutRecord  = "payout.record"
+	ActionAccountErase  = "account.erase"
 )
 
 // CancelledByOps is the cancelled_by of a ride MOJUD cancelled from the back

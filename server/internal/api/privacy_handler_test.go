@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/sarthi/server/internal/domain"
@@ -40,6 +41,7 @@ func (memSessionRepo) ListActive(context.Context) ([]domain.Session, error) { re
 type privacyRig struct {
 	h                          http.Handler
 	eraser                     *fakeEraser
+	audit                      *apiAudit
 	customerToken, driverToken string
 }
 
@@ -55,9 +57,10 @@ func newPrivacyRig(t *testing.T, adminToken string) *privacyRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &fakeEraser{}
-	h := NewRouter(nil, users, nil, nil, nil, nil, drivers, nil, nil, nil, nil, nil, nil, nil, nil, nil, adminToken, nil, nil, e, AppPolicy{})
-	return &privacyRig{h: h, eraser: e, customerToken: cs.Token, driverToken: ds.Token}
+	e, audit := &fakeEraser{}, &apiAudit{}
+	ops := service.NewOpsService(service.OpsDeps{Audit: audit})
+	h := NewRouter(nil, users, nil, nil, nil, nil, drivers, nil, nil, nil, nil, nil, nil, nil, ops, nil, adminToken, nil, nil, e, AppPolicy{})
+	return &privacyRig{h: h, eraser: e, audit: audit, customerToken: cs.Token, driverToken: ds.Token}
 }
 
 func (r *privacyRig) do(method, path, token string) *httptest.ResponseRecorder {
@@ -65,6 +68,7 @@ func (r *privacyRig) do(method, path, token string) *httptest.ResponseRecorder {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	req.Header.Set("X-Admin-Actor", "Asha")
 	rec := httptest.NewRecorder()
 	r.h.ServeHTTP(rec, req)
 	return rec
@@ -127,6 +131,29 @@ func TestPrivacyRoutes_AdminErasesByKindAndID(t *testing.T) {
 		if r.eraser.calls[i] != want[i] {
 			t.Errorf("call %d = %s, want %s", i, r.eraser.calls[i], want[i])
 		}
+	}
+	// Each back-office erasure is on the audit trail, with who did it.
+	if len(r.audit.actions) != len(want) {
+		t.Fatalf("audit = %+v, want %d rows", r.audit.actions, len(want))
+	}
+	for i, a := range r.audit.actions {
+		if a.Action != domain.ActionAccountErase || a.Actor != "Asha" || a.Target != id ||
+			a.Details["kind"] != strings.SplitN(want[i], ":", 2)[0] {
+			t.Errorf("audit row %d = %+v", i, a)
+		}
+	}
+}
+
+// A refused back-office erasure, and an app's own, leave no audit row.
+func TestPrivacyRoutes_OnlyAdminErasuresThatHappenAreAudited(t *testing.T) {
+	r := newPrivacyRig(t, "s3cret")
+	r.do(http.MethodDelete, "/me/account", r.customerToken)
+	r.eraser.err = &service.AccountBusyError{Reason: "busy"}
+	if rec := r.do(http.MethodPost, "/admin/accounts/driver/11111111-1111-4111-8111-111111111111/erase", "s3cret"); rec.Code != http.StatusConflict {
+		t.Fatalf("busy erase: %d %s", rec.Code, rec.Body)
+	}
+	if len(r.audit.actions) != 0 {
+		t.Errorf("audit = %+v, want none", r.audit.actions)
 	}
 }
 

@@ -15,15 +15,21 @@ type AccountEraser interface {
 	Erase(ctx context.Context, kind domain.AccountKind, id string) (domain.ErasureReport, error)
 }
 
+// auditFunc writes one back-office change to the audit trail, with the
+// operator from the request ([AdminHandler.audit]).
+type auditFunc func(r *http.Request, action, target string, details map[string]any)
+
 // PrivacyHandler serves account deletion: each app's own account, and any
 // account from the back office.
 type PrivacyHandler struct {
 	erasure AccountEraser
+	audit   auditFunc
 }
 
-// NewPrivacyHandler builds the handler over the erasure service.
-func NewPrivacyHandler(erasure AccountEraser) *PrivacyHandler {
-	return &PrivacyHandler{erasure: erasure}
+// NewPrivacyHandler builds the handler over the erasure service. audit
+// records back-office erasures; nil records none.
+func NewPrivacyHandler(erasure AccountEraser, audit auditFunc) *PrivacyHandler {
+	return &PrivacyHandler{erasure: erasure, audit: audit}
 }
 
 // DeleteCustomer handles DELETE /me/account: erase the signed-in customer.
@@ -38,23 +44,38 @@ func (h *PrivacyHandler) DeleteDriver(w http.ResponseWriter, r *http.Request) {
 
 // AdminErase handles POST /admin/accounts/{kind}/{id}/erase, for requests
 // that come in by email or phone. kind is customer (or user) or driver.
+// Each erasure is written to the audit trail (account.erase) with the
+// operator from X-Admin-Actor.
 func (h *PrivacyHandler) AdminErase(w http.ResponseWriter, r *http.Request) {
 	kind := domain.AccountKind(r.PathValue("kind"))
 	if kind == "user" {
 		kind = domain.AccountCustomer
 	}
-	h.erase(w, r, kind, r.PathValue("id"))
+	report, ok := h.erase(w, r, kind, r.PathValue("id"))
+	if ok && h.audit != nil {
+		h.audit(r, domain.ActionAccountErase, report.ID, map[string]any{
+			"kind":              string(report.Kind),
+			"alreadyErased":     report.AlreadyErased,
+			"cancelledRequests": report.CancelledRequests,
+			"documentsDeleted":  report.DocumentsDeleted,
+			"documentsPending":  report.DocumentsPending,
+		})
+	}
 }
 
-func (h *PrivacyHandler) erase(w http.ResponseWriter, r *http.Request, kind domain.AccountKind, id string) {
+// erase erases the account and answers; ok reports it was erased.
+func (h *PrivacyHandler) erase(
+	w http.ResponseWriter, r *http.Request, kind domain.AccountKind, id string,
+) (report domain.ErasureReport, ok bool) {
 	if h.erasure == nil {
 		writeError(w, http.StatusServiceUnavailable, "account deletion is not available")
-		return
+		return report, false
 	}
 	report, err := h.erasure.Erase(r.Context(), kind, id)
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, report)
+		return report, true
 	case errors.Is(err, service.ErrAccountBusy):
 		writeErrorCode(w, http.StatusConflict, "account_busy", err.Error(), 0)
 	case errors.Is(err, service.ErrUnknownAccountKind):
@@ -64,4 +85,5 @@ func (h *PrivacyHandler) erase(w http.ResponseWriter, r *http.Request, kind doma
 	default:
 		serverError(w, "could not delete the account", err)
 	}
+	return report, false
 }

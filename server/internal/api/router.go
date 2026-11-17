@@ -189,7 +189,7 @@ func NewRouter(
 	// privacy: account deletion (DPDP erasure; the Play Store wants it in
 	// the app). Each app deletes its own account, the back office any
 	// account. Accounts are anonymised; rides and payments are kept.
-	pv := NewPrivacyHandler(erasure)
+	pv := NewPrivacyHandler(erasure, adm.audit)
 	mux.HandleFunc("DELETE /me/account", requireAuth(sessions, pv.DeleteCustomer))
 	mux.HandleFunc("DELETE /driver/account", requireAuth(driverSessions, pv.DeleteDriver))
 	mux.HandleFunc("POST /admin/accounts/{kind}/{id}/erase", requireAdmin(adminToken, pv.AdminErase))
