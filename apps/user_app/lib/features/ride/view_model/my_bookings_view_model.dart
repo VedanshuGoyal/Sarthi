@@ -163,6 +163,62 @@ class MyBookingsViewModel extends ChangeNotifier {
     _notify();
   }
 
+  // --- Payments the UPI app said went through --------------------------------
+
+  /// Rides being re-checked by [confirmPayment], by id.
+  final Map<String, Future<void>> _confirming = {};
+
+  /// Whether ride [id]'s payment went through in the UPI app but the server
+  /// hasn't confirmed it yet. Paying again meanwhile could take the money
+  /// twice, so the ride's Pay button stays off. Lives here, not on the ride
+  /// screen, so leaving and reopening the ride doesn't turn Pay back on.
+  bool isConfirmingPayment(String id) => _confirming.containsKey(id);
+
+  /// Keeps asking the server to check ride [id]'s payment with the gateway,
+  /// waiting [first] and then twice as long each time up to [longest], until
+  /// it's paid, [giveUpAfter] has passed (the server's own sweep and the
+  /// list refresh carry on), or this view model is gone. One run per ride.
+  Future<void> confirmPayment(
+    String id, {
+    Duration first = const Duration(seconds: 5),
+    Duration longest = const Duration(seconds: 30),
+    Duration giveUpAfter = const Duration(minutes: 10),
+  }) {
+    if (_confirming[id] case final running?) return running;
+    final run = _confirmLoop(id, first, longest, giveUpAfter).whenComplete(() {
+      _confirming.remove(id);
+      _notify();
+    });
+    _confirming[id] = run;
+    _notify();
+    return run;
+  }
+
+  Future<void> _confirmLoop(
+    String id,
+    Duration first,
+    Duration longest,
+    Duration giveUpAfter,
+  ) async {
+    var wait = first;
+    var waited = Duration.zero;
+    while (waited < giveUpAfter) {
+      await Future<void>.delayed(wait);
+      waited += wait;
+      if (_disposed) return;
+      // A list refresh may have seen it land already.
+      if (byId(id)?.paymentStatus != RidePaymentStatus.due) return;
+      try {
+        final latest = await _repository.syncPayment(id);
+        applyUpdate(latest);
+        if (latest.paymentStatus != RidePaymentStatus.due) return;
+      } on BookingActionException {
+        // A blip; try again after the next wait.
+      }
+      wait = wait * 2 > longest ? longest : wait * 2;
+    }
+  }
+
   /// Loads now and keeps refreshing until [stopPolling].
   void startPolling() {
     load();

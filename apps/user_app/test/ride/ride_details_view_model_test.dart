@@ -117,7 +117,8 @@ void main() {
 
     test('opens the UPI page, then shows the ride paid once the server '
         'confirms', () async {
-      final server = FakeBookingServer([due()])..paidAfterSyncs = 2;
+      // The first check is the one made on opening the ride.
+      final server = FakeBookingServer([due()])..paidAfterSyncs = 3;
       final checkout = _FakeCheckout(CheckoutOutcome.success);
       final vm = _vm(server, checkout: checkout);
       check(vm.canPay).isTrue();
@@ -132,6 +133,7 @@ void main() {
       check(
         server.requests.map((r) => '${r.method} ${r.url.path}'),
       ).deepEquals([
+        'POST /me/bookings/b1/payment/sync',
         'POST /me/bookings/b1/payment',
         'POST /me/bookings/b1/payment/sync',
         'POST /me/bookings/b1/payment/sync',
@@ -148,10 +150,103 @@ void main() {
       check(await vm.pay()).isFalse();
       check(vm.payError).equals('Payment cancelled.');
       check(vm.booking!.paymentStatus).equals(RidePaymentStatus.due);
-      // Checked once, in case it went through anyway.
+      // Checked on opening, and once after, in case it went through anyway.
       check(
         server.requests.where((r) => r.url.path.endsWith('/sync')),
-      ).length.equals(1);
+      ).length.equals(2);
+      // Nothing went through, so paying again is fine.
+      check(vm.canPay).isTrue();
+    });
+
+    test('opening a due ride finds a payment the app never heard back '
+        'about', () async {
+      // Android killed the app behind the UPI app; the money went through.
+      final server = FakeBookingServer([due()])..paidAfterSyncs = 1;
+      final checkout = _FakeCheckout(CheckoutOutcome.success);
+      final vm = _vm(server, checkout: checkout);
+
+      // Tapped before the open check answers: no second order.
+      check(await vm.pay()).isTrue();
+
+      check(checkout.opened).isEmpty();
+      check(vm.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+      check(
+        server.requests.where((r) => r.url.path.endsWith('/payment')),
+      ).isEmpty();
+    });
+
+    test('a payment the bank is slow to confirm keeps Pay off, even on '
+        'reopening, and keeps being checked until it lands', () {
+      fakeAsync((async) {
+        // Open check, five quick checks, then the slow ones: at +5 s, +15 s.
+        final server = FakeBookingServer([due()])..paidAfterSyncs = 8;
+        final repo = server.repository();
+        final bookings = MyBookingsViewModel(
+          repository: repo,
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        RideDetailsViewModel open() => RideDetailsViewModel(
+          repository: repo,
+          bookings: bookings,
+          bookingId: 'b1',
+          checkout: _FakeCheckout(CheckoutOutcome.success),
+          paySyncEvery: Duration.zero,
+        );
+        final vm = open();
+        bool? paid;
+        vm.pay().then((v) => paid = v);
+        async.elapse(const Duration(milliseconds: 1));
+
+        check(paid).equals(false);
+        check(vm.canPay).isFalse();
+        check(vm.payError).isNotNull().startsWith("We're still confirming");
+
+        // Leaving and coming back doesn't turn Pay back on.
+        vm.dispose();
+        final reopened = open();
+        async.elapse(const Duration(milliseconds: 1));
+        check(reopened.canPay).isFalse();
+        check(reopened.payError).isNotNull().startsWith("We're still");
+        final syncsBefore = server.requests.length;
+
+        async.elapse(const Duration(seconds: 5));
+        check(server.requests.length).equals(syncsBefore + 1);
+        check(reopened.booking!.paymentStatus).equals(RidePaymentStatus.due);
+
+        async.elapse(const Duration(seconds: 10));
+        check(reopened.booking!.paymentStatus).equals(RidePaymentStatus.paid);
+        check(bookings.isConfirmingPayment('b1')).isFalse();
+        check(reopened.payError).isNull();
+        check(reopened.canPay).isFalse();
+
+        // Nothing left running.
+        async.elapse(const Duration(minutes: 15));
+        check(server.requests.length).equals(syncsBefore + 2);
+        reopened.dispose();
+      });
+    });
+
+    test('after the limit, Pay comes back', () {
+      fakeAsync((async) {
+        final server = FakeBookingServer([due()]);
+        final bookings = MyBookingsViewModel(
+          repository: server.repository(),
+          initialBookings: [MyBooking.tryParse(server.bookings.single)!],
+        );
+        bookings.confirmPayment(
+          'b1',
+          first: const Duration(seconds: 1),
+          longest: const Duration(seconds: 4),
+          giveUpAfter: const Duration(seconds: 10),
+        );
+        check(bookings.isConfirmingPayment('b1')).isTrue();
+
+        // 1 + 2 + 4 + 4 s: four checks, then it stops.
+        async.elapse(const Duration(seconds: 30));
+
+        check(server.requests).length.equals(4);
+        check(bookings.isConfirmingPayment('b1')).isFalse();
+      });
     });
 
     test('a ride paid from an earlier attempt just shows as paid', () async {
