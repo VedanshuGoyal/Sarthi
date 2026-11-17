@@ -31,12 +31,12 @@ enum BookingStatus {
       this != completed && this != cancelled && this != expired;
 }
 
-/// Where the money for a completed ride stands.
+/// Where the money for a completed ride — or for a cancellation fee — stands.
 enum RidePaymentStatus {
-  /// Not completed yet — nothing to pay.
+  /// Not completed yet, or cancelled for free — nothing to pay.
   none(''),
 
-  /// Completed; the customer hasn't paid.
+  /// Completed, or cancelled with a fee; the customer hasn't paid.
   due('due'),
 
   /// The customer has paid.
@@ -65,6 +65,12 @@ const List<String> cancelReasons = [
 
 /// The reason that lets the customer type their own.
 const String otherCancelReason = 'Other';
+
+/// What cancelling costs once the driver is at the pickup, under the
+/// cancellation policy (owner's decision, 17 Nov 2026). Only used to tell the
+/// customer before the driver gets there; what a cancel actually costs is
+/// the server's `cancellationFeePaise` on the booking.
+const int pickupCancellationFeePaise = 5000;
 
 /// The longest cancel reason the server accepts.
 const int maxCancelReasonLength = 200;
@@ -225,6 +231,8 @@ class MyBooking {
     this.paidAt,
     this.payment,
     this.fareBreakdown,
+    this.cancellationFeePaise = 0,
+    this.bookedFarePaise,
   });
 
   final String id;
@@ -295,7 +303,33 @@ class MyBooking {
   /// A Round Trip's base fare and night surcharge; null when not sent.
   final FareBreakdown? fareBreakdown;
 
+  /// While the driver waits at the pickup: what cancelling now costs. On a
+  /// cancelled ride: the fee charged, paid like a fare (see
+  /// [paymentStatus]). 0 when there's none.
+  final int cancellationFeePaise;
+
+  /// The fare as booked, on a trip the customer ended early — [farePaise]
+  /// is then the charge for the time used. Null on every other booking.
+  final int? bookedFarePaise;
+
   int get fareRupees => (farePaise / 100).round();
+
+  /// Whether this ride was cancelled with a fee to pay, or paid.
+  bool get hasCancellationFee =>
+      status == BookingStatus.cancelled && cancellationFeePaise > 0;
+
+  /// What cancelling right now costs: the fee once the driver is at the
+  /// pickup, 0 before then (and from servers without the fee).
+  int get cancelFeeNowPaise => canCancel ? cancellationFeePaise : 0;
+
+  /// Whether the customer ended the trip before its booked end.
+  bool get endedEarly =>
+      status == BookingStatus.completed && bookedFarePaise != null;
+
+  /// What the customer pays for this booking: the cancellation fee of a
+  /// cancelled ride, the fare of any other.
+  int get chargePaise =>
+      status == BookingStatus.cancelled ? cancellationFeePaise : farePaise;
 
   /// The driver's first name, for friendlier lines ("Ravi is 2 km away").
   String? get driverFirstName {
@@ -311,11 +345,15 @@ class MyBooking {
       status == BookingStatus.accepted ||
       status == BookingStatus.arrived;
 
-  /// Whether the trip is finished and waiting for the customer to pay.
+  /// Whether the customer has something to pay for this booking: a
+  /// finished trip's fare, or the fee of a ride cancelled at the pickup.
   bool get canPay =>
-      status == BookingStatus.completed &&
+      (status == BookingStatus.completed || hasCancellationFee) &&
       paymentStatus == RidePaymentStatus.due &&
-      farePaise >= 100;
+      chargePaise >= 100;
+
+  /// Whether the customer may end the trip now, paying for the time used.
+  bool get canEndTrip => status == BookingStatus.inProgress;
 
   /// Whether the trip is finished and waiting for the customer's stars.
   bool get canRate => status == BookingStatus.completed && myRating == null;
@@ -363,6 +401,10 @@ class MyBooking {
     'multiStop' => TripType.multiStop,
     _ => TripType.roundTrip,
   };
+
+  /// A positive amount in paise, or null for a missing or non-positive one.
+  static int? _paise(Object? value) =>
+      value is num && value > 0 ? value.toInt() : null;
 
   static DateTime? _time(Object? value) =>
       value is String ? DateTime.tryParse(value)?.toLocal() : null;
@@ -484,6 +526,8 @@ class MyBooking {
       paidAt: _time(json['paidAt']),
       payment: RidePayment.tryParse(json['payment']),
       fareBreakdown: FareBreakdown.tryParse(json['fareBreakdown']),
+      cancellationFeePaise: _paise(json['cancellationFeePaise']) ?? 0,
+      bookedFarePaise: _paise(json['bookedFarePaise']),
     );
   }
 }

@@ -346,7 +346,7 @@ void main() {
       check(post.url.path).equals('/me/bookings/b1/cancel');
       check(
         jsonDecode(post.body) as Map,
-      ).deepEquals({'reason': 'Car is in service'});
+      ).deepEquals({'reason': 'Car is in service', 'acceptFeePaise': 0});
       check(_shows('Ride cancelled')).isTrue();
       check(_shows('Cancelled by you · Car is in service')).isTrue();
       check(_shows('4 8 2 1')).isFalse();

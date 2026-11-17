@@ -267,16 +267,65 @@ void main() {
       check(request.headers['Authorization']).equals('Bearer tok');
       check(
         jsonDecode(request.body) as Map,
-      ).deepEquals({'reason': 'Plans changed'});
+      ).deepEquals({'reason': 'Plans changed', 'acceptFeePaise': 0});
       check(booking.status).equals(BookingStatus.cancelled);
       check(booking.cancelReason).equals('Plans changed');
       check(booking.startOtp).isNull();
     });
 
-    test('cancel without a reason sends an empty body', () async {
+    test('cancel without a reason still says what fee it agreed to', () async {
       final server = FakeBookingServer([bookingJson()]);
       await server.repository().cancel('b1');
-      check(jsonDecode(server.requests.single.body) as Map).isEmpty();
+      check(
+        jsonDecode(server.requests.single.body) as Map,
+      ).deepEquals({'acceptFeePaise': 0});
+    });
+
+    test('cancelling at the pickup for more than agreed is refused with the '
+        'fee', () async {
+      final server = FakeBookingServer([
+        bookingJson(status: 'arrived', cancellationFeePaise: 5000),
+      ]);
+      final repo = server.repository();
+
+      final refused = await _failure(
+        repo.cancel('b1', reason: 'Plans changed'),
+      );
+      check(refused.code).equals(BookingErrorCode.cancellationFee);
+      check(refused.statusCode).equals(409);
+      check(refused.feePaise).equals(5000);
+      check(server.bookings.single['status']).equals('arrived');
+
+      final booking = await repo.cancel('b1', acceptFeePaise: 5000);
+      check(
+        jsonDecode(server.requests.last.body) as Map,
+      ).deepEquals({'acceptFeePaise': 5000});
+      check(booking.status).equals(BookingStatus.cancelled);
+      check(booking.cancellationFeePaise).equals(5000);
+      check(booking.paymentStatus).equals(RidePaymentStatus.due);
+    });
+
+    test('endTrip posts to /end and returns the trip charged for the time '
+        'used', () async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      final booking = await server.repository().endTrip('b1');
+
+      final request = server.requests.single;
+      check(request.method).equals('POST');
+      check(request.url.path).equals('/me/bookings/b1/end');
+      check(request.headers['Authorization']).equals('Bearer tok');
+      check(booking.status).equals(BookingStatus.completed);
+      check(booking.farePaise).equals(24000);
+      check(booking.bookedFarePaise).equals(64000);
+      check(booking.paymentStatus).equals(RidePaymentStatus.due);
+    });
+
+    test('ending a trip that is not in progress is cannot_end', () async {
+      final server = FakeBookingServer([bookingJson(status: 'arrived')]);
+      final refused = await _failure(server.repository().endTrip('b1'));
+      check(refused.code).equals(BookingErrorCode.cannotEnd);
+      check(refused.statusCode).equals(409);
+      check(refused.feePaise).isNull();
     });
 
     test('rate posts the stars and note and returns myRating', () async {
