@@ -533,7 +533,16 @@ func (s *DriverKYCService) Submit(ctx context.Context, driverID string) (domain.
 	if !s.autoClear {
 		decide = decideForReview
 	}
-	if err := s.store.DecideSubmission(ctx, driverID, decide); err != nil {
+	err := s.store.DecideSubmission(ctx, driverID, func(kyc domain.DriverKYC) (domain.KYCStatus, string, error) {
+		// A driver already cleared stays cleared: a repeat tap or a retry
+		// must not send them back to a reviewer. Every real edit reopens a
+		// verified driver first, so nothing new is being submitted here.
+		if kyc.Profile.KYCStatus == domain.KYCVerified {
+			return "", "", nil
+		}
+		return decide(kyc)
+	})
+	if err != nil {
 		return domain.DriverKYC{}, err
 	}
 	return s.Load(ctx, driverID)

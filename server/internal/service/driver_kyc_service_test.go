@@ -1266,6 +1266,9 @@ func (f *fakeKYCStore) DecideSubmission(
 	if err != nil {
 		return err
 	}
+	if status == "" {
+		return nil
+	}
 	f.decide(status, note)
 	return nil
 }
