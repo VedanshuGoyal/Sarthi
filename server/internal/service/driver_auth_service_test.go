@@ -49,7 +49,7 @@ func (f *fakeDriverStore) FindByID(_ context.Context, id string) (domain.Driver,
 func TestDriverVerifyOTP_DevMode(t *testing.T) {
 	s := NewDriverAuthService(&fakeDriverStore{})
 
-	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP)
+	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP, false)
 	if err != nil {
 		t.Fatalf("correct OTP should pass, got %v", err)
 	}
@@ -57,10 +57,10 @@ func TestDriverVerifyOTP_DevMode(t *testing.T) {
 		t.Fatalf("unknown number should be Registered=false, got %+v", res)
 	}
 
-	if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000"); !errors.Is(err, ErrInvalidOTP) {
+	if _, err := s.VerifyOTP(context.Background(), "+919876543210", "000000", false); !errors.Is(err, ErrInvalidOTP) {
 		t.Fatalf("wrong OTP should be ErrInvalidOTP, got %v", err)
 	}
-	if _, err := s.VerifyOTP(context.Background(), "12345", DevOTP); !errors.Is(err, ErrInvalidPhone) {
+	if _, err := s.VerifyOTP(context.Background(), "12345", DevOTP, false); !errors.Is(err, ErrInvalidPhone) {
 		t.Fatalf("bad phone should be ErrInvalidPhone, got %v", err)
 	}
 }
@@ -71,7 +71,7 @@ func TestDriverVerifyOTP_ExistingNumberLogsIn(t *testing.T) {
 	tokens := &fakeTokenIssuer{}
 	s := NewDriverAuthService(drivers, WithDriverTokenIssuer(tokens))
 
-	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP)
+	res, err := s.VerifyOTP(context.Background(), "+919876543210", DevOTP, false)
 	if err != nil {
 		t.Fatalf("VerifyOTP: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDriverOTPLimiterWiring(t *testing.T) {
 		sender := &fakeOTPSender{verifyOK: true}
 		lim := &fakeLimiter{verifyOK: false}
 		s := NewDriverAuthService(&fakeDriverStore{}, WithDriverOTPLimiter(lim), WithDriverOTPSender(sender))
-		_, err := s.VerifyOTP(context.Background(), phone, "123456")
+		_, err := s.VerifyOTP(context.Background(), phone, "123456", false)
 		if !errors.Is(err, ErrOTPInvalidated) {
 			t.Fatalf("want ErrOTPInvalidated, got %v", err)
 		}

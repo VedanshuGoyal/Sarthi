@@ -209,6 +209,62 @@ func TestOTPGuard_RegistrationPass(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: auth. The registration ticket binds the pass to the
+// client that verified: only its ticket spends it, a wrong one doesn't burn
+// it, and once that client is one that sends tickets, the phone-only pass is
+// refused. An older build's pass still works by phone alone.
+func TestOTPGuard_RegistrationTicket(t *testing.T) {
+	clk := time.Now()
+	g := newTestGuard(&clk)
+	const phone = "+919876543210"
+
+	g.BeginSend(phone)
+	g.Succeed(phone)
+	ticket := g.IssueTicket(phone, true)
+	if len(ticket) < 20 {
+		t.Fatalf("ticket %q is too short to be unguessable", ticket)
+	}
+	if g.ConsumeVerified(phone) {
+		t.Fatal("a ticket client's pass was spent by phone alone")
+	}
+	if g.ConsumeTicket(phone, "not-the-ticket") || g.ConsumeTicket(phone, "") {
+		t.Fatal("a wrong ticket spent the pass")
+	}
+	if !g.ConsumeTicket(phone, ticket) {
+		t.Fatal("the right ticket was refused")
+	}
+	if g.ConsumeTicket(phone, ticket) {
+		t.Fatal("a ticket is single-use")
+	}
+
+	// An older build: the ticket is issued but not required.
+	g.Succeed(phone)
+	old := g.IssueTicket(phone, false)
+	if !g.ConsumeVerified(phone) {
+		t.Fatal("an older build's phone-only pass was refused")
+	}
+	if g.ConsumeTicket(phone, old) {
+		t.Fatal("the pass was spent twice")
+	}
+
+	// A ticket expires with its pass, and a new code drops it.
+	g.Succeed(phone)
+	ticket = g.IssueTicket(phone, true)
+	clk = clk.Add(OTPVerifiedTTL + time.Second)
+	if g.ConsumeTicket(phone, ticket) {
+		t.Fatal("a ticket outlived OTPVerifiedTTL")
+	}
+	g.Succeed(phone)
+	ticket = g.IssueTicket(phone, true)
+	g.BeginSend(phone)
+	if g.ConsumeTicket(phone, ticket) {
+		t.Fatal("requesting a new code kept the old ticket")
+	}
+	if g.IssueTicket(phone, true) == g.IssueTicket(phone, true) {
+		t.Fatal("two tickets were the same")
+	}
+}
+
 func TestOTPGuard_SweepKeepsLiveSessions(t *testing.T) {
 	clk := time.Now()
 	g := newTestGuard(&clk)

@@ -80,6 +80,10 @@ class RegistrationViewModel extends ChangeNotifier {
   String? _token;
   String? get token => _token;
 
+  /// The one-time ticket the server handed back when this device verified a
+  /// new number; registering sends it, proving it is the same device.
+  String? _registrationTicket;
+
   /// Number of digits the OTP screen should collect.
   int get otpLength => AuthRepository.otpLength;
 
@@ -165,6 +169,7 @@ class RegistrationViewModel extends ChangeNotifier {
           // Returning customer — log in and go straight to home.
           await _completeSignIn(result.session!);
         } else {
+          _registrationTicket = result.registrationTicket;
           _step = RegistrationStep.profile;
         }
       } on OtpInvalidatedException {
@@ -209,6 +214,8 @@ class RegistrationViewModel extends ChangeNotifier {
     _otpAttempts = 0;
     _resendLocked = false;
     _otpInvalidated = false;
+    // A fresh code ends the server's pass, and the ticket with it.
+    _registrationTicket = null;
   }
 
   /// Locks resends for [wait] (cap reached), surfacing a live countdown.
@@ -296,6 +303,7 @@ class RegistrationViewModel extends ChangeNotifier {
         email: email,
         dateOfBirth: _dateOfBirth!,
         consentVersion: Legal.consentVersion,
+        registrationTicket: _registrationTicket,
       );
       await _completeSignIn(session);
     });

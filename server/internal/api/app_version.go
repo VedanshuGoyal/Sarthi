@@ -77,6 +77,18 @@ func identifyClient(r *http.Request) (c appClient, ok bool) {
 	return appClient{app: app, build: build}, true
 }
 
+// firstTicketBuild is each app's first build that sends the registration
+// ticket from OTP verify back at sign-up (service.AuthService.Register).
+var firstTicketBuild = map[string]int{AppUser: 9, AppDriver: 8}
+
+// sendsRegistrationTicket reports whether r comes from a build of app that
+// sends the registration ticket. Older builds, and requests that don't say
+// which build they are, sign up with the phone-only pass.
+func sendsRegistrationTicket(r *http.Request, app string) bool {
+	c, ok := identifyClient(r)
+	return ok && c.app == app && c.build >= firstTicketBuild[app]
+}
+
 // exemptFromBuildGate lists the routes no app build is turned away from:
 // probes, the contract itself, the back office, and the URLs third parties
 // call (PhonePe's webhook, DigiLocker's redirect).

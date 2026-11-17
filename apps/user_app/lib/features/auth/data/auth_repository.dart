@@ -102,12 +102,15 @@ class AuthRepository {
   /// Creates the account and returns the logged-in [AuthSession] (token + user).
   /// [consentVersion] is the version of the Terms and Privacy Policy the
   /// customer agreed to; the server records it with the time.
+  /// [registrationTicket] is [OtpResult.registrationTicket] from verifying
+  /// the number: the server needs it from this build on.
   Future<AuthSession> register({
     required String phoneE164,
     required String name,
     required String email,
     required DateTime dateOfBirth,
     String? consentVersion,
+    String? registrationTicket,
   }) async {
     final body = await _post('/auth/register', {
       'phoneE164': phoneE164,
@@ -115,6 +118,7 @@ class AuthRepository {
       'email': email.trim(),
       'dateOfBirth': _formatDate(dateOfBirth),
       'consentVersion': ?consentVersion,
+      'registrationTicket': ?registrationTicket,
     });
     return AuthSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
