@@ -118,6 +118,21 @@ func TestStats_commissionAtRate(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: payments. A ride settled by hand (cash or waived)
+// counts in the gross fare but earns MOJUD no commission.
+func TestStats_noCommissionOnRidesSettledByHand(t *testing.T) {
+	store := &statsSpy{st: domain.AdminStats{CompletedRides: domain.StatsCompletedRides{
+		Today: domain.StatsRideWindow{Rides: 2, GrossFarePaise: 110000, SettledByHandPaise: 100000},
+	}}}
+	st, err := NewStatsService(store, nil, 1300).Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if w := st.CompletedRides.Today; w.GrossFarePaise != 110000 || w.CommissionPaise != 1300 {
+		t.Errorf("today = %+v, want gross 110000 and commission 1300 (13%% of the 10000 not settled by hand)", w)
+	}
+}
+
 func TestStats_commissionMatchesPayments(t *testing.T) {
 	for _, bp := range []int64{0, 1, 999, 1250, 1300, 1500, 10000} {
 		pay := &PaymentService{commissionBP: bp}

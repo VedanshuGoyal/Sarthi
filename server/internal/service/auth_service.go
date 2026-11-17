@@ -114,8 +114,25 @@ type OTPLimiter interface {
 	RecordFailure(phoneE164 string) (invalidated bool)
 	// Succeed records a correct code and grants a short registration pass.
 	Succeed(phoneE164 string)
-	// ConsumeVerified uses up that pass; false means no recent correct code.
+	// IssueTicket binds that pass to a fresh one-time ticket for the client
+	// that verified; ticketOnly means the pass then needs it.
+	IssueTicket(phoneE164 string, ticketOnly bool) (ticket string)
+	// ConsumeVerified uses up the pass by phone alone (builds without the
+	// ticket); false means no recent correct code, or the pass needs its
+	// ticket.
 	ConsumeVerified(phoneE164 string) bool
+	// ConsumeTicket uses up the pass if ticket is the one issued for it.
+	ConsumeTicket(phoneE164, ticket string) bool
+}
+
+// registrationAllowed spends phone's registration pass: with the ticket
+// when the client sent one or must (required), else by phone alone — the
+// path for app builds that predate the ticket.
+func registrationAllowed(l OTPLimiter, phone, ticket string, required bool) bool {
+	if ticket != "" || required {
+		return l.ConsumeTicket(phone, ticket)
+	}
+	return l.ConsumeVerified(phone)
 }
 
 // AuthService implements phone-number registration and login: request OTP,
@@ -143,6 +160,9 @@ type AuthResult struct {
 	Registered bool
 	User       domain.User
 	Token      string
+	// RegistrationTicket, after VerifyOTP for a new number, is the one-time
+	// proof Register takes that this client is the one that verified.
+	RegistrationTicket string
 }
 
 // Option configures an [AuthService].
@@ -216,8 +236,11 @@ func (s *AuthService) ResendOTP(ctx context.Context, phoneE164 string) error {
 // account. Returns [ErrInvalidOTP] on a wrong code. When the number already has
 // an account, the result carries the user and a fresh session token
 // (Registered=true); when it's new, Registered is false and the caller should
-// collect a profile and call [Register].
-func (s *AuthService) VerifyOTP(ctx context.Context, phoneE164, code string) (AuthResult, error) {
+// collect a profile and call [Register], with the result's
+// RegistrationTicket. ticketClient says the app build verifying sends that
+// ticket back (user_app 9+): the number's pass then needs it, so it can't be
+// spent by anyone who only knows the number.
+func (s *AuthService) VerifyOTP(ctx context.Context, phoneE164, code string, ticketClient bool) (AuthResult, error) {
 	if !phoneRe.MatchString(phoneE164) {
 		return AuthResult{}, ErrInvalidPhone
 	}
@@ -242,7 +265,11 @@ func (s *AuthService) VerifyOTP(ctx context.Context, phoneE164, code string) (Au
 
 	user, err := s.users.FindByPhone(ctx, phoneE164)
 	if errors.Is(err, repository.ErrUserNotFound) {
-		return AuthResult{Registered: false}, nil
+		res := AuthResult{Registered: false}
+		if s.limiter != nil {
+			res.RegistrationTicket = s.limiter.IssueTicket(phoneE164, ticketClient)
+		}
+		return res, nil
 	}
 	if err != nil {
 		return AuthResult{}, err
@@ -313,13 +340,20 @@ type RegisterParams struct {
 	// ConsentVersion is the Terms/Privacy version the person agreed to;
 	// optional, since older builds don't send it.
 	ConsentVersion string
+	// RegistrationTicket is the one VerifyOTP returned. TicketRequired says
+	// the request comes from a build that sends it (user_app 9+); older
+	// builds register with the phone-only pass.
+	RegistrationTicket string
+	TicketRequired     bool
 }
 
 // Register validates the profile, persists a new account, and logs it in
 // (issuing a session token). The number must have verified a code within
 // memstore.OTPVerifiedTTL, else [ErrOTPNotVerified]; without that check anyone
-// could open an account on someone else's number. A duplicate phone number
-// surfaces as [repository.ErrPhoneTaken].
+// could open an account on someone else's number. The registration ticket
+// from that verification is checked when sent, and needed when the build
+// sends one (TicketRequired) or the verifying one did. A duplicate phone
+// number surfaces as [repository.ErrPhoneTaken].
 func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResult, error) {
 	name := strings.TrimSpace(p.Name)
 	email := strings.TrimSpace(p.Email)
@@ -337,7 +371,7 @@ func (s *AuthService) Register(ctx context.Context, p RegisterParams) (AuthResul
 		return AuthResult{}, ErrInvalidConsent
 	}
 	// Checked after validation so a typo doesn't burn the pass.
-	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
+	if s.limiter != nil && !registrationAllowed(s.limiter, p.PhoneE164, p.RegistrationTicket, p.TicketRequired) {
 		return AuthResult{}, ErrOTPNotVerified
 	}
 

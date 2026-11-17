@@ -35,10 +35,11 @@ send() {
 }
 
 # alert <kind> <text> — send unless the same kind was sent in the last 30 min.
+# Returns 1 when it held the alert back for that reason.
 alert() {
 	local f="$STATE/alert-$1" last=0
 	[[ -f "$f" ]] && last=$(<"$f")
-	((now - last < REPEAT_AFTER)) && return 0
+	((now - last < REPEAT_AFTER)) && return 1
 	echo "$now" >"$f"
 	send "⚠️ Sarthi ($host): $2"
 }
@@ -54,15 +55,22 @@ else
 	alert down "API not ready (/readyz failed). journalctl -u sarthi -n 50"
 fi
 
-# 2. ERROR lines since the last run.
+# 2. ERROR lines since the last run. The server logs through slog's default
+# handler, "2026/11/17 04:16:20 ERROR msg key=value"; level=ERROR is matched
+# too, in case a text handler is ever installed. While the errors alert is
+# in its cooldown, last-run stays put, so the lines held back go out (with
+# a count) in the next alert rather than being dropped.
 since=$now
 [[ -f "$STATE/last-run" ]] && since=$(<"$STATE/last-run")
-errors=$(journalctl -u sarthi --since "@$since" --no-pager -o cat 2>/dev/null | grep -F 'level=ERROR' | head -5)
+errors=$(journalctl -u sarthi --since "@$since" --no-pager -o cat 2>/dev/null |
+	grep -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)? ERROR |level=ERROR')
+advance=1
 if [[ -n "$errors" ]]; then
-	alert errors "server errors:
-${errors:0:3000}"
+	count=$(wc -l <<<"$errors")
+	alert errors "$count server error(s) since $(date -d "@$since" '+%H:%M'):
+$(head -5 <<<"$errors" | cut -c1-600)" || advance=0
 fi
-echo "$now" >"$STATE/last-run"
+((advance)) && echo "$now" >"$STATE/last-run"
 
 # 3. Nightly backup.
 if systemctl is-failed --quiet sarthi-backup.service 2>/dev/null; then

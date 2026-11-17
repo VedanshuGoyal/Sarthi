@@ -80,6 +80,10 @@ class DriverRegistrationViewModel extends ChangeNotifier {
   String? _token;
   String? get token => _token;
 
+  /// The one-time ticket the server handed back when this device verified a
+  /// new number; registering sends it, proving it is the same device.
+  String? _registrationTicket;
+
   /// Number of digits the OTP screen should collect.
   int get otpLength => DriverAuthRepository.otpLength;
 
@@ -161,6 +165,7 @@ class DriverRegistrationViewModel extends ChangeNotifier {
           // Returning driver — log in and go straight to home.
           await _completeSignIn(result.session!);
         } else {
+          _registrationTicket = result.registrationTicket;
           _step = DriverRegistrationStep.name;
         }
       } on OtpInvalidatedException {
@@ -205,6 +210,8 @@ class DriverRegistrationViewModel extends ChangeNotifier {
     _otpAttempts = 0;
     _resendLocked = false;
     _otpInvalidated = false;
+    // A fresh code ends the server's pass, and the ticket with it.
+    _registrationTicket = null;
   }
 
   /// Locks resends for [wait] (cap reached), surfacing a live countdown.
@@ -272,6 +279,7 @@ class DriverRegistrationViewModel extends ChangeNotifier {
         phoneE164: phoneE164,
         name: name,
         consentVersion: Legal.consentVersion,
+        registrationTicket: _registrationTicket,
       );
       await _completeSignIn(session);
     });

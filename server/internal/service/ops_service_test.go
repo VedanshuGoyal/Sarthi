@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -53,6 +54,8 @@ type fakeOpsPayments struct {
 	bookings  *fakeOpsBookings
 	attention domain.PaymentAttention
 	gotBefore time.Time
+	// checkoutOpen: rides with a UPI checkout pending at the gateway.
+	checkoutOpen map[string]bool
 }
 
 func (f *fakeOpsPayments) SettleByHand(_ context.Context, id string, mode domain.SettleMode, note string, at time.Time) (domain.Booking, error) {
@@ -62,6 +65,9 @@ func (f *fakeOpsPayments) SettleByHand(_ context.Context, id string, mode domain
 	}
 	if r.Booking.Status != domain.RideStatusCompleted || r.Booking.PaidAt != nil {
 		return domain.Booking{}, repository.ErrBookingStateConflict
+	}
+	if f.checkoutOpen[id] {
+		return domain.Booking{}, repository.ErrGatewayOrderOpen
 	}
 	r.Booking.PaidAt, r.PaidMode, r.PaidNote = &at, string(mode), note
 	return r.Booking, nil
@@ -293,6 +299,52 @@ func TestOps_SettleByHand(t *testing.T) {
 	}
 	if _, err := ot.svc.Settle(t.Context(), opsMe, "r1", domain.SettledWaived, "again"); !errors.Is(err, repository.ErrBookingStateConflict) {
 		t.Errorf("second settle: err = %v, want a state conflict", err)
+	}
+}
+
+// fakeCheckouts stands in for PaymentService.SyncBooking: lapse lists the
+// rides whose open checkout the gateway reports as failed.
+type fakeCheckouts struct {
+	payments *fakeOpsPayments
+	lapse    map[string]bool
+	synced   []string
+}
+
+func (f *fakeCheckouts) SyncBooking(_ context.Context, id string) error {
+	f.synced = append(f.synced, id)
+	if f.lapse[id] {
+		delete(f.payments.checkoutOpen, id)
+	}
+	return nil
+}
+
+// HUMAN REVIEW REQUIRED: payments. A ride whose customer has a UPI checkout
+// open is not settled by hand — the late payment would be owed to nobody —
+// and the gateway is asked first, so a checkout that lapsed doesn't block.
+func TestOps_SettleChecksTheGatewayFirst(t *testing.T) {
+	var rides []domain.RideBooking
+	for _, id := range []string{"open", "lapsed"} {
+		rb := openRide(id, testNow.Add(-3*time.Hour), 2, "automatic")
+		rb.Booking.Status, rb.Booking.DriverID = domain.RideStatusCompleted, opsDriverAuto
+		rides = append(rides, rb)
+	}
+	ot := newOpsTest(rides...)
+	ot.payments.checkoutOpen = map[string]bool{"open": true, "lapsed": true}
+	checkouts := &fakeCheckouts{payments: ot.payments, lapse: map[string]bool{"lapsed": true}}
+	ot.svc.d.Checkouts = checkouts
+
+	_, err := ot.svc.Settle(t.Context(), opsMe, "open", domain.SettledWaived, "customer says paid")
+	if !errors.Is(err, repository.ErrGatewayOrderOpen) || !errors.Is(err, repository.ErrBookingStateConflict) {
+		t.Errorf("open checkout: err = %v, want ErrGatewayOrderOpen (a state conflict)", err)
+	}
+	if len(ot.audit.actions) != 0 {
+		t.Errorf("a refused settle was audited: %+v", ot.audit.actions)
+	}
+	if _, err := ot.svc.Settle(t.Context(), opsMe, "lapsed", domain.SettledCash, "paid cash"); err != nil {
+		t.Errorf("lapsed checkout: err = %v, want settled", err)
+	}
+	if want := []string{"open", "lapsed"}; !slices.Equal(checkouts.synced, want) {
+		t.Errorf("synced %v, want %v", checkouts.synced, want)
 	}
 }
 

@@ -80,14 +80,17 @@ func run() error {
 
 	// OTP abuse limits (resend cap, failed-verification cap, 30-min lockout) are
 	// Sarthi's own rules, enforced in memory regardless of the SMS provider.
+	// The day's SMS spend is one budget for both apps, counted only for texts
+	// actually sent.
+	smsBudget := memstore.NewSMSBudget(memstore.MaxDailySMS, memstore.SMSWindow)
 	authOpts := []service.Option{
 		service.WithTokenIssuer(sessions),
 		service.WithOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		authOpts = append(authOpts, service.WithOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		authOpts = append(authOpts, service.WithOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 		slog.Info("otp: Fast2SMS provider enabled")
 	} else {
 		slog.Warn("otp: no SMS provider configured; accepting dev OTP",
@@ -115,9 +118,9 @@ func run() error {
 		service.WithDriverOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 	}
 	driverAuthService := service.NewDriverAuthService(repository.NewDriverRepository(pool), driverAuthOpts...)
 
@@ -271,6 +274,9 @@ func run() error {
 			"customers can't pay in the app")
 	}
 	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
+	// Without a gateway nobody can pay in the app, so an unpaid ride must
+	// not block booking or account deletion.
+	bookings.SetPaymentsEnabled(payments.Enabled())
 	go payments.RunSweeper(ctx)
 	// Every minute: re-alert drivers about rides nobody has taken, tell the
 	// customer when no driver has turned up, remind both sides an hour
@@ -289,6 +295,7 @@ func run() error {
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
 	// Account deletion (DPDP), and the daily sweep of data past retention.
 	erasure := service.NewErasureService(repository.NewErasureRepository(pool), sessions, driverSessions, blob, presence)
+	erasure.SetPaymentsEnabled(payments.Enabled())
 	go service.NewRetentionService(repository.NewRetentionRepository(pool), erasure).Run(ctx)
 	// Builds below a minimum get 426 update_required; 0 only observes.
 	slog.Info("apps: build contract",
@@ -298,19 +305,24 @@ func run() error {
 	// money+ops: the back office's booking tools and its audit trail. Assign
 	// runs the same conditional accept as a driver's own tap (driverRideStore).
 	ops := service.NewOpsService(service.OpsDeps{
-		Bookings: bookingStore,
-		Rides:    driverRideStore,
-		Payments: paymentStore,
-		Profiles: driverProfiles,
-		Audit:    repository.NewAdminActionRepository(pool),
-		Alerts:   notify,
+		Bookings:  bookingStore,
+		Rides:     driverRideStore,
+		Payments:  paymentStore,
+		Checkouts: payments,
+		Profiles:  driverProfiles,
+		Audit:     repository.NewAdminActionRepository(pool),
+		Alerts:    notify,
 	})
+
+	// /readyz fails until the schema has this build's migrations, so
+	// redeploy.sh rolls back a binary started against an un-migrated DB.
+	ready := func(ctx context.Context) error { return repository.SchemaReady(ctx, pool) }
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping, erasure,
+			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, ready, erasure,
 			appPolicy(cfg.Apps)),
 		// Bound every phase of a connection: a 12 MB KYC upload on a slow
 		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the

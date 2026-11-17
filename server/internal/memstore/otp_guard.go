@@ -1,6 +1,9 @@
 package memstore
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"sync"
 	"time"
 )
@@ -39,6 +42,18 @@ type otpSession struct {
 	invalidated   bool        // OTP killed after too many wrong codes
 	sends         []time.Time // SMS sent within the last OTPSendWindow
 	verifiedUntil time.Time   // a correct code may register until then
+
+	// The registration ticket handed to the client that verified (see
+	// [OTPGuard.IssueTicket]); only its hash is kept. ticketOnly: that
+	// client sends it back, so the pass is spent only with the ticket.
+	ticketHash [sha256.Size]byte
+	hasTicket  bool
+	ticketOnly bool
+}
+
+func (s *otpSession) dropPass() {
+	s.verifiedUntil = time.Time{}
+	s.ticketHash, s.hasTicket, s.ticketOnly = [sha256.Size]byte{}, false, false
 }
 
 func (s *otpSession) locked(now time.Time) bool {
@@ -140,7 +155,8 @@ func (g *OTPGuard) BeginSend(phone string) (ok bool, retryAfter time.Duration) {
 	}
 	s.sends = append(s.sends, now)
 	s.resends, s.failures, s.invalidated = 0, 0, false
-	s.lockedUntil, s.verifiedUntil = time.Time{}, time.Time{}
+	s.lockedUntil = time.Time{}
+	s.dropPass()
 	return true, 0
 }
 
@@ -200,19 +216,54 @@ func (g *OTPGuard) Succeed(phone string) {
 	defer g.mu.Unlock()
 	s := g.session(phone)
 	s.failures, s.invalidated = 0, false
+	s.dropPass()
 	s.verifiedUntil = g.now().Add(g.verifiedTTL)
+}
+
+// IssueTicket binds phone's registration pass (from [OTPGuard.Succeed]) to
+// a fresh random ticket and returns it, for the client that verified to
+// present at registration ([OTPGuard.ConsumeTicket]). Only the ticket's
+// hash is kept. ticketOnly says that client sends the ticket back: the pass
+// is then refused to [OTPGuard.ConsumeVerified], so nobody else can spend
+// it by knowing the number alone.
+func (g *OTPGuard) IssueTicket(phone string, ticketOnly bool) string {
+	ticket := rand.Text()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.session(phone)
+	s.ticketHash, s.hasTicket, s.ticketOnly = sha256.Sum256([]byte(ticket)), true, ticketOnly
+	return ticket
 }
 
 // ConsumeVerified reports whether phone verified a correct code within
 // OTPVerifiedTTL, and uses that pass up: one verification, one registration.
+// It is the phone-only pass for app builds that predate the registration
+// ticket, so it refuses a pass issued to a client that sends one.
 func (g *OTPGuard) ConsumeVerified(phone string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	s := g.sessions[phone]
-	if s == nil || !s.verifiedUntil.After(g.now()) {
+	if s == nil || !s.verifiedUntil.After(g.now()) || s.ticketOnly {
 		return false
 	}
-	s.verifiedUntil = time.Time{}
+	s.dropPass()
+	return true
+}
+
+// ConsumeTicket is [OTPGuard.ConsumeVerified] for a client holding the
+// registration ticket: the pass is used up only when ticket is the one
+// [OTPGuard.IssueTicket] handed out for phone. A wrong ticket leaves the
+// pass in place, so a guesser can't spend someone else's.
+func (g *OTPGuard) ConsumeTicket(phone, ticket string) bool {
+	sum := sha256.Sum256([]byte(ticket))
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	s := g.sessions[phone]
+	if s == nil || !s.verifiedUntil.After(g.now()) || !s.hasTicket ||
+		subtle.ConstantTimeCompare(sum[:], s.ticketHash[:]) != 1 {
+		return false
+	}
+	s.dropPass()
 	return true
 }
 

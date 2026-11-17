@@ -138,16 +138,31 @@ func TestErasureRepository_BlockersAndRefusal_Integration(t *testing.T) {
 	insertRide(t, ctx, tx, user, &driver, "accepted")
 	insertRide(t, ctx, tx, user, &driver, "completed") // fare, not paid
 	insertRide(t, ctx, tx, user, nil, "requested")
-	paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900) // paid: no blocker
+	// Paid out, and settled by hand: neither blocks anyone.
+	paidOut := paidRide(t, ctx, tx, user, driver, time.Now().Add(-time.Hour), 20000, 2600)
+	if _, err := NewPaymentRepository(tx).RecordPayout(ctx, driver, "UTR-erasure-test",
+		time.Now().Add(-time.Minute), time.Now(), ExpectedPayout{}); err != nil {
+		t.Fatalf("RecordPayout: %v", err)
+	}
+	if payoutOf(t, ctx, tx, paidOut) == "" {
+		t.Fatal("the payout did not cover the paid-out ride")
+	}
+	settled := paidRide(t, ctx, tx, user, driver, time.Now(), 10000, 0)
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET paid_mode = 'cash' WHERE id = $1`, settled); err != nil {
+		t.Fatalf("settling by hand: %v", err)
+	}
+	// Paid: nothing for the customer, but the driver's share is still owed.
+	paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900)
 
 	refused := errors.New("refused")
 	for _, tc := range []struct {
 		kind  string
 		erase func(context.Context, string, time.Time, func(domain.ErasureBlockers) error) (domain.ErasureResult, error)
 		id    string
+		want  domain.ErasureBlockers
 	}{
-		{"customer", repo.EraseUser, user},
-		{"driver", repo.EraseDriver, driver},
+		{"customer", repo.EraseUser, user, domain.ErasureBlockers{ActiveRides: 1, UnpaidRides: 1}},
+		{"driver", repo.EraseDriver, driver, domain.ErasureBlockers{ActiveRides: 1, UnpaidRides: 1, AwaitingPayout: 1}},
 	} {
 		var seen domain.ErasureBlockers
 		_, err := tc.erase(ctx, tc.id, time.Now(), func(b domain.ErasureBlockers) error {
@@ -157,8 +172,8 @@ func TestErasureRepository_BlockersAndRefusal_Integration(t *testing.T) {
 		if !errors.Is(err, refused) {
 			t.Fatalf("%s: err = %v, want allow's error back", tc.kind, err)
 		}
-		if seen != (domain.ErasureBlockers{ActiveRides: 1, UnpaidRides: 1}) {
-			t.Errorf("%s: blockers %+v, want 1 active and 1 unpaid", tc.kind, seen)
+		if seen != tc.want {
+			t.Errorf("%s: blockers %+v, want %+v", tc.kind, seen, tc.want)
 		}
 	}
 	if n := count(t, ctx, tx, `SELECT count(*) FROM users WHERE id = $1 AND erased_at IS NULL AND name = 'Test Customer'`, user); n != 1 {

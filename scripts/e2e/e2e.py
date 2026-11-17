@@ -105,6 +105,25 @@ def main():
     check(S, "consent_version stored", cons == "2026-11", cons)
     s, j, _ = req("GET", "/auth/me", token=ta)
     check(S, "GET /auth/me", s == 200, (s, j))
+    # The registration ticket: builds that send it (user_app 9+, driver_app
+    # 8+) must, and nobody else can spend their pass by phone alone.
+    for app, build, prefix, body in (
+            ("user_app", "9", "/auth", {"name": "Tara", "email": "tara@example.com",
+                                        "dateOfBirth": "1990-01-01", "consentVersion": "2026-11"}),
+            ("driver_app", "8", "/driver/auth", {"name": "Tara Singh", "consentVersion": "2026-11"})):
+        hdr = {"X-App": app, "X-Build": build}
+        pt = phone()
+        req("POST", prefix + "/otp", {"phoneE164": pt}, headers=hdr)
+        s, j, _ = req("POST", prefix + "/otp/verify", {"phoneE164": pt, "code": "123456"}, headers=hdr)
+        ticket = j.get("registrationTicket") if isinstance(j, dict) else None
+        check(S, f"{app} {build}: verify returns a registrationTicket", s == 200 and ticket, (s, j))
+        s, j, _ = req("POST", prefix + "/register", dict(body, phoneE164=pt))
+        check(S, f"{app}: someone else registering by phone alone -> 401",
+              s == 401 and j.get("code") == "otp_not_verified", (s, j))
+        s, j, _ = req("POST", prefix + "/register", dict(body, phoneE164=pt), headers=hdr)
+        check(S, f"{app} {build}: register without the ticket -> 401", s == 401, (s, j))
+        s, j, _ = req("POST", prefix + "/register", dict(body, phoneE164=pt, registrationTicket=ticket), headers=hdr)
+        check(S, f"{app} {build}: register with the ticket -> 201", s == 201 and j.get("token"), (s, j))
 
     # ---- 2. car + app config
     S = "2"

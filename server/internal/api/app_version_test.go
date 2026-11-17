@@ -161,6 +161,35 @@ func TestCORSAllowsTheVersionHeaders(t *testing.T) {
 	}
 }
 
+// The registration ticket is required from user_app 9 and driver_app 8 on;
+// a request that doesn't say which build it is (older APKs) is not held to
+// it, nor is a debug build (0) or the other app's name.
+func TestSendsRegistrationTicket(t *testing.T) {
+	for _, tc := range []struct {
+		app, xApp, xBuild string
+		want              bool
+	}{
+		{AppUser, "user_app", "9", true},
+		{AppUser, "user_app", "12", true},
+		{AppUser, "user_app", "8", false},
+		{AppUser, "user_app", "0", false},
+		{AppUser, "", "", false},
+		{AppUser, "driver_app", "9", false},
+		{AppDriver, "driver_app", "8", true},
+		{AppDriver, "driver_app", "7", false},
+		{AppDriver, "driver_app", "junk", false},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/auth/register", nil)
+		if tc.xApp != "" {
+			r.Header.Set("X-App", tc.xApp)
+			r.Header.Set("X-Build", tc.xBuild)
+		}
+		if got := sendsRegistrationTicket(r, tc.app); got != tc.want {
+			t.Errorf("%s with X-App %q X-Build %q: %v, want %v", tc.app, tc.xApp, tc.xBuild, got, tc.want)
+		}
+	}
+}
+
 func TestLegacyCounterTalliesWithoutALinePerRequest(t *testing.T) {
 	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
 	c := newLegacyCounter(time.Minute)

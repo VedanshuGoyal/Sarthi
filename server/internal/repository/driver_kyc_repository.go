@@ -405,7 +405,8 @@ func (r *DriverKYCRepository) SaveLicenseVerification(ctx context.Context, drive
 // outcome, and writes it, in one transaction. Every KYC edit updates the
 // driver's row, so none can land between the read and the write: one that
 // arrives meanwhile waits, then reopens the driver as usual. An error from
-// decide is returned as is and nothing is written. kyc_submitted_at is
+// decide is returned as is and nothing is written, as is the case when
+// decide returns no status (leave the driver as they are). kyc_submitted_at is
 // stamped the first time; clearing the driver records the selfie that was
 // decided on as the one cleared.
 func (r *DriverKYCRepository) DecideSubmission(
@@ -433,6 +434,9 @@ func (r *DriverKYCRepository) DecideSubmission(
 	status, note, err := decide(kyc)
 	if err != nil {
 		return err
+	}
+	if status == "" {
+		return nil
 	}
 	var clearedSelfie string
 	if status == domain.KYCVerified {
@@ -677,11 +681,11 @@ func (r *DriverKYCRepository) FindBankAccount(ctx context.Context, driverID stri
 
 // bankColumns is the SELECT list bankScan reads.
 const bankColumns = `account_holder_name, account_number_last4, ifsc_code, updated_at,
-	verified_at, coalesce(verified_name, '')`
+	verified_at, coalesce(verified_name, ''), account_number_encrypted`
 
 func bankScan(a *domain.DriverBankAccount) []any {
 	return []any{
 		&a.AccountHolderName, &a.AccountNumberLast4, &a.IFSCCode, &a.UpdatedAt,
-		&a.VerifiedAt, &a.VerifiedName,
+		&a.VerifiedAt, &a.VerifiedName, &a.AccountNumberEncrypted,
 	}
 }

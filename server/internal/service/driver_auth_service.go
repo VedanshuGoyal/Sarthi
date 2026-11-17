@@ -46,6 +46,9 @@ type DriverAuthResult struct {
 	Registered bool
 	Driver     domain.Driver
 	Token      string
+	// RegistrationTicket, after VerifyOTP for a new number, is the one-time
+	// proof Register takes that this client is the one that verified.
+	RegistrationTicket string
 }
 
 // DriverOption configures a [DriverAuthService].
@@ -117,8 +120,10 @@ func (s *DriverAuthService) ResendOTP(ctx context.Context, phoneE164 string) err
 // driver. Returns [ErrInvalidOTP] on a wrong code. When the number already has
 // an account, the result carries the driver and a fresh session token
 // (Registered=true); when it's new, Registered is false and the caller should
-// collect a name and call [Register].
-func (s *DriverAuthService) VerifyOTP(ctx context.Context, phoneE164, code string) (DriverAuthResult, error) {
+// collect a name and call [Register], with the result's RegistrationTicket.
+// ticketClient says the app build verifying sends that ticket back
+// (driver_app 8+), as in [AuthService.VerifyOTP].
+func (s *DriverAuthService) VerifyOTP(ctx context.Context, phoneE164, code string, ticketClient bool) (DriverAuthResult, error) {
 	if !phoneRe.MatchString(phoneE164) {
 		return DriverAuthResult{}, ErrInvalidPhone
 	}
@@ -139,7 +144,11 @@ func (s *DriverAuthService) VerifyOTP(ctx context.Context, phoneE164, code strin
 
 	driver, err := s.drivers.FindByPhone(ctx, phoneE164)
 	if errors.Is(err, repository.ErrDriverNotFound) {
-		return DriverAuthResult{Registered: false}, nil
+		res := DriverAuthResult{Registered: false}
+		if s.limiter != nil {
+			res.RegistrationTicket = s.limiter.IssueTicket(phoneE164, ticketClient)
+		}
+		return res, nil
 	}
 	if err != nil {
 		return DriverAuthResult{}, err
@@ -202,12 +211,17 @@ type DriverRegisterParams struct {
 	// ConsentVersion is the Terms/Privacy version the driver agreed to;
 	// optional, since older builds don't send it.
 	ConsentVersion string
+	// RegistrationTicket is the one VerifyOTP returned. TicketRequired says
+	// the request comes from a build that sends it (driver_app 8+).
+	RegistrationTicket string
+	TicketRequired     bool
 }
 
 // Register validates the name, persists a new driver account, and logs it in
 // (issuing a session token). Like [AuthService.Register] it needs a recently
-// verified code for the number, else [ErrOTPNotVerified]. A duplicate phone
-// number surfaces as [repository.ErrDriverPhoneTaken].
+// verified code for the number — and its registration ticket when the build
+// sends one — else [ErrOTPNotVerified]. A duplicate phone number surfaces as
+// [repository.ErrDriverPhoneTaken].
 func (s *DriverAuthService) Register(ctx context.Context, p DriverRegisterParams) (DriverAuthResult, error) {
 	name := strings.TrimSpace(p.Name)
 
@@ -219,7 +233,7 @@ func (s *DriverAuthService) Register(ctx context.Context, p DriverRegisterParams
 	case !validConsent(p.ConsentVersion):
 		return DriverAuthResult{}, ErrInvalidConsent
 	}
-	if s.limiter != nil && !s.limiter.ConsumeVerified(p.PhoneE164) {
+	if s.limiter != nil && !registrationAllowed(s.limiter, p.PhoneE164, p.RegistrationTicket, p.TicketRequired) {
 		return DriverAuthResult{}, ErrOTPNotVerified
 	}
 

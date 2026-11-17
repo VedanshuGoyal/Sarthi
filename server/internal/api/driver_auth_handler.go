@@ -23,16 +23,18 @@ func NewDriverAuthHandler(auth *service.DriverAuthService, sessions SessionRevok
 }
 
 // driverAuthResponse is the wire shape for a completed auth step. For a
-// not-yet-registered number after OTP verify, only Registered (false) is
-// sent; once logged in it also carries the token and driver.
+// not-yet-registered number after OTP verify, Registered (false) and the
+// one-time registrationTicket to send to Register are sent; once logged in
+// it carries the token and driver.
 type driverAuthResponse struct {
-	Registered bool           `json:"registered"`
-	Token      string         `json:"token,omitempty"`
-	Driver     *domain.Driver `json:"driver,omitempty"`
+	Registered         bool           `json:"registered"`
+	RegistrationTicket string         `json:"registrationTicket,omitempty"`
+	Token              string         `json:"token,omitempty"`
+	Driver             *domain.Driver `json:"driver,omitempty"`
 }
 
 func newDriverAuthResponse(r service.DriverAuthResult) driverAuthResponse {
-	resp := driverAuthResponse{Registered: r.Registered}
+	resp := driverAuthResponse{Registered: r.Registered, RegistrationTicket: r.RegistrationTicket}
 	if r.Registered {
 		driver := r.Driver
 		resp.Token = r.Token
@@ -80,7 +82,7 @@ func (h *DriverAuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "malformed request body")
 		return
 	}
-	result, err := h.auth.VerifyOTP(r.Context(), req.PhoneE164, req.Code)
+	result, err := h.auth.VerifyOTP(r.Context(), req.PhoneE164, req.Code, sendsRegistrationTicket(r, AppDriver))
 	if err != nil {
 		writeDriverServiceError(w, err)
 		return
@@ -94,6 +96,9 @@ type driverRegisterRequest struct {
 	// ConsentVersion is the Terms/Privacy version agreed to, e.g. "2026-11".
 	// Optional: builds before it was added don't send it.
 	ConsentVersion string `json:"consentVersion"`
+	// RegistrationTicket is the one OTP verify returned; required from
+	// driver_app build 8 on.
+	RegistrationTicket string `json:"registrationTicket"`
 }
 
 // Register handles POST /driver/auth/register.
@@ -105,9 +110,11 @@ func (h *DriverAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.auth.Register(r.Context(), service.DriverRegisterParams{
-		PhoneE164:      req.PhoneE164,
-		Name:           req.Name,
-		ConsentVersion: req.ConsentVersion,
+		PhoneE164:          req.PhoneE164,
+		Name:               req.Name,
+		ConsentVersion:     req.ConsentVersion,
+		RegistrationTicket: req.RegistrationTicket,
+		TicketRequired:     sendsRegistrationTicket(r, AppDriver),
 	})
 	if err != nil {
 		writeDriverServiceError(w, err)

@@ -19,6 +19,9 @@ type ErasureBlockers struct {
 	ActiveRides int
 	// UnpaidRides are completed with a fare and not yet paid.
 	UnpaidRides int
+	// AwaitingPayout are paid through the gateway with the driver's share
+	// not yet paid out (drivers only).
+	AwaitingPayout int
 }
 
 // StoredDocument is one KYC image to delete: its row and its bucket key.

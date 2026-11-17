@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,6 +18,11 @@ import (
 // commission_paise zero: MOJUD received nothing, so a payout owes its
 // driver nothing for it.
 //
+// A ride with a gateway order still pending or completed is refused with
+// [ErrGatewayOrderOpen]: the customer may have paid (or be paying) by UPI,
+// and stamping it by hand would leave that money owed to nobody. Sync the
+// booking's orders with the gateway first so only a live one blocks.
+//
 // Returns the booking, [ErrBookingNotFound], or [ErrBookingStateConflict]
 // when it isn't completed or is already paid.
 func (r *PaymentRepository) SettleByHand(
@@ -27,13 +33,30 @@ func (r *PaymentRepository) SettleByHand(
 		SET paid_at = $2, paid_paise = 0, commission_paise = 0,
 		    paid_mode = $3, paid_note = nullif($4, '')
 		WHERE id = $1 AND status = 'completed' AND paid_at IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM payment_orders po
+		                  WHERE po.booking_id = bookings.id AND po.state IN ('pending', 'completed'))
 		RETURNING `+bookingColumns,
 		id, at, string(mode), note))
 	if err != nil {
-		return domain.Booking{}, bookingExplain(ctx, r.db, err, id, "settling booking")
+		err = bookingExplain(ctx, r.db, err, id, "settling booking")
+		if errors.Is(err, ErrBookingStateConflict) {
+			var open bool
+			if qerr := r.db.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM payment_orders po JOIN bookings b ON b.id = po.booking_id
+				               WHERE b.id = $1 AND b.status = 'completed' AND b.paid_at IS NULL
+				                 AND po.state IN ('pending', 'completed'))`, id).Scan(&open); qerr == nil && open {
+				return domain.Booking{}, ErrGatewayOrderOpen
+			}
+		}
+		return domain.Booking{}, err
 	}
 	return b, nil
 }
+
+// ErrGatewayOrderOpen refuses settling a ride by hand while one of its UPI
+// checkouts is pending or completed. It matches [ErrBookingStateConflict].
+var ErrGatewayOrderOpen = fmt.Errorf("%w: the customer has a UPI payment open or paid for this ride; "+
+	"wait for it to finish, or check Payments", ErrBookingStateConflict)
 
 // attentionColumns is one payment order plus what its booking was actually
 // paid by, from `po` and `b`.

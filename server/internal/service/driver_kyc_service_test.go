@@ -373,6 +373,48 @@ func TestSetBankAccountTellsTheDriver(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: KYC. Saving the verified account again is a no-op:
+// no paid penny drop, no "account changed" push, and a cleared driver stays
+// cleared. Any real change — number, IFSC or holder — still reopens KYC.
+func TestSetBankAccountUnchangedReSaveChangesNothing(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	aadhaarVerified(store)
+	alerts := &bankAlerts{}
+	svc.SetAlerts(alerts)
+	if _, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "123456789012", "HDFC0001234"); err != nil {
+		t.Fatalf("SetBankAccount: %v", err)
+	}
+	store.profile.KYCStatus = domain.KYCVerified
+	v := svc.verifier.(*fakeVerifier)
+	calls := v.bankCalls
+
+	got, err := svc.SetBankAccount(t.Context(), testDriverID, "Asha Kumari", "1234 5678 9012", "hdfc0001234")
+	if err != nil {
+		t.Fatalf("re-save: %v", err)
+	}
+	if got.AccountNumberLast4 != "9012" || got.VerifiedAt == nil {
+		t.Errorf("re-save returned %+v, want the stored verified account", got)
+	}
+	if v.bankCalls != calls || len(alerts.last4) != 1 || store.profile.KYCStatus != domain.KYCVerified {
+		t.Errorf("re-save: %d more bank checks, %d alerts, status %q; want none, 1, verified",
+			v.bankCalls-calls, len(alerts.last4), store.profile.KYCStatus)
+	}
+
+	for _, change := range []struct{ holder, number, ifsc string }{
+		{"Asha Kumari", "123456780000", "HDFC0001234"},
+		{"Asha Kumari", "123456780000", "ICIC0001234"},
+		{"Asha K", "123456780000", "ICIC0001234"},
+	} {
+		store.profile.KYCStatus = domain.KYCVerified
+		if _, err := svc.SetBankAccount(t.Context(), testDriverID, change.holder, change.number, change.ifsc); err != nil {
+			t.Fatalf("change %+v: %v", change, err)
+		}
+		if store.profile.KYCStatus != domain.KYCIncomplete {
+			t.Errorf("change %+v: status %q, want incomplete", change, store.profile.KYCStatus)
+		}
+	}
+}
+
 func TestSetBankAccountRejectsMalformedDetails(t *testing.T) {
 	tests := map[string]struct{ holder, number, ifsc string }{
 		"blank holder":     {"", "123456789", "HDFC0001234"},
@@ -1194,11 +1236,12 @@ func (f *fakeKYCStore) UpsertBankAccount(
 ) (domain.DriverBankAccount, error) {
 	f.lastBankAccount = p
 	account := domain.DriverBankAccount{
-		AccountHolderName:  p.AccountHolderName,
-		AccountNumberLast4: p.AccountNumberLast4,
-		IFSCCode:           p.IFSCCode,
-		UpdatedAt:          time.Now(),
-		VerifiedName:       p.VerifiedName,
+		AccountHolderName:      p.AccountHolderName,
+		AccountNumberLast4:     p.AccountNumberLast4,
+		IFSCCode:               p.IFSCCode,
+		UpdatedAt:              time.Now(),
+		VerifiedName:           p.VerifiedName,
+		AccountNumberEncrypted: p.AccountNumberEncrypted,
 	}
 	if p.Verified {
 		now := time.Now()
@@ -1265,6 +1308,9 @@ func (f *fakeKYCStore) DecideSubmission(
 	status, note, err := decide(domain.DriverKYC{Profile: f.profile, Documents: docs, BankAccount: f.bankAccount})
 	if err != nil {
 		return err
+	}
+	if status == "" {
+		return nil
 	}
 	f.decide(status, note)
 	return nil

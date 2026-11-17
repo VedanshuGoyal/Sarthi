@@ -105,15 +105,19 @@ class DriverAuthRepository {
   /// Creates the driver account and returns the logged-in [DriverAuthSession]
   /// (token + driver). [consentVersion] is the version of the Terms and
   /// Privacy Policy the driver agreed to, which the server records.
+  /// [registrationTicket] is [DriverOtpResult.registrationTicket] from
+  /// verifying the number: the server needs it from this build on.
   Future<DriverAuthSession> register({
     required String phoneE164,
     required String name,
     String? consentVersion,
+    String? registrationTicket,
   }) async {
     final body = await _post('/driver/auth/register', {
       'phoneE164': phoneE164,
       'name': name.trim(),
       'consentVersion': ?consentVersion,
+      'registrationTicket': ?registrationTicket,
     });
     return DriverAuthSession.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }

@@ -126,8 +126,8 @@ migrate -path migrations -database "$DATABASE_URL" up
 | ------ | ------------------- | ------------------------------------------------- | ----- |
 | POST   | `/auth/otp`         | `{ "phoneE164": "+919876543210" }`                | Sends OTP via Fast2SMS (dev code `123456` when no provider is configured) |
 | POST   | `/auth/otp/resend`  | `{ "phoneE164": "+919876543210" }`                | Re-sends the last OTP (provider enforces window/attempt limits) |
-| POST   | `/auth/otp/verify`  | `{ "phoneE164": "...", "code": "123456" }`        | Login-or-register. 401 on wrong code. Existing number → `{registered:true, token, user}` (logged in); new number → `{registered:false}` (collect a profile, then register) |
-| POST   | `/auth/register`    | `{ "phoneE164", "name", "email", "dateOfBirth" }` | `dateOfBirth` is `YYYY-MM-DD`; 201 → `{registered:true, token, user}`, 409 if phone taken |
+| POST   | `/auth/otp/verify`  | `{ "phoneE164": "...", "code": "123456" }`        | Login-or-register. 401 on wrong code. Existing number → `{registered:true, token, user}` (logged in); new number → `{registered:false, registrationTicket}` (collect a profile, then register with the ticket) |
+| POST   | `/auth/register`    | `{ "phoneE164", "name", "email", "dateOfBirth", "registrationTicket" }` | `dateOfBirth` is `YYYY-MM-DD`; 201 → `{registered:true, token, user}`, 409 if phone taken. `registrationTicket` (from verify) is required from user_app build 9 / driver_app build 8 (`X-Build`), and once a ticket build verified the number; builds without `X-Build` keep the phone-only pass. 401 `otp_not_verified` otherwise. `/driver/auth/*` works the same |
 | GET    | `/auth/me`          | — (Bearer token)                                  | The authenticated user's account. 401 without a valid token |
 | POST   | `/auth/logout`      | — (Bearer token)                                  | Revokes the caller's session token |
 | GET    | `/maps/token`       | — (Bearer token)                                  | `{accessToken, expiresIn}` — an Ola Maps token minted server-side (cached, shared across users until ~5 min before expiry). 503 `maps_not_configured` without credentials, 502 `maps_unavailable` if Ola refuses |
@@ -146,7 +146,7 @@ every request (0 for a debug run).
 
 - A build below its app's minimum gets **426** `{error, code:"update_required", downloadUrl}`, and the app shows its update screen.
 - Never blocked: requests without the headers (builds from before the contract), build 0, and `/healthz`, `/readyz`, `/app/config`, `/admin*`, `/users`, the PhonePe webhook and the DigiLocker redirect.
-- The access log adds `app` and `build` to requests that send them. Requests without the headers are tallied at debug level once a minute.
+- The access log adds `app` and `build` to requests that send them. Requests without the headers are tallied at info level once an hour.
 
 ```bash
 export MIN_BUILD_USER_APP=0        # 0 (default) = observe only

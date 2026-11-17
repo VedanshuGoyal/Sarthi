@@ -30,6 +30,27 @@ func TestSubmit_autoClearOffSendsEveryoneToAPerson(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: KYC. A driver a reviewer already cleared who taps
+// Submit again (or whose app retries) stays verified, note and all.
+func TestSubmit_alreadyVerifiedStaysVerified(t *testing.T) {
+	for _, autoClear := range []bool{false, true} {
+		svc, store, _ := newTestService(t)
+		svc.SetAutoClear(autoClear)
+		completeKYC(t, svc, store)
+		store.profile.KYCStatus = domain.KYCVerified
+		store.profile.KYCReviewNote = "checked by hand"
+
+		kyc, err := svc.Submit(t.Context(), testDriverID)
+		if err != nil {
+			t.Fatalf("autoClear=%v: Submit: %v", autoClear, err)
+		}
+		if kyc.Profile.KYCStatus != domain.KYCVerified || kyc.Profile.KYCReviewNote != "checked by hand" {
+			t.Errorf("autoClear=%v: status %q, note %q; want verified and unchanged",
+				autoClear, kyc.Profile.KYCStatus, kyc.Profile.KYCReviewNote)
+		}
+	}
+}
+
 // A mismatch still carries its reason for the reviewer, whatever the flag.
 func TestSubmit_autoClearOffKeepsTheMismatchNote(t *testing.T) {
 	svc, store, _ := newTestService(t)

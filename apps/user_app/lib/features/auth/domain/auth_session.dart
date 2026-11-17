@@ -25,18 +25,27 @@ class AuthSession {
 /// If the number already had an account, [registered] is true and [session]
 /// carries the logged-in user + token. If it's a new number, [registered] is
 /// false and [session] is null — the caller then collects a profile and
-/// registers.
+/// registers, sending back [registrationTicket].
 class OtpResult {
-  const OtpResult({required this.registered, this.session});
+  const OtpResult({
+    required this.registered,
+    this.session,
+    this.registrationTicket,
+  });
 
   final bool registered;
   final AuthSession? session;
+
+  /// For a new number: the one-time proof that this device verified it,
+  /// which registering must send back. Null from a server that predates it.
+  final String? registrationTicket;
 
   factory OtpResult.fromJson(Map<String, dynamic> json) {
     final registered = json['registered'] as bool? ?? false;
     return OtpResult(
       registered: registered,
       session: registered ? AuthSession.fromJson(json) : null,
+      registrationTicket: json['registrationTicket'] as String?,
     );
   }
 }

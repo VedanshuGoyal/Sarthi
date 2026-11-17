@@ -61,8 +61,9 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 // ErasureService deletes a person's data on request (DPDP right to
 // erasure). It anonymises rather than deletes the account row: bookings and
-// payments must survive (0018), and a driver's unpaid earnings stay payable
-// from the back office. Everything else about the person goes: sessions in
+// payments must survive (0018). A driver with earnings still to be paid out
+// is refused until the payout is made, since their bank details go with the
+// account. Everything else about the person goes: sessions in
 // the database and the memstore cache, push tokens, saved cars, recent
 // pickups and, for drivers, KYC images and their rows, bank details and
 // verification fields.
@@ -72,6 +73,7 @@ type ErasureService struct {
 	driverSessions AllSessionsRevoker
 	blobs          BlobDeleter
 	presence       PresenceRemover
+	paymentsOff    bool             // no gateway: nothing can be paid in the app
 	now            func() time.Time // seam for tests
 }
 
@@ -86,10 +88,16 @@ func NewErasureService(
 	}
 }
 
+// SetPaymentsEnabled says whether a payment gateway is configured (on by
+// default). With payments off a customer can't pay in the app, so an unpaid
+// ride doesn't hold up their erasure.
+func (s *ErasureService) SetPaymentsEnabled(on bool) { s.paymentsOff = !on }
+
 // Erase erases the account of kind with id. It is refused with an
 // [AccountBusyError] while the account has a ride accepted, arrived or in
-// progress, or a completed ride not yet paid; [repository.ErrAccountNotFound]
-// if there is no such account. Erasing an erased account runs the cleanup
+// progress, or a completed ride not yet paid (for a customer, only while
+// payments are on), or, for a driver, earnings not yet paid out;
+// [repository.ErrAccountNotFound] if there is no such account. Erasing an erased account runs the cleanup
 // again (it is how a failed bucket delete is retried by hand).
 //
 // A KYC image the bucket fails to delete is logged and counted in
@@ -107,7 +115,14 @@ func (s *ErasureService) Erase(ctx context.Context, kind domain.AccountKind, id 
 	)
 	switch kind {
 	case domain.AccountCustomer:
-		res, err = s.store.EraseUser(ctx, id, s.now(), customerMayErase)
+		allow := customerMayErase
+		if s.paymentsOff {
+			allow = func(b domain.ErasureBlockers) error {
+				b.UnpaidRides = 0
+				return customerMayErase(b)
+			}
+		}
+		res, err = s.store.EraseUser(ctx, id, s.now(), allow)
 		sessions = s.userSessions
 	case domain.AccountDriver:
 		res, err = s.store.EraseDriver(ctx, id, s.now(), driverMayErase)
@@ -184,14 +199,18 @@ func customerMayErase(b domain.ErasureBlockers) error {
 	return nil
 }
 
-// driverMayErase is the rule for a driver: no ride held, and no completed
-// ride the customer still has to pay for (the driver's share isn't settled).
+// driverMayErase is the rule for a driver: no ride held, no completed ride
+// the customer still has to pay for (the driver's share isn't settled), and
+// no earnings waiting for a payout (erasure deletes the bank account they
+// would go to).
 func driverMayErase(b domain.ErasureBlockers) error {
 	switch {
 	case b.ActiveRides > 0:
 		return &AccountBusyError{Reason: "You have a ride accepted or in progress. Finish it or hand it back, then delete your account."}
 	case b.UnpaidRides > 0:
 		return &AccountBusyError{Reason: "A customer hasn't paid for a ride you drove yet. Try again once it's paid, or contact support."}
+	case b.AwaitingPayout > 0:
+		return &AccountBusyError{Reason: "You have earnings waiting for a payout. Delete your account once they reach your bank, or contact support."}
 	}
 	return nil
 }
