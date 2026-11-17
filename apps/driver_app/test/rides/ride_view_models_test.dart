@@ -651,5 +651,13 @@ void main() {
         ),
       ).equals('Charged ₹200 for the time used (booked ₹340)');
     });
+
+    test('reads a trip that ran past the booked time', () {
+      check(
+        RideFormat.ranOver(
+          ride(status: 'completed', farePaise: 51000, bookedFarePaise: 34000),
+        ),
+      ).equals('₹510 for the time used (booked ₹340)');
+    });
   });
 }

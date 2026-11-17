@@ -55,6 +55,12 @@ abstract final class RideFormat {
       'Charged ${paise(ride.farePaise)} for the time used '
       '(booked ${paise(ride.bookedFarePaise ?? ride.farePaise)})';
 
+  /// "₹510 for the time used (booked ₹340)", on a trip that ran past its
+  /// booked time ([Ride.ranOverTime]).
+  static String ranOver(Ride ride) =>
+      '${paise(ride.farePaise)} for the time used '
+      '(booked ${paise(ride.bookedFarePaise ?? ride.farePaise)})';
+
   /// 9:05 AM
   static String time(DateTime t) {
     final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;

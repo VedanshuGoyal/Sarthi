@@ -66,10 +66,12 @@ class RideDetailScreen extends ConsumerWidget {
                   current.status == RideStatus.completed) ...[
                 const SizedBox(height: Skyline.s16),
                 _Progress(ride: current),
-                if (current.endedEarly) ...[
+                if (current.endedEarly || current.ranOverTime) ...[
                   const SizedBox(height: Skyline.s12),
-                  _EndedEarlyNotice(ride: current),
+                  _FareChangedNotice(ride: current),
                 ],
+                if (current.status == RideStatus.inProgress)
+                  _PastBookedTimeNote(ride: current),
               ],
               if (current.status == RideStatus.arrived &&
                   current.noShowAt != null) ...[
@@ -405,31 +407,116 @@ class _CancelledNotice extends StatelessWidget {
   }
 }
 
-/// A trip the customer ended before its booked time was up: what they're
-/// charged for the time used, against the fare as booked.
-class _EndedEarlyNotice extends StatelessWidget {
-  const _EndedEarlyNotice({required this.ride});
+/// A completed trip charged other than as booked: the customer ended it
+/// before its booked time was up ([Ride.endedEarly]), or it ran past it
+/// ([Ride.ranOverTime]) — what they're charged for the time used, against
+/// the fare as booked.
+class _FareChangedNotice extends StatelessWidget {
+  const _FareChangedNotice({required this.ride});
 
   final Ride ride;
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final (icon, title, body) = ride.ranOverTime
+        ? (
+            Icons.more_time_rounded,
+            'Trip ran past the booked time',
+            RideFormat.ranOver(ride),
+          )
+        : (
+            Icons.timer_off_rounded,
+            'Customer ended the trip early',
+            RideFormat.endedEarly(ride),
+          );
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.timer_off_rounded, color: t.inkMuted, size: 22),
+          Icon(icon, color: t.inkMuted, size: 22),
           const SizedBox(width: Skyline.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Customer ended the trip early', style: t.title(15)),
+                Text(title, style: t.title(15)),
                 const SizedBox(height: 2),
-                Text(RideFormat.endedEarly(ride), style: t.body(size: 13)),
+                Text(body, style: t.body(size: 13)),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Past the booked time — …" — shown on a trip underway once it has run
+/// past its booked hours and the grace ([Ride.isPastBookedTimeAt]); nothing
+/// before then. Rebuilds itself when that moment comes.
+class _PastBookedTimeNote extends StatefulWidget {
+  const _PastBookedTimeNote({required this.ride});
+
+  final Ride ride;
+
+  @override
+  State<_PastBookedTimeNote> createState() => _PastBookedTimeNoteState();
+}
+
+class _PastBookedTimeNoteState extends State<_PastBookedTimeNote> {
+  Timer? _passes;
+
+  @override
+  void initState() {
+    super.initState();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_PastBookedTimeNote old) {
+    super.didUpdateWidget(old);
+    if (old.ride.overtimeFrom != widget.ride.overtimeFrom) _schedule();
+  }
+
+  /// Rebuilds just after the booked time and the grace are up.
+  void _schedule() {
+    _passes?.cancel();
+    final at = widget.ride.overtimeFrom;
+    if (at == null) return;
+    final wait = at.difference(DateTime.now());
+    if (wait >= Duration.zero) {
+      _passes = Timer(wait + const Duration(seconds: 1), () {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _passes?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.ride.isPastBookedTimeAt(DateTime.now())) {
+      return const SizedBox.shrink();
+    }
+    final t = SkylineTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: Skyline.s12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.more_time_rounded, size: 16, color: t.inkMuted),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Past the booked time — extra time is charged to the customer '
+              'by the hour.',
+              style: t.body(size: 12.5),
             ),
           ),
         ],
@@ -972,8 +1059,9 @@ class _ActionBar extends ConsumerWidget {
       if (gone) Navigator.of(context).pop();
       return;
     }
-    // The latest copy: a trip the customer ended early is charged for the
-    // time used, not the fare this screen was built with.
+    // The latest copy: a trip the customer ended early, or one that ran past
+    // its booked time, is charged for the time used, not the fare this
+    // screen was built with.
     final latest = rides.byId(ride.id) ?? ride;
     final done = switch (action) {
       RideAction.accept => 'Ride accepted — it\'s in your upcoming rides.',
@@ -983,6 +1071,9 @@ class _ActionBar extends ConsumerWidget {
       RideAction.complete when latest.endedEarly =>
         'The customer ended the trip early. They can now pay '
             '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',
+      RideAction.complete when latest.ranOverTime =>
+        'Trip complete. It ran past the booked time, so the customer can now '
+            'pay ${RideFormat.ranOver(latest)} by UPI in their app.',
       RideAction.complete =>
         'Trip complete. The customer can now pay '
             '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',

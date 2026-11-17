@@ -329,17 +329,56 @@ class Ride {
   /// MOJUD's commission). The backend omits it when there's none.
   final int? cancellationFeePaise;
 
-  /// On a ride the customer ended early: the fare as booked. [farePaise] is
-  /// then what they're charged for the time used.
+  /// On a completed ride whose charge isn't the booked fare: the fare as
+  /// booked. [farePaise] is then what the customer is charged for the time
+  /// used — no more when they ended the trip early ([endedEarly]), more when
+  /// it ran past the booked time ([ranOverTime]).
   final int? bookedFarePaise;
 
   /// The customer cancelled at the pickup and owes the driver a fee.
   bool get hasCancellationFee =>
       status == RideStatus.cancelled && (cancellationFeePaise ?? 0) > 0;
 
-  /// The customer ended the trip before its booked time was up.
-  bool get endedEarly =>
-      status == RideStatus.completed && bookedFarePaise != null;
+  /// The customer ended the trip before its booked time was up: charged for
+  /// the time used, never more than booked.
+  bool get endedEarly => switch (bookedFarePaise) {
+    final booked? => status == RideStatus.completed && farePaise <= booked,
+    null => false,
+  };
+
+  /// The trip ran past its booked time and the grace ([overtimeGrace]): the
+  /// customer is charged the hourly tariff for the hours used, more than
+  /// booked.
+  bool get ranOverTime => switch (bookedFarePaise) {
+    final booked? => status == RideStatus.completed && farePaise > booked,
+    null => false,
+  };
+
+  /// How long past its booked hours a trip may run before the extra time is
+  /// charged.
+  static const overtimeGrace = Duration(minutes: 15);
+
+  /// The whole hours the customer booked: [hours] on a round trip, otherwise
+  /// the booked span ([duration]) rounded up — at least 1.
+  int get bookedHours {
+    final hired = hours;
+    if (kind == TripKind.roundTrip && hired != null && hired > 0) return hired;
+    const perHour = Duration.microsecondsPerHour;
+    final rounded = (duration.inMicroseconds + perHour - 1) ~/ perHour;
+    return rounded < 1 ? 1 : rounded;
+  }
+
+  /// When a trip underway starts being charged for extra time: its start
+  /// plus [bookedHours] plus [overtimeGrace]. Null until it has started.
+  DateTime? get overtimeFrom =>
+      startedAt?.add(Duration(hours: bookedHours) + overtimeGrace);
+
+  /// Whether, at [now], the trip is underway and past its booked time and
+  /// the grace — the extra time is charged to the customer by the hour.
+  bool isPastBookedTimeAt(DateTime now) {
+    final from = overtimeFrom;
+    return status == RideStatus.inProgress && from != null && now.isAfter(from);
+  }
 
   /// The fare in whole rupees, for display.
   int get fareRupees => (farePaise / 100).round();

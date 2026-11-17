@@ -383,6 +383,14 @@ class RideCard extends StatelessWidget {
                     'Customer ended the trip early · '
                     '${RideFormat.endedEarly(ride)}',
               ),
+            ] else if (ride.ranOverTime) ...[
+              const SizedBox(height: Skyline.s12),
+              _CardNote(
+                icon: Icons.more_time_rounded,
+                text:
+                    'Trip ran past the booked time · '
+                    '${RideFormat.ranOver(ride)}',
+              ),
             ],
             if (footer != null) ...[
               const SizedBox(height: Skyline.s16),
@@ -395,7 +403,8 @@ class RideCard extends StatelessWidget {
   }
 }
 
-/// A ride card's closing note — how it was cancelled, a fee, an early end —
+/// A ride card's closing note — how it was cancelled, a fee, an early end,
+/// extra time —
 /// as an icon and up to [maxLines] of text.
 class _CardNote extends StatelessWidget {
   const _CardNote({
