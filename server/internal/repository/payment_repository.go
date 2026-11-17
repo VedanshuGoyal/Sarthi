@@ -187,6 +187,7 @@ func (r *PaymentRepository) DuePayouts(ctx context.Context, asOf time.Time) ([]d
 		JOIN drivers d ON d.id = b.driver_id
 		LEFT JOIN driver_bank_accounts a ON a.driver_id = d.id
 		WHERE b.paid_at IS NOT NULL AND b.payout_id IS NULL AND b.paid_at <= $1
+		  AND b.paid_mode IS NULL -- settled by hand: MOJUD got nothing, owes nothing
 		GROUP BY d.id, d.name, d.phone_e164, d.kyc_status, a.driver_id
 		ORDER BY 5 DESC`, asOf)
 	if err != nil {
@@ -256,12 +257,15 @@ func (r *PaymentRepository) RecordPayout(
 }
 
 // lockDueRides locks driverID's rides paid by asOf and not yet paid out,
-// returning their ids and the driver's total share of them.
+// returning their ids and the driver's total share of them. Rides settled
+// by hand (paid_mode) are never part of a payout: MOJUD received nothing
+// for them.
 func lockDueRides(ctx context.Context, tx pgx.Tx, driverID string, asOf time.Time) ([]string, int64, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, paid_paise - coalesce(commission_paise, 0)
 		FROM bookings
 		WHERE driver_id = $1 AND paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $2
+		  AND paid_mode IS NULL
 		FOR UPDATE`, driverID, asOf)
 	if err != nil {
 		return nil, 0, rideErr(err, ErrNothingToPayOut, "recording payout")

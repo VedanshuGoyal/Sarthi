@@ -21,6 +21,10 @@ func (duePayoutStore) RecordPayout(
 	return domain.DriverPayout{}, nil
 }
 
+func (duePayoutStore) PayoutsForDriver(context.Context, string, int) ([]domain.DriverPayout, error) {
+	return nil, nil
+}
+
 type reverseOpener struct{}
 
 func (reverseOpener) Open(sealed []byte) ([]byte, error) {

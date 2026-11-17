@@ -30,6 +30,19 @@ var ErrCannotRate = fmt.Errorf("you can rate a ride once, after it's completed: 
 // to accept it before it closes (see acceptCutoff).
 var ErrBookingTooSoon = errors.New("pick a start time at least 45 minutes from now")
 
+// ErrPaymentDue matches a [PaymentDueError]: the customer has a completed
+// ride to pay for before they book another.
+var ErrPaymentDue = errors.New("pay for your last ride before booking another")
+
+// PaymentDueError is why a booking was refused: ride BookingID is completed
+// and still unpaid. The app takes the customer to it.
+type PaymentDueError struct{ BookingID string }
+
+func (e *PaymentDueError) Error() string { return ErrPaymentDue.Error() }
+
+// Is makes errors.Is(err, ErrPaymentDue) true.
+func (e *PaymentDueError) Is(target error) bool { return target == ErrPaymentDue }
+
 const (
 	// acceptCutoff is how long before its start an open ride stops taking
 	// drivers — the time a driver needs to reach the pickup. A ride nobody
@@ -47,6 +60,14 @@ const (
 	// maxCancelReason caps the reason a customer gives for cancelling, in
 	// characters; a longer one is cut.
 	maxCancelReason = 200
+
+	// duplicateWindow is how long a submit identical to an earlier one (same
+	// trip type, start and details) is taken as a retry of it rather than a
+	// second booking — for apps that send no idempotency key.
+	duplicateWindow = 10 * time.Minute
+
+	// maxIdempotencyKey caps the app's Idempotency-Key, in bytes.
+	maxIdempotencyKey = 100
 )
 
 // closedToDrivers reports whether an open ride starting at start can no
@@ -58,7 +79,8 @@ func closedToDrivers(start, now time.Time) bool {
 // BookingStore is the slice of persistence this service needs. Defined
 // consumer-side so the service stays testable with a fake.
 type BookingStore interface {
-	Insert(ctx context.Context, p repository.InsertBookingParams) (domain.Booking, error)
+	Insert(ctx context.Context, p repository.InsertBookingParams) (b domain.Booking, existing bool, err error)
+	UnpaidRide(ctx context.Context, userID string, minPaise int64) (string, error)
 	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
 	Cancel(ctx context.Context, id, userID, reason string, at time.Time) (domain.Booking, error)
@@ -115,37 +137,60 @@ func NewBookingService(store BookingStore, alerts BookingAlerter, live DriverLoc
 // Record validates and persists userID's confirmed booking of the given
 // tripType ("roundTrip", "oneWay", "multiStop"), returning the stored booking
 // with the id the database assigned.
-func (s *BookingService) Record(ctx context.Context, userID, tripType string, details map[string]any) (domain.Booking, error) {
-	tripType = strings.TrimSpace(tripType)
+//
+// A customer with a completed ride still to pay for is refused with a
+// [PaymentDueError] naming it. A repeat of a booking already made —
+// the same idempotencyKey (the app's, per booking attempt; "" for none), or
+// the same trip type, start and details within duplicateWindow — returns
+// that booking with duplicate true, and no driver is alerted again.
+func (s *BookingService) Record(
+	ctx context.Context, userID, tripType string, details map[string]any, idempotencyKey string,
+) (b domain.Booking, duplicate bool, err error) {
+	if err := s.checkNothingDue(ctx, userID); err != nil {
+		return domain.Booking{}, false, err
+	}
+	tripType, idempotencyKey = strings.TrimSpace(tripType), strings.TrimSpace(idempotencyKey)
 	if tripType == "" || len(details) == 0 {
-		return domain.Booking{}, ErrInvalidBooking
+		return domain.Booking{}, false, ErrInvalidBooking
+	}
+	if len(idempotencyKey) > maxIdempotencyKey {
+		return domain.Booking{}, false, fmt.Errorf("%w: Idempotency-Key is longer than %d characters",
+			ErrInvalidBooking, maxIdempotencyKey)
 	}
 	// Read the details now rather than when a driver lists them: a booking no
 	// driver can read is one nobody will ever take.
 	plan, err := parseTripPlan(tripType, details)
 	if err != nil {
-		return domain.Booking{}, fmt.Errorf("%w: %v", ErrInvalidBooking, err)
+		return domain.Booking{}, false, fmt.Errorf("%w: %v", ErrInvalidBooking, err)
 	}
-	if plan.ScheduledAt.Before(s.now().Add(minBookingLead - bookingLeadSlack)) {
-		return domain.Booking{}, ErrBookingTooSoon
+	now := s.now()
+	if plan.ScheduledAt.Before(now.Add(minBookingLead - bookingLeadSlack)) {
+		return domain.Booking{}, false, ErrBookingTooSoon
 	}
 	// The fare is the server's, not the client's: a tampered quote or drive
 	// time is refused rather than silently repriced.
 	if err := plan.checkBookable(tripType); err != nil {
 		slog.WarnContext(ctx, "booking refused: price check", "userId", userID, "tripType", tripType, "error", err)
-		return domain.Booking{}, err
+		return domain.Booking{}, false, err
 	}
 	fare, estimated := plan.Fare()
-	booking, err := s.store.Insert(ctx, repository.InsertBookingParams{
-		UserID:        userID,
-		TripType:      tripType,
-		Details:       details,
-		ScheduledAt:   plan.ScheduledAt,
-		FarePaise:     fare,
-		FareEstimated: estimated,
+	booking, existing, err := s.store.Insert(ctx, repository.InsertBookingParams{
+		UserID:         userID,
+		TripType:       tripType,
+		Details:        details,
+		ScheduledAt:    plan.ScheduledAt,
+		FarePaise:      fare,
+		FareEstimated:  estimated,
+		IdempotencyKey: idempotencyKey,
+		DuplicateSince: now.Add(-duplicateWindow),
 	})
 	if err != nil {
-		return domain.Booking{}, err
+		return domain.Booking{}, false, err
+	}
+	if existing {
+		slog.InfoContext(ctx, "booking repeated; returning the first",
+			"bookingId", booking.ID, "userId", userID, "tripType", tripType, "byKey", idempotencyKey != "")
+		return booking, true, nil
 	}
 	slog.InfoContext(ctx, "booking confirmed",
 		"bookingId", booking.ID,
@@ -155,7 +200,22 @@ func (s *BookingService) Record(ctx context.Context, userID, tripType string, de
 	if s.alerts != nil {
 		s.alerts.RideRequested(ctx, booking, plan)
 	}
-	return booking, nil
+	return booking, false, nil
+}
+
+// checkNothingDue refuses a new booking from userID while one of their
+// completed rides is unpaid, with a [PaymentDueError] naming it. A ride
+// below the gateway's minimum can't be paid, so it doesn't count.
+func (s *BookingService) checkNothingDue(ctx context.Context, userID string) error {
+	id, err := s.store.UnpaidRide(ctx, userID, minPaymentPaise)
+	if err != nil {
+		return err
+	}
+	if id != "" {
+		slog.InfoContext(ctx, "booking refused: a ride is unpaid", "userId", userID, "bookingId", id)
+		return &PaymentDueError{BookingID: id}
+	}
+	return nil
 }
 
 // ListMine returns userID's bookings, latest scheduled first, each with its
@@ -300,6 +360,22 @@ func planOf(b domain.Booking) (tripPlan, error) {
 	return plan, nil
 }
 
+// roundTripBreakdown splits a round trip's fare into the hourly tariff and
+// the night surcharge, as the tariff prices it now — or nil when that no
+// longer adds up to the fare it was booked at (an older tariff), rather
+// than show a receipt whose lines don't sum.
+func roundTripBreakdown(plan tripPlan, farePaise int64) *domain.FareBreakdown {
+	if plan.Hours < 1 {
+		return nil
+	}
+	base := int64(hourlyTariffRupees(plan.Hours, plan.luxury())) * 100
+	night := int64(nightSurchargeRupees(plan.ScheduledAt, plan.Hours)) * 100
+	if base+night != farePaise {
+		return nil
+	}
+	return &domain.FareBreakdown{BasePaise: base, NightPaise: night}
+}
+
 // toCustomerBooking renders a stored booking for the customer app. ok is
 // false for one whose details can't be read.
 func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time) (domain.CustomerBooking, bool) {
@@ -346,6 +422,10 @@ func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time
 		cb.PaymentStatus = domain.RidePaymentDue
 	case domain.RidePaymentPaid, domain.RidePaymentPaidOut:
 		cb.PaymentStatus = domain.RidePaymentPaid
+		cb.Payment = ub.Payment
+	}
+	if b.TripType == TripRoundTrip {
+		cb.FareBreakdown = roundTripBreakdown(plan, fare)
 	}
 	if b.Status == domain.RideStatusAccepted || b.Status == domain.RideStatusArrived {
 		cb.StartOTP = b.StartOTP

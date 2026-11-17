@@ -182,6 +182,10 @@ func run() error {
 	)
 	// Every change to a driver's payout account is pushed to them.
 	driverKYC.SetAlerts(notify)
+	// money+ops: at launch a person reviews every submission; KYC_AUTO_CLEAR
+	// lets drivers whose checks all agree through without one.
+	driverKYC.SetAutoClear(cfg.KYCAutoClear)
+	slog.Info("kyc: auto-clear on submission", "enabled", cfg.KYCAutoClear)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and
@@ -192,8 +196,11 @@ func run() error {
 
 	// Driver rides: bookings move through accept → arrive → start → complete
 	// in PostgreSQL; who is online right now lives in the in-memory H3 index.
+	rideStore := repository.NewDriverRideRepository(pool)
+	// money+ops: drivers' net share of rides not paid yet is the fare less this.
+	rideStore.SetCommissionBasisPoints(cfg.CommissionBasisPoints)
 	driverRides := service.NewDriverRideService(
-		repository.NewDriverRideRepository(pool),
+		rideStore,
 		driverProfiles,
 		presence,
 		// Wrong start-code attempts, keyed by ride id: 5 per code, then a new
@@ -260,12 +267,22 @@ func run() error {
 	// The ops dashboard's counts (GET /admin/stats): PostgreSQL, plus who is
 	// on duty from the presence index.
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
+	// money+ops: the back office's booking tools and its audit trail. Assign
+	// runs the same conditional accept as a driver's own tap (rideStore).
+	ops := service.NewOpsService(service.OpsDeps{
+		Bookings: bookingStore,
+		Rides:    rideStore,
+		Payments: paymentStore,
+		Profiles: driverProfiles,
+		Audit:    repository.NewAdminActionRepository(pool),
+		Alerts:   notify,
+	})
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping),
+			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping),
 		// Bound every phase of a connection: a 12 MB KYC upload on a slow
 		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the
 		// per-request deadline (60 s) so handlers can always answer.

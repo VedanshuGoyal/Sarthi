@@ -382,6 +382,8 @@ type RideDriver struct {
 type UserBooking struct {
 	Booking Booking
 	Driver  *RideDriver
+	// Payment is how the ride was paid, once it is.
+	Payment *BookingPayment
 }
 
 // CustomerBooking is a booking as the customer app shows it: what was booked,
@@ -419,6 +421,12 @@ type CustomerBooking struct {
 	// customer has paid for it; PaidAt is when.
 	PaymentStatus RidePaymentStatus `json:"paymentStatus,omitempty"`
 	PaidAt        *time.Time        `json:"paidAt,omitempty"`
+
+	// Payment is the receipt of a paid ride: how it was paid and the
+	// references to quote; nil until it's paid. FareBreakdown splits a round
+	// trip's fare into tariff and night surcharge, when they add up to it.
+	Payment       *BookingPayment `json:"payment,omitempty"`
+	FareBreakdown *FareBreakdown  `json:"fareBreakdown,omitempty"`
 }
 
 // RidePlace is one address on a ride — the pickup, a destination or a stop.
@@ -485,10 +493,14 @@ type DriverRide struct {
 }
 
 // EarningsPeriod is what a driver earned over one window: the summed fares of
-// rides completed in it.
+// rides completed in it, and NetPaise, the driver's share of them — for a
+// ride the customer paid, the payment less MOJUD's commission; for one still
+// unpaid, the fare less commission at today's rate; the whole fare of a ride
+// the customer paid them in cash, and nothing for one MOJUD waived.
 type EarningsPeriod struct {
 	FarePaise int64 `json:"farePaise"`
 	Rides     int   `json:"rides"`
+	NetPaise  int64 `json:"netPaise"`
 }
 
 // DriverEarnings is the earnings panel's summary. Windows are calendar

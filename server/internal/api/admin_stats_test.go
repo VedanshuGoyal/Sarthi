@@ -31,7 +31,7 @@ func (n fakeOnDuty) CountSeenSince(time.Time) int { return int(n) }
 // statsRouter is the real router with only the stats service wired.
 func statsRouter(adminToken string, store service.StatsStore) http.Handler {
 	stats := service.NewStatsService(store, fakeOnDuty(2), 1300)
-	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stats, nil, adminToken, nil, nil)
+	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, stats, nil, nil, adminToken, nil, nil)
 }
 
 func getStats(h http.Handler, auth string) *httptest.ResponseRecorder {

@@ -70,7 +70,7 @@ const statsSQL = `
 	           coalesce(sum(paid_paise - coalesce(commission_paise, 0)), 0)::bigint AS amount
 	    FROM bookings
 	    WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $5
-	      AND driver_id IS NOT NULL
+	      AND driver_id IS NOT NULL AND paid_mode IS NULL
 	)
 	SELECT (SELECT count(*) FROM users),
 	       d.total, d.incomplete, d.submitted, d.verified, d.rejected,
