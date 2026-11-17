@@ -173,6 +173,13 @@ systemctl daemon-reload
 echo "==> redeploy"
 server/deploy/redeploy.sh
 
+# The old binary kept issuing raw tokens between 0020 and the restart;
+# hash those too (0020 skips rows already hashed).
+echo "==> re-run 0020 for tokens issued during the deploy"
+( set -a; . server/.env.prod; set +a
+  PGPASSWORD="$POSTGRES_PASSWORD" psql -h localhost -U sarthi -d sarthi \
+    -v ON_ERROR_STOP=1 -1 -f server/migrations/0020_hash_session_tokens.up.sql )
+
 echo "==> timers"
 systemctl enable --now sarthi-backup.timer sarthi-watchdog.timer
 echo "==> first backup (local + off-box)"
