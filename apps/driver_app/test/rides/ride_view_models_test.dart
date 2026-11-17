@@ -266,6 +266,95 @@ void main() {
       ).equals("This ride can't make that change right now.");
     });
 
+    test('a trip the customer ended is completed on the next load, which '
+        'refreshes earnings once', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'in_progress')];
+      var earningsRefreshed = 0;
+      final vm = MyRidesViewModel(
+        repository: repo,
+        onCompleted: () => earningsRefreshed++,
+      );
+      await vm.load();
+      check(earningsRefreshed).equals(0);
+
+      repo.mine = [
+        ride(
+          id: 'r',
+          status: 'completed',
+          farePaise: 20000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      ];
+      await vm.load();
+      check(vm.ongoing).isEmpty();
+      check(vm.byId('r')!.endedEarly).isTrue();
+      check(earningsRefreshed).equals(1);
+
+      // Already completed: a later load is no news.
+      await vm.load();
+      check(earningsRefreshed).equals(1);
+    });
+
+    test('a cancellation at the pickup refreshes earnings only when it costs '
+        'a fee', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [
+          ride(id: 'fee', status: 'arrived'),
+          ride(id: 'free', status: 'accepted'),
+        ];
+      var earningsRefreshed = 0;
+      final vm = MyRidesViewModel(
+        repository: repo,
+        onCompleted: () => earningsRefreshed++,
+      );
+      await vm.load();
+
+      repo.mine = [
+        ride(id: 'fee', status: 'arrived'),
+        ride(id: 'free', status: 'cancelled', cancelledBy: 'customer'),
+      ];
+      await vm.load();
+      check(earningsRefreshed).equals(0);
+
+      repo.mine = [
+        ride(
+          id: 'fee',
+          status: 'cancelled',
+          cancelledBy: 'customer',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+        ),
+        ride(id: 'free', status: 'cancelled', cancelledBy: 'customer'),
+      ];
+      await vm.load();
+      check(vm.cancelled.map((r) => r.id).toSet()).deepEquals({'fee', 'free'});
+      check(earningsRefreshed).equals(1);
+    });
+
+    test('completing a trip the customer already ended is no error and '
+        'refreshes earnings once', () async {
+      final repo = FakeRidesRepository()
+        ..mine = [ride(id: 'r', status: 'in_progress')];
+      var earningsRefreshed = 0;
+      final vm = MyRidesViewModel(
+        repository: repo,
+        onCompleted: () => earningsRefreshed++,
+      );
+      await vm.load();
+
+      repo
+        ..failures[RideAction.complete] = const RidesException(
+          "This ride can't make that change right now.",
+          code: 'ride_state',
+        )
+        ..mine = [ride(id: 'r', status: 'completed', bookedFarePaise: 40000)];
+      check(await vm.act(vm.byId('r')!, RideAction.complete)).isNull();
+      check(vm.byId('r')!.status).equals(RideStatus.completed);
+      check(earningsRefreshed).equals(1);
+    });
+
     test('starting sends the code and surfaces a wrong one', () async {
       final repo = FakeRidesRepository()
         ..mine = [ride(id: 'r', status: 'arrived')];

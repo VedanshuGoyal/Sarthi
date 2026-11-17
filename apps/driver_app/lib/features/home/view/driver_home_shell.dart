@@ -24,12 +24,15 @@ import 'duty_panel.dart';
 ///
 /// The shell also owns push registration: a "New ride request" arriving
 /// while the app is open refreshes the feed at once, and tapping one opens
-/// Home, where the request is. A "Ride cancelled" or "Ride assigned" push
-/// instead refreshes the driver's own rides and, on tap, opens the Rides tab
-/// (and the ride itself, once it's loaded). "Payment received" and "Payout
-/// sent" refresh the money and open Earnings; a KYC decision or a bank
-/// account change re-reads the driver's KYC, which sends a driver who is no
-/// longer cleared back to the Document View.
+/// Home, where the request is. A "Ride cancelled", "Ride assigned" or "Trip
+/// ended early" push instead refreshes the driver's own rides and, on tap,
+/// opens the Rides tab (and the ride itself, once it's loaded) — a trip the
+/// customer ended shows as completed on its screen without the driver
+/// tapping Complete. Coming back to the app while holding a ride re-reads
+/// the rides too, for pushes that arrived in the background. "Payment
+/// received" and "Payout sent" refresh the money and open Earnings; a KYC
+/// decision or a bank account change re-reads the driver's KYC, which sends
+/// a driver who is no longer cleared back to the Document View.
 ///
 /// It also starts [locationShareViewModelProvider] (read once, never
 /// watched here) so live-location sharing runs for as long as the driver
@@ -63,6 +66,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   static const int _accountTab = 3;
 
   final List<StreamSubscription<void>> _push = [];
+  late final AppLifecycleListener _lifecycle;
   int _index = 0;
 
   @override
@@ -72,6 +76,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _push
       ..add(push.arrivals.listen(_onPushArrival))
       ..add(push.taps.listen(_onPushTap));
+    _lifecycle = AppLifecycleListener(onResume: _onResume);
     // Rides and earnings load themselves when first read; the KYC record
     // (for the Account panel) is shared with onboarding, so refresh it here.
     // Location sharing likewise starts itself, driven by the rides list —
@@ -91,7 +96,16 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     for (final sub in _push) {
       sub.cancel();
     }
+    _lifecycle.dispose();
     super.dispose();
+  }
+
+  /// Back in the app (often from Maps, mid-trip): pushes that arrived
+  /// meanwhile only showed in the tray, so a held ride may have moved on —
+  /// the customer cancelled it or ended the trip. Re-read the rides then.
+  void _onResume() {
+    final rides = ref.read(myRidesViewModelProvider);
+    if (rides.current != null) rides.load();
   }
 
   /// Re-reads the open requests now rather than on the next poll. A no-op
@@ -110,9 +124,11 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   static const String _payoutSent = 'payout_sent';
 
   /// The pushes about one of the driver's own rides: the customer (or
-  /// MOJUD) cancelled it, or MOJUD assigned it to them.
+  /// MOJUD) cancelled it, MOJUD assigned it to them, or the customer ended
+  /// the trip early (it's completed, charged for the time used).
   static const String _rideCancelled = 'ride_cancelled';
   static const String _rideAssigned = 'ride_assigned';
+  static const String _rideEndedEarly = 'ride_ended_early';
 
   /// The pushes that change whether the driver is cleared: a reviewer's
   /// decision, and a new payout account (which reopens KYC).
@@ -140,14 +156,15 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   /// The push sent when the backend took a silent driver off duty.
   static const String _dutyOff = 'duty_off';
 
-  /// A push arrived while the app was open: a cancelled, assigned or
+  /// A push arrived while the app was open: a cancelled, assigned, ended or
   /// upcoming ride needs the rides list re-read (a reminder's ride re-checks
-  /// whether to share location), a duty-off shows the driver offline, a
+  /// whether to share location; a ride that finished with money in it also
+  /// refreshes earnings), a duty-off shows the driver offline, a
   /// payment or payout the earnings, a KYC decision or bank change the KYC
   /// record; anything else is a new request, so refresh the feed as before.
   void _onPushArrival(PushEvent event) {
     switch (event.type) {
-      case _rideCancelled || _rideAssigned || _rideReminder:
+      case _rideCancelled || _rideAssigned || _rideReminder || _rideEndedEarly:
         ref.read(myRidesViewModelProvider).load();
       case _dutyOff:
         ref.read(dutyViewModelProvider).markOffDuty();
@@ -162,7 +179,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
 
   void _onPushTap(PushEvent event) {
     switch (event.type) {
-      case _rideCancelled || _rideAssigned || _rideReminder:
+      case _rideCancelled || _rideAssigned || _rideReminder || _rideEndedEarly:
         _openRide(event.rideId);
       case _paymentReceived || _payoutSent:
         _openEarnings();

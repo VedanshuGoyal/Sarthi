@@ -208,6 +208,91 @@ void main() {
       await tester.pumpAndSettle();
       await goOffDuty(tester);
     });
+
+    testWidgets('a trip the customer ended early re-reads the rides and the '
+        'earnings, and opens it completed on tap', (tester) async {
+      rides.mine = [ride(id: 'trip', status: 'in_progress')];
+      // Wide enough for the ride screen's step row.
+      await pumpShell(tester, width: 1800);
+      await goOnDuty(tester);
+      check(find.text('Ride in progress').evaluate()).isNotEmpty();
+      final requests = rides.requestsCalls;
+      final loads = rides.myRidesCalls;
+      final earnings = rides.earningsCalls;
+      rides.mine = [
+        ride(
+          id: 'trip',
+          status: 'completed',
+          farePaise: 20000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      ];
+
+      push.arrive(const PushEvent(type: 'ride_ended_early', rideId: 'trip'));
+      await tester.pumpAndSettle();
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(rides.earningsCalls).equals(earnings + 1);
+      check(rides.requestsCalls).equals(requests);
+      check(find.text('Ride in progress').evaluate()).isEmpty();
+      check(find.byType(RideDetailScreen).evaluate()).isEmpty();
+
+      push.tap(const PushEvent(type: 'ride_ended_early', rideId: 'trip'));
+      await tester.pumpAndSettle();
+      check(find.byType(RideDetailScreen).evaluate()).length.equals(1);
+      check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+      check(find.text('Complete trip').evaluate()).isEmpty();
+      check(rides.requestsCalls).equals(requests);
+
+      Navigator.of(tester.element(find.byType(RideDetailScreen))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await goOffDuty(tester);
+    });
+  });
+
+  group('coming back to the app', () {
+    /// Backgrounds the app and brings it back, one lifecycle step at a time
+    /// as the platform reports them.
+    Future<void> leaveAndReturn(WidgetTester tester) async {
+      for (final state in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('while on a trip re-reads the rides, which may have ended', (
+      tester,
+    ) async {
+      rides.mine = [ride(id: 'trip', status: 'in_progress')];
+      await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+      rides.mine = [ride(id: 'trip', status: 'completed', bookedFarePaise: 1)];
+
+      await leaveAndReturn(tester);
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(find.text('Ride in progress').evaluate()).isEmpty();
+    });
+
+    testWidgets('holding no ride reads nothing', (tester) async {
+      await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+
+      await leaveAndReturn(tester);
+
+      check(rides.myRidesCalls).equals(loads);
+    });
   });
 }
 
