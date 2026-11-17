@@ -1,0 +1,42 @@
+# Uptime check from outside the box: the on-box watchdog can't report the box
+# itself being down. Asks /readyz every 10 minutes (GitHub may run it late),
+# three tries 20 s apart, and on failure alerts the MOJUD Build bot on
+# Telegram (repo secrets MOJUD_TG_TOKEN / MOJUD_TG_CHAT, set by
+# docs/features/server-hardening-rollout.sh). A failed run also emails the
+# repo owner.
+#
+# GitHub pauses scheduled workflows after 60 days without a commit; re-enable
+# it from the Actions tab if that happens.
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  readyz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: api.mojud.life/readyz
+        env:
+          TG_TOKEN: ${{ secrets.MOJUD_TG_TOKEN }}
+          TG_CHAT: ${{ secrets.MOJUD_TG_CHAT }}
+        run: |
+          code=000
+          for _ in 1 2 3; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://api.mojud.life/readyz || true)"
+            if [ "$code" = 200 ]; then echo "ready"; exit 0; fi
+            sleep 20
+          done
+          echo "::error::/readyz answered $code three times"
+          if [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ]; then
+            curl -s --max-time 20 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              --data-urlencode chat_id="$TG_CHAT" \
+              --data-urlencode text="MOJUD API down: https://api.mojud.life/readyz answered ${code} three times in a row (GitHub uptime check)." \
+              >/dev/null
+          fi
+          exit 1
