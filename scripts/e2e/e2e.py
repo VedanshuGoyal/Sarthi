@@ -317,6 +317,66 @@ def main():
     s, j, h = req("POST", "/auth/otp", {"phoneE164": pc})
     check(S, "429 carries Retry-After", s == 429 and "Retry-After" in h, (s, j, h.get("Retry-After")))
 
+    # ---- 10. cancellation charges (docs/features/cancellation-charges.md)
+    S = "10"
+
+    def at_pickup(hours, lead):
+        start = (dt.datetime.now(IST) + dt.timedelta(minutes=lead)).replace(second=0, microsecond=0)
+        s, j, _ = req("POST", "/me/bookings", round_trip(start, hours, car_payload), token=ta,
+                      headers={"Idempotency-Key": str(uuid.uuid4())})
+        bid = j.get("id")
+        a = req("POST", f"/driver/rides/{bid}/accept", token=td)[0]
+        r = req("POST", f"/driver/rides/{bid}/arrive", token=td)[0]
+        check(S, f"{hours} h ride booked, accepted, driver at pickup", s == 202 and a == 200 and r == 200, (s, j, a, r))
+        return bid
+
+    def mine(bid):
+        return next((b for b in req("GET", "/me/bookings", token=ta)[1].get("bookings", []) if b["id"] == bid), {})
+
+    c1 = at_pickup(2, 52)  # a start of its own, or the duplicate guard returns b1
+    check(S, "at pickup: cancellationFeePaise 5000 shown", mine(c1).get("cancellationFeePaise") == 5000, mine(c1))
+    s, j, _ = req("POST", f"/me/bookings/{c1}/cancel", {"reason": "e2e", "acceptFeePaise": 0}, token=ta)
+    check(S, "cancel at pickup having seen no fee -> 409 cancellation_fee",
+          s == 409 and j.get("code") == "cancellation_fee" and j.get("feePaise") == 5000, (s, j))
+    check(S, "refused cancel left the ride arrived", mine(c1).get("status") == "arrived", mine(c1).get("status"))
+    s, j, _ = req("POST", f"/me/bookings/{c1}/cancel", {"reason": "e2e", "acceptFeePaise": 5000}, token=ta)
+    cb = j.get("booking", {}) if isinstance(j, dict) else {}
+    check(S, "cancel accepting the fee -> cancelled, fee due",
+          s == 200 and cb.get("status") == "cancelled" and cb.get("cancellationFeePaise") == 5000
+          and cb.get("paymentStatus") == "due", (s, j))
+    start3 = (dt.datetime.now(IST) + dt.timedelta(hours=5)).replace(second=0, microsecond=0)
+    s, j, _ = req("POST", "/me/bookings", round_trip(start3, 1, car_payload), token=ta,
+                  headers={"Idempotency-Key": str(uuid.uuid4())})
+    check(S, "unpaid fee blocks the next booking -> 409 payment_due",
+          s == 409 and j.get("code") == "payment_due" and j.get("bookingId") == c1, (s, j))
+    s, j, _ = req("POST", f"/me/bookings/{c1}/payment", token=ta)
+    check(S, "fee checkout is for 5000", s == 200 and j.get("checkout", {}).get("amountPaise") == 5000, (s, j))
+    s, j, _ = req("POST", f"/me/bookings/{c1}/payment/sync", token=ta)
+    check(S, "fee sync -> paid", s == 200 and j.get("booking", {}).get("paymentStatus") == "paid", (s, j))
+    s, j, _ = req("GET", f"/driver/rides", token=td)
+    dr = next((r for r in (j.get("rides", []) if isinstance(j, dict) else []) if r.get("id") == c1), {})
+    check(S, "driver sees the fee and their share", dr.get("cancellationFeePaise") == 5000
+          and dr.get("paymentStatus") == "paid" and dr.get("sharePaise") == 4350, dr)
+
+    e1 = at_pickup(3, 58)
+    booked = mine(e1).get("farePaise")
+    code = mine(e1).get("startOtp")
+    s, j, _ = req("POST", f"/me/bookings/{e1}/end", token=ta)
+    check(S, "end before the trip starts -> 409 cannot_end", s == 409 and j.get("code") == "cannot_end", (s, j))
+    s, j, _ = req("POST", f"/driver/rides/{e1}/start", {"otp": code}, token=td)
+    started = dt.datetime.now(IST)
+    check(S, "3 h trip started", s == 200, (s, j))
+    s, j, _ = req("POST", f"/me/bookings/{e1}/end", token=ta)
+    eb = j.get("booking", {}) if isinstance(j, dict) else {}
+    want = min(booked, (tariff(1) + night(started, 1)) * 100)
+    check(S, "end early -> completed, charged one started hour, booked fare kept",
+          s == 200 and eb.get("status") == "completed" and eb.get("farePaise") == want
+          and eb.get("bookedFarePaise") == booked and eb.get("paymentStatus") == "due", (s, j, want, booked))
+    s, j, _ = req("POST", f"/me/bookings/{e1}/payment", token=ta)
+    check(S, "ended trip checkout is the charge", s == 200 and j.get("checkout", {}).get("amountPaise") == want, (s, j))
+    s, j, _ = req("POST", f"/me/bookings/{e1}/payment/sync", token=ta)
+    check(S, "ended trip paid", s == 200 and j.get("booking", {}).get("paymentStatus") == "paid", (s, j))
+
 
 if __name__ == "__main__":
     random.seed()

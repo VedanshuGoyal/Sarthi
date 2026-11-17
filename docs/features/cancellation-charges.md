@@ -35,12 +35,19 @@ Customer booking JSON (`GET /me/bookings`, `GET /me/bookings/{id}`, cancel/end r
 
 `POST /me/bookings/{id}/end` (no body) — customer ends an `in_progress` trip.
 
-- 200 → booking `completed`, `farePaise` = charge for the time used, `bookedFarePaise` = booked fare, `paymentStatus: "due"`.
+- 200 `{"booking": …}` (same envelope as cancel) → `completed`, `farePaise` = charge for the time used, `bookedFarePaise` = booked fare, `paymentStatus: "due"`.
 - 409 `{"code": "cannot_end"}` when the trip isn't in progress.
 - The driver gets push `ride_ended_early` (`rideId`).
 
-Checkout (`POST /me/bookings/{id}/payment/checkout`) and sync also take a cancelled booking whose `paymentStatus` is `due`; the amount is the fee.
+Checkout (`POST /me/bookings/{id}/payment`) and sync (`…/payment/sync`) also take a cancelled booking whose `paymentStatus` is `due`; the amount is the fee.
 A 409 `payment_due` on a new booking can name such a cancelled booking.
 
 Driver ride JSON: `cancellationFeePaise`, `paymentStatus` (`due`/`paid`/`paid_out`), `sharePaise` on a ride the customer cancelled at the pickup;
 `bookedFarePaise` on one they ended early. Earnings: fees count in "awaiting customer", "due to you" and "paid out"; ride counts and fare windows stay completed rides only.
+
+## Server
+
+- Migration `0030_cancellation_charges` (`cancellation_fee_paise`, `booked_fare_paise`, index); `/readyz` probes it.
+- Payouts, earnings, stats: only `cash` settlements are excluded from what MOJUD owes drivers (was: any hand settlement).
+- Old app builds (no `acceptFeePaise`) cancel free; raise `MIN_BUILD_USER_APP` to 9 once 1.6.0 is out to close that.
+- Tests: service unit tests, DB integration tests, `scripts/e2e/run.sh` step 10 (95/95 checks).

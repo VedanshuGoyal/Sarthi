@@ -50,6 +50,7 @@ MIGRATIONS=(
   0027_payment_orders_pending.up.sql
   0028_consent_and_erasure.up.sql
   0029_retention_indexes.up.sql
+  0030_cancellation_charges.up.sql
 )
 PUBLISH_APPS="${PUBLISH_APPS:-0}"   # 1 = publish scripts/*-release.apk afterwards
 API="https://api.mojud.life"
@@ -128,7 +129,8 @@ chmod 600 "$BACKUP"
 echo "    $BACKUP ($(du -h "$BACKUP" | cut -f1))"
 
 echo "==> completed rides never paid (they now block that customer's next booking;"
-echo "    settle test rides as 'waived' from /admin → Bookings after the deploy)"
+echo "    settle test rides as 'cash' from /admin → Bookings after the deploy — 'waived'"
+echo "    now means MOJUD pays the driver's share)"
 sudo -u postgres psql -d sarthi -At -c "SELECT count(*) FROM bookings WHERE status='completed' AND paid_at IS NULL"
 
 echo "==> required secrets"
