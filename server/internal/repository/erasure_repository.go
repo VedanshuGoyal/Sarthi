@@ -52,7 +52,7 @@ func (r *ErasureRepository) EraseUser(
 		// Lock the bookings that matter, so a driver can't accept a request
 		// between this read and the cancel below.
 		b, err := lockBlockers(ctx, tx, `
-			SELECT status, status = 'completed'
+			SELECT CASE WHEN status = 'completed' THEN 'unpaid' ELSE status END
 			FROM bookings
 			WHERE user_id = $1
 			  AND (status IN ('requested', 'accepted', 'arrived', 'in_progress')
@@ -115,12 +115,17 @@ func (r *ErasureRepository) EraseDriver(
 			return err
 		}
 		res.AlreadyErased = erased
+		// A paid ride whose share isn't paid out yet blocks too: the bank
+		// account it would be paid to is deleted below.
 		b, err := lockBlockers(ctx, tx, `
-			SELECT status, status = 'completed'
+			SELECT CASE WHEN paid_at IS NOT NULL THEN 'payout'
+			            WHEN status = 'completed' THEN 'unpaid'
+			            ELSE status END
 			FROM bookings
 			WHERE driver_id = $1
 			  AND (status IN ('accepted', 'arrived', 'in_progress')
-			       OR (status = 'completed' AND paid_at IS NULL AND fare_paise > 0))
+			       OR (status = 'completed' AND paid_at IS NULL AND fare_paise > 0)
+			       OR (paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL))
 			FOR UPDATE`, driverID)
 		if err != nil {
 			return err
@@ -233,8 +238,10 @@ func lockAccount(ctx context.Context, tx pgx.Tx, q, id string) (bool, error) {
 	return erasedAt != nil, nil
 }
 
-// lockBlockers runs q, which locks and returns (status, completed) for each
-// booking of the account that could block erasure, and counts them.
+// lockBlockers runs q, which locks each booking of the account that could
+// block erasure and returns what it is — 'unpaid' (completed, not paid),
+// 'payout' (paid, the driver's share not paid out) or else its status — and
+// counts them. An open request blocks nothing: erasure cancels it.
 func lockBlockers(ctx context.Context, tx pgx.Tx, q, id string) (domain.ErasureBlockers, error) {
 	var b domain.ErasureBlockers
 	rows, err := tx.Query(ctx, q, id)
@@ -243,17 +250,17 @@ func lockBlockers(ctx context.Context, tx pgx.Tx, q, id string) (domain.ErasureB
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var (
-			status    string
-			completed bool
-		)
-		if err := rows.Scan(&status, &completed); err != nil {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
 			return b, fmt.Errorf("checking rides: %w", err)
 		}
-		switch {
-		case completed:
+		switch kind {
+		case "unpaid":
 			b.UnpaidRides++
-		case status != string(domain.RideStatusRequested):
+		case "payout":
+			b.AwaitingPayout++
+		case string(domain.RideStatusRequested):
+		default:
 			b.ActiveRides++
 		}
 	}

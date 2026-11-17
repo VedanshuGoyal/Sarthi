@@ -271,6 +271,9 @@ func run() error {
 			"customers can't pay in the app")
 	}
 	payments := service.NewPaymentService(gateway, paymentStore, bookingStore, notify, cfg.CommissionBasisPoints)
+	// Without a gateway nobody can pay in the app, so an unpaid ride must
+	// not block booking or account deletion.
+	bookings.SetPaymentsEnabled(payments.Enabled())
 	go payments.RunSweeper(ctx)
 	// Every minute: re-alert drivers about rides nobody has taken, tell the
 	// customer when no driver has turned up, remind both sides an hour
@@ -289,6 +292,7 @@ func run() error {
 	stats := service.NewStatsService(repository.NewStatsRepository(pool), presence, cfg.CommissionBasisPoints)
 	// Account deletion (DPDP), and the daily sweep of data past retention.
 	erasure := service.NewErasureService(repository.NewErasureRepository(pool), sessions, driverSessions, blob, presence)
+	erasure.SetPaymentsEnabled(payments.Enabled())
 	go service.NewRetentionService(repository.NewRetentionRepository(pool), erasure).Run(ctx)
 	// Builds below a minimum get 426 update_required; 0 only observes.
 	slog.Info("apps: build contract",

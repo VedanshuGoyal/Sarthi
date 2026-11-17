@@ -41,6 +41,21 @@ func TestBookingService_Record_refusedWhileARideIsUnpaid(t *testing.T) {
 	}
 }
 
+// With no payment gateway the customer can't pay in the app, so an unpaid
+// ride doesn't stop them booking again.
+func TestBookingService_Record_paymentsOffSkipsTheUnpaidCheck(t *testing.T) {
+	store := &fakeBookingStore{unpaid: "done-1"}
+	svc := newTestBookingService(store)
+	svc.SetPaymentsEnabled(false)
+
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "k1"); err != nil {
+		t.Fatalf("Record: %v, want the booking stored", err)
+	}
+	if !store.insertHit {
+		t.Error("the booking was not stored")
+	}
+}
+
 // Record hands the store the app's key and the 10-minute window, so a retry
 // finds the booking the first try made.
 func TestBookingService_Record_passesTheRepeatGuards(t *testing.T) {

@@ -204,6 +204,7 @@ func TestErasure_RefusedWhileARideIsOpenOrUnpaid(t *testing.T) {
 		{domain.AccountCustomer, erasedCustomerID, domain.ErasureBlockers{UnpaidRides: 1}, "Pay for"},
 		{domain.AccountDriver, erasedDriverID, domain.ErasureBlockers{ActiveRides: 1}, "accepted or in progress"},
 		{domain.AccountDriver, erasedDriverID, domain.ErasureBlockers{UnpaidRides: 2}, "hasn't paid"},
+		{domain.AccountDriver, erasedDriverID, domain.ErasureBlockers{AwaitingPayout: 1}, "earnings waiting for a payout"},
 	} {
 		r := newErasureRig()
 		r.store.blockers = tc.blockers
@@ -214,6 +215,34 @@ func TestErasure_RefusedWhileARideIsOpenOrUnpaid(t *testing.T) {
 		}
 		if len(r.store.erased)+len(r.users.revoked)+len(r.drivers.revoked)+len(r.blobs.deleted) != 0 {
 			t.Errorf("%s %+v: something was erased while refused", tc.kind, tc.blockers)
+		}
+	}
+}
+
+// With no payment gateway a customer has no way to pay in the app, so an
+// unpaid ride doesn't stop them deleting their account. Anything else still
+// does, and a driver is still held: their share is settled by hand.
+func TestErasure_PaymentsOffIgnoresTheCustomersUnpaidRide(t *testing.T) {
+	r := newErasureRig()
+	r.svc.SetPaymentsEnabled(false)
+	r.store.blockers = domain.ErasureBlockers{UnpaidRides: 1}
+	if _, err := r.svc.Erase(context.Background(), domain.AccountCustomer, erasedCustomerID); err != nil {
+		t.Errorf("customer: err = %v, want erased", err)
+	}
+
+	for _, tc := range []struct {
+		kind     domain.AccountKind
+		id       string
+		blockers domain.ErasureBlockers
+	}{
+		{domain.AccountCustomer, erasedCustomerID, domain.ErasureBlockers{UnpaidRides: 1, ActiveRides: 1}},
+		{domain.AccountDriver, erasedDriverID, domain.ErasureBlockers{UnpaidRides: 1}},
+	} {
+		r := newErasureRig()
+		r.svc.SetPaymentsEnabled(false)
+		r.store.blockers = tc.blockers
+		if _, err := r.svc.Erase(context.Background(), tc.kind, tc.id); !errors.Is(err, ErrAccountBusy) {
+			t.Errorf("%s %+v: err = %v, want busy", tc.kind, tc.blockers, err)
 		}
 	}
 }

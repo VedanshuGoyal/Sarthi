@@ -124,7 +124,10 @@ type BookingService struct {
 	alerts BookingAlerter
 	live   DriverLocator
 	photos DriverPhotos
-	now    func() time.Time
+	// paymentsOff: no gateway is configured, so nothing can be paid in the
+	// app and an unpaid ride can't hold up a new booking.
+	paymentsOff bool
+	now         func() time.Time
 }
 
 // NewBookingService wires the service to its store, the driver alerts sent
@@ -134,20 +137,27 @@ func NewBookingService(store BookingStore, alerts BookingAlerter, live DriverLoc
 	return &BookingService{store: store, alerts: alerts, live: live, photos: photos, now: time.Now}
 }
 
+// SetPaymentsEnabled says whether a payment gateway is configured (on by
+// default). With payments off, Record skips the unpaid-ride check: the
+// customer would have no way to pay.
+func (s *BookingService) SetPaymentsEnabled(on bool) { s.paymentsOff = !on }
+
 // Record validates and persists userID's confirmed booking of the given
 // tripType ("roundTrip", "oneWay", "multiStop"), returning the stored booking
 // with the id the database assigned.
 //
 // A customer with a completed ride still to pay for is refused with a
-// [PaymentDueError] naming it. A repeat of a booking already made —
+// [PaymentDueError] naming it, while payments are on. A repeat of a booking already made —
 // the same idempotencyKey (the app's, per booking attempt; "" for none), or
 // the same trip type, start and details within duplicateWindow — returns
 // that booking with duplicate true, and no driver is alerted again.
 func (s *BookingService) Record(
 	ctx context.Context, userID, tripType string, details map[string]any, idempotencyKey string,
 ) (b domain.Booking, duplicate bool, err error) {
-	if err := s.checkNothingDue(ctx, userID); err != nil {
-		return domain.Booking{}, false, err
+	if !s.paymentsOff {
+		if err := s.checkNothingDue(ctx, userID); err != nil {
+			return domain.Booking{}, false, err
+		}
 	}
 	tripType, idempotencyKey = strings.TrimSpace(tripType), strings.TrimSpace(idempotencyKey)
 	if tripType == "" || len(details) == 0 {
