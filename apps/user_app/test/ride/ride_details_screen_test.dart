@@ -242,6 +242,40 @@ void main() {
     });
   });
 
+  testWidgets('opening a due ride checks its payment once, not on every '
+      'list refresh', (tester) async {
+    final server = FakeBookingServer([
+      bookingJson(status: 'completed', paymentStatus: 'due'),
+    ]);
+    final repo = server.repository();
+    final bookings = MyBookingsViewModel(repository: repo);
+    await tester.runAsync(bookings.load);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookingRepositoryProvider.overrideWithValue(repo),
+          myBookingsViewModelProvider.overrideWith((ref) => bookings),
+        ],
+        child: MaterialApp(
+          theme: SkylineTheme.light(),
+          home: const RideDetailsScreen(bookingId: 'b1'),
+        ),
+      ),
+    );
+    int syncs() =>
+        server.requests.where((r) => r.url.path.endsWith('/sync')).length;
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    check(syncs()).equals(1);
+
+    // A list refresh (the 30 s poll, a push) doesn't start another check.
+    await tester.runAsync(bookings.load);
+    await tester.pump(const Duration(milliseconds: 100));
+    check(syncs()).equals(1);
+    check(_shows('Pay ₹640 by UPI')).isTrue();
+  });
+
   testWidgets('a cancelled ride says who cancelled and why', (tester) async {
     await _pump(
       tester,
