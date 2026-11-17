@@ -1,0 +1,414 @@
+<!-- DRAFT — owner and counsel must review before publishing.
+     Every [[PLACEHOLDER]] must be filled in. Data facts must match docs/privacy/data-map.md.
+     Published by scripts/publish-apps.sh as https://apps.mojud.life/privacy/ -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy | MOJUD</title>
+<meta name="description" content="What personal data MOJUD and MOJUD Driver collect, why, who we share it with, how long we keep it, and your rights.">
+<meta name="theme-color" content="#0B2239">
+<link rel="icon" type="image/png" href="/mojud-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+  :root {
+    --navy: #0B2239; --navy-2: #12345A;
+    --signal: #2A93BE; --signal-ink: #1A6E93; --signal-soft: #D6EAF4;
+    --gold: #CE9A3C; --gold-soft: #F4E7CF;
+    --paper: #F5F8FB; --surface: #FFFFFF; --sunken: #EDF3F8;
+    --ink: #0B2239; --muted: #4A5D72; --faint: #5E7086; --line: #DCE7F1;
+    --radius: 22px;
+    --serif: "Instrument Serif", Georgia, serif;
+    --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16.5px/1.7 var(--sans); overflow-x: hidden; }
+  a { color: var(--signal-ink); text-underline-offset: 3px; }
+  a:hover { color: var(--ink); }
+  .wrap { width: 100%; max-width: 1140px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+  .skip { position: absolute; left: 12px; top: -60px; background: var(--navy); color: #fff; padding: 10px 14px; border-radius: 10px; z-index: 50; }
+  .skip:focus { top: 12px; }
+  :focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; border-radius: 8px; }
+
+  /* Header */
+  .head { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
+  .head-row { display: flex; align-items: center; gap: 12px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; letter-spacing: .14em; font-size: 15px; }
+  .nav { margin-left: auto; display: flex; gap: 4px; }
+  .nav a { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 14px; padding: 7px 12px; border-radius: 999px; }
+  .nav a:hover { color: var(--ink); background: var(--sunken); }
+  .nav a[aria-current="page"] { color: var(--ink); background: var(--signal-soft); }
+
+  /* Title */
+  .intro { padding-top: 40px; padding-bottom: 28px; }
+  @media (min-width: 900px) { .intro { padding-top: 64px; padding-bottom: 40px; } }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0; font: 700 12.5px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--signal-ink); }
+  .eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--gold); border-radius: 2px; }
+  h1 { margin: 14px 0 0; font-size: clamp(38px, 8vw, 64px); line-height: 1.02; font-weight: 800; letter-spacing: -.02em; }
+  .serif { font-family: var(--serif); font-weight: 400; font-style: italic; letter-spacing: -.01em; color: var(--signal-ink); }
+  .lede { margin: 16px 0 0; max-width: 36em; color: var(--muted); font-size: clamp(16.5px, 2.2vw, 19px); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; padding: 0; list-style: none; }
+  .meta li { background: var(--signal-soft); color: var(--signal-ink); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; }
+
+  /* Layout */
+  .layout { display: grid; gap: 24px; padding-bottom: 72px; }
+  @media (min-width: 1000px) { .layout { grid-template-columns: 270px minmax(0, 1fr); gap: 56px; align-items: start; } }
+  .toc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; }
+  @media (min-width: 1000px) { .toc { position: sticky; top: 84px; max-height: calc(100vh - 108px); overflow: auto; } }
+  .toc h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .toc ol { margin: 0; padding-left: 24px; font-size: 14.5px; line-height: 1.5; }
+  .toc li { margin: 6px 0; color: var(--faint); }
+  .toc a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .toc a:hover { color: var(--signal-ink); text-decoration: underline; }
+  @media (min-width: 600px) and (max-width: 999px) { .toc ol { columns: 2; column-gap: 32px; } .toc li { break-inside: avoid; } }
+
+  /* Document */
+  .doc { max-width: 46em; min-width: 0; }
+  .summary { background: var(--navy); color: #fff; border-radius: var(--radius); padding: 24px; margin-bottom: 8px; }
+  .summary h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .summary ul { margin: 0; padding-left: 20px; }
+  .summary li { margin: 6px 0; color: rgba(255,255,255,.88); }
+  .summary p { margin: 12px 0 0; font-size: 14px; color: rgba(255,255,255,.7); }
+  .doc section { padding-top: 36px; scroll-margin-top: 76px; }
+  .doc h2 { display: flex; align-items: baseline; gap: 12px; margin: 0 0 12px; font-size: clamp(22px, 3.4vw, 27px); line-height: 1.2; font-weight: 800; letter-spacing: -.015em; }
+  .doc h2 .n { font: italic 400 1.25em/1 var(--serif); color: var(--signal); min-width: 1.2em; }
+  .doc h3 { margin: 20px 0 6px; font-size: 17px; font-weight: 800; }
+  .doc p { margin: 0 0 12px; }
+  .doc ul, .doc ol { margin: 0 0 12px; padding-left: 22px; }
+  .doc li { margin: 6px 0; }
+  .doc li::marker { color: var(--signal); }
+  .doc strong { font-weight: 700; }
+  .note { margin: 14px 0; padding: 14px 16px; border-radius: 14px; background: var(--sunken); color: var(--muted); font-size: 15px; }
+  .note strong { color: var(--ink); }
+  .ph { background: var(--gold-soft); color: var(--navy); border-radius: 6px; padding: 1px 6px; font-weight: 700; font-size: .92em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .contact { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; }
+  .contact p { margin: 4px 0; }
+
+  /* Tables: rows become cards on a phone */
+  .tbl { width: 100%; margin: 8px 0 16px; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; font-size: 15px; line-height: 1.55; }
+  .tbl th, .tbl td { text-align: left; vertical-align: top; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .tbl thead th { border-top: 0; background: var(--sunken); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .tbl tbody th { font-weight: 700; }
+  .tbl td { color: var(--muted); }
+  @media (max-width: 639px) {
+    .tbl, .tbl tbody, .tbl tr, .tbl th, .tbl td { display: block; width: 100%; }
+    .tbl thead { display: none; }
+    .tbl tr { padding: 12px 14px; border-top: 1px solid var(--line); }
+    .tbl tbody tr:first-child { border-top: 0; }
+    .tbl th, .tbl td { padding: 2px 0; border: 0; }
+    .tbl tbody th { font-size: 15.5px; margin-bottom: 2px; }
+    .tbl td::before { content: attr(data-label) ": "; font-weight: 700; color: var(--ink); }
+  }
+
+  /* Footer */
+  .foot { background: var(--surface); border-top: 1px solid var(--line); padding: 36px 0 28px; font-size: 14.5px; color: var(--muted); }
+  .foot-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; align-items: center; }
+  .foot ul { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; padding: 0; list-style: none; }
+  .foot a { color: var(--muted); text-decoration: none; font-weight: 600; }
+  .foot a:hover { color: var(--ink); text-decoration: underline; }
+  .foot-base { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--faint); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="head">
+  <div class="wrap head-row">
+    <a class="brand" href="/" aria-label="MOJUD home">
+      <svg width="26" height="26" viewBox="0 0 144 144" aria-hidden="true">
+        <g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none">
+          <line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/>
+          <line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/>
+          <line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/>
+        </g>
+        <circle cx="72" cy="72" r="9" fill="#CE9A3C"/>
+      </svg>
+      MOJUD
+    </a>
+    <nav class="nav" aria-label="Policies">
+      <a href="/terms/">Terms</a>
+      <a href="/privacy/" aria-current="page">Privacy</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap intro">
+    <p class="eyebrow">Legal</p>
+    <h1>Privacy <span class="serif">Policy</span></h1>
+    <p class="lede">What we collect in the MOJUD and MOJUD Driver apps, why, who we share it with, how long we keep it, and your rights.</p>
+    <ul class="meta" aria-label="About this version">
+      <li>Version 2026-11</li>
+      <li>Effective <mark class="ph">[[EFFECTIVE DATE]]</mark></li>
+    </ul>
+  </div>
+
+  <div class="wrap layout">
+    <nav class="toc" aria-labelledby="toc-title">
+      <h2 id="toc-title">Contents</h2>
+      <ol>
+        <li><a href="#about">Who we are</a></li>
+        <li><a href="#customers">What we collect from customers</a></li>
+        <li><a href="#drivers">What we collect from drivers</a></li>
+        <li><a href="#everyone">Logs and your phone</a></li>
+        <li><a href="#seen">What the other side sees</a></li>
+        <li><a href="#purposes">Why we use your data</a></li>
+        <li><a href="#processors">Who we share it with</a></li>
+        <li><a href="#retention">How long we keep it</a></li>
+        <li><a href="#deletion">Deleting your account</a></li>
+        <li><a href="#rights">Your rights and choices</a></li>
+        <li><a href="#security">How we protect it</a></li>
+        <li><a href="#children">Children</a></li>
+        <li><a href="#changes">Changes to this policy</a></li>
+        <li><a href="#contact">Contact and grievances</a></li>
+      </ol>
+    </nav>
+
+    <article class="doc">
+      <aside class="summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">In short</h2>
+        <ul>
+          <li>We collect what we need to run trips, take payments, pay drivers and check drivers' identity.</li>
+          <li>We never store a driver's full Aadhaar number.</li>
+          <li>A driver's live location is kept only in our server's memory, not in our database.</li>
+          <li>We don't sell your data or use it for advertising.</li>
+          <li>You can delete your account in the app. Ride and payment records are kept, without your name, phone number or email.</li>
+        </ul>
+        <p>This summary helps you find your way. The full policy below is what applies.</p>
+      </aside>
+
+      <section id="about" aria-labelledby="about-h">
+        <h2 id="about-h"><span class="n">1</span>Who we are</h2>
+        <p><mark class="ph">[[REGISTERED ENTITY NAME AND ADDRESS]]</mark> ("MOJUD", "we", "us") runs the MOJUD app for customers, the MOJUD Driver app for drivers, and this website. We decide how your personal data is used, so we are responsible for it.</p>
+        <p>We use your data with the consent you give when you sign up. When you sign up, we record which version of this policy you agreed to, and when. Where the law allows, we also use data without consent, for example to meet a legal duty.</p>
+      </section>
+
+      <section id="customers" aria-labelledby="customers-h">
+        <h2 id="customers-h"><span class="n">2</span>What we collect from customers</h2>
+        <p>In the MOJUD app:</p>
+        <ul>
+          <li><strong>Account:</strong> your name, mobile number, email and date of birth. We use your date of birth to check that you are 18 or older.</li>
+          <li><strong>Cars:</strong> the registration number, type and gearbox of each car you save.</li>
+          <li><strong>Trips:</strong> pickup, stops and destination (addresses and map points), date and time, the car, the fare, the start code, the trip's status, any reason you give for cancelling, and the ratings and notes you give and get.</li>
+          <li><strong>Recent pickups:</strong> a short list of places you were picked up from, so booking is quicker.</li>
+          <li><strong>Location:</strong> if you allow it, your phone's location while you use the app, to fill in your pickup and to look up addresses. The app doesn't use your location in the background.</li>
+          <li><strong>Payments:</strong> PhonePe's order IDs, the UPI transaction reference (UTR), the payment method and whether it succeeded. We never see your UPI PIN.</li>
+          <li><strong>Notifications:</strong> a token from your phone that lets us send you trip updates.</li>
+          <li><strong>Support:</strong> what you tell us when you contact us.</li>
+        </ul>
+      </section>
+
+      <section id="drivers" aria-labelledby="drivers-h">
+        <h2 id="drivers-h"><span class="n">3</span>What we collect from drivers</h2>
+        <p>In the MOJUD Driver app:</p>
+        <ul>
+          <li><strong>Account:</strong> your name, mobile number, date of birth, gender, and the gearbox you can drive.</li>
+          <li><strong>Aadhaar, through DigiLocker:</strong> when you approve it in DigiLocker, we receive the verified name, date of birth and the last 4 digits of your Aadhaar. <strong>We never store your full Aadhaar number.</strong> We also keep a one-way, keyed fingerprint of those verified details, so one identity can have only one driver account.</li>
+          <li><strong>Driving licence:</strong> the number, name, expiry date and vehicle classes, from a licence check.</li>
+          <li><strong>Bank account:</strong> the account holder's name, the account number (stored encrypted), its last 4 digits, the IFSC, and the name the bank confirmed through a penny-drop check (a tiny test transfer).</li>
+          <li><strong>Selfie:</strong> a photo of you, taken in the app with the camera. Our team reviews it, and customers see a small copy once you accept their ride. Older versions of the app also uploaded photos of the Aadhaar card and driving licence. We keep those on the same terms as the selfie.</li>
+          <li><strong>Verification:</strong> your verification status, our reviewers' notes, and a log of each check we ran (the kind of check, the result, and details such as the licence number or the last 4 digits of the Aadhaar or bank account).</li>
+          <li><strong>Location:</strong> while you are on duty, the app shares your location about every 10 seconds, also when it is in the background. We use it to show you nearby ride requests, to match rides and to let your customer track the trip. It is held only in our server's memory and is not saved in our database.</li>
+          <li><strong>Rides and money:</strong> the rides you accepted, drove or swiped away, your earnings, payouts and bank transfer references, and the ratings you give and get.</li>
+          <li><strong>Notifications:</strong> a token from your phone that lets us send you ride requests and updates.</li>
+        </ul>
+      </section>
+
+      <section id="everyone" aria-labelledby="everyone-h">
+        <h2 id="everyone-h"><span class="n">4</span>Logs and your phone</h2>
+        <ul>
+          <li><strong>Web server logs</strong> record IP addresses, times and the address of each request. Some requests carry map points, so those appear in the logs too.</li>
+          <li><strong>App logs</strong> identify accounts by an ID, not by name or phone number.</li>
+          <li><strong>Sign-in codes</strong> are sent by our SMS provider. We don't store the codes, only a short-lived count of attempts, in memory.</li>
+          <li><strong>On your phone</strong>, the apps keep your sign-in token. The customer app also keeps your recent pickups, and the driver app keeps the verification photos you took. Both apps clear these when you sign out.</li>
+        </ul>
+      </section>
+
+      <section id="seen" aria-labelledby="seen-h">
+        <h2 id="seen-h"><span class="n">5</span>What the other side sees</h2>
+        <ul>
+          <li><strong>Before a driver accepts,</strong> nearby drivers see the trip details, but not your name or phone number.</li>
+          <li><strong>Once a driver accepts,</strong> the customer sees the driver's name, selfie, rating and phone number. The driver sees the customer's name, phone number, rating, the pickup and stops, and the car.</li>
+          <li><strong>Live tracking:</strong> the customer sees the driver on the map from 60 minutes before the start, and during the trip.</li>
+          <li><strong>The start code</strong> is shown only to the customer, while the driver is on the way or at the pickup. It is never put in a notification.</li>
+          <li><strong>Share trip:</strong> if you use it, you choose who gets the message on WhatsApp.</li>
+        </ul>
+      </section>
+
+      <section id="purposes" aria-labelledby="purposes-h">
+        <h2 id="purposes-h"><span class="n">6</span>Why we use your data</h2>
+        <ul>
+          <li>To create your account and sign you in.</li>
+          <li>To match bookings with nearby drivers who can drive your car.</li>
+          <li>To run the trip: tracking, the start code and notifications.</li>
+          <li>To take payments, pay drivers and handle refunds.</li>
+          <li>To check that drivers are who they say they are, are 18 or older, hold a valid licence and own the bank account we pay.</li>
+          <li>To keep the service safe: ratings, support, and dealing with complaints and incidents.</li>
+          <li>To prevent fraud and abuse, for example one driver account per identity, and limits on sign-in codes.</li>
+          <li>To keep accounts and records, and to meet our legal and tax duties.</li>
+          <li>To understand how the service is used, from counts and totals.</li>
+        </ul>
+        <p>We don't sell your data, and we don't use it for advertising.</p>
+      </section>
+
+      <section id="processors" aria-labelledby="processors-h">
+        <h2 id="processors-h"><span class="n">7</span>Who we share it with</h2>
+        <p>We use these providers to run MOJUD. Each gets only what it needs for its job.</p>
+        <table class="tbl">
+          <thead><tr><th scope="col">Provider</th><th scope="col">What for</th><th scope="col">What it gets</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">PhonePe</th><td data-label="What for">UPI payments</td><td data-label="What it gets">The amount, our order ID and the payment result. You pay in PhonePe or your UPI app, under its own terms.</td></tr>
+            <tr><th scope="row">Surepass</th><td data-label="What for">Driver checks: Aadhaar through DigiLocker, the licence check and the bank penny drop</td><td data-label="What it gets">What each check needs, such as the licence number, or the bank account number and IFSC, and the DigiLocker result</td></tr>
+            <tr><th scope="row">DigiLocker (Government of India)</th><td data-label="What for">Aadhaar verification for drivers</td><td data-label="What it gets">You sign in to DigiLocker yourself and choose to share</td></tr>
+            <tr><th scope="row">Google Firebase</th><td data-label="What for">Push notifications</td><td data-label="What it gets">Your phone's notification token and the notification text</td></tr>
+            <tr><th scope="row">Fast2SMS</th><td data-label="What for">Sign-in codes by SMS</td><td data-label="What it gets">Your mobile number</td></tr>
+            <tr><th scope="row">Ola Maps and Google Maps</th><td data-label="What for">Maps, address search and routes</td><td data-label="What it gets">What you search for, and map points</td></tr>
+            <tr><th scope="row">Cloudflare (R2 storage)</th><td data-label="What for">Storing driver selfies (and older document photos) and our daily database backups</td><td data-label="What it gets">Those files</td></tr>
+            <tr><th scope="row"><mark class="ph">[[HOSTING PROVIDER]]</mark></th><td data-label="What for">Runs our servers and database</td><td data-label="What it gets">The data we store, on servers in <mark class="ph">[[SERVER LOCATION]]</mark></td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>Some of these providers may process data outside India.</li>
+          <li>If you use Share trip or contact support on WhatsApp, WhatsApp handles those messages under its own terms.</li>
+          <li>We may also share data when the law requires it, for example with the police or a court acting under a valid legal order.</li>
+        </ul>
+      </section>
+
+      <section id="retention" aria-labelledby="retention-h">
+        <h2 id="retention-h"><span class="n">8</span>How long we keep it</h2>
+        <table class="tbl">
+          <thead><tr><th scope="col">Data</th><th scope="col">How long</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Account details</th><td data-label="How long">Until you delete your account</td></tr>
+            <tr><th scope="row">Sign-in sessions</th><td data-label="How long">30 days. Deleted 7 days after they expire.</td></tr>
+            <tr><th scope="row">Notification token</th><td data-label="How long">Until you sign out, uninstall the app or delete your account</td></tr>
+            <tr><th scope="row">Saved cars</th><td data-label="How long">Until you remove the car or delete your account</td></tr>
+            <tr><th scope="row">Recent pickups</th><td data-label="How long">Only the most recent few. Deleted with your account.</td></tr>
+            <tr><th scope="row">Driver's Aadhaar details, licence, bank account, selfie and review notes</th><td data-label="How long">Until replaced or until you delete your account</td></tr>
+            <tr><th scope="row">Log of driver verification checks</th><td data-label="How long">180 days</td></tr>
+            <tr><th scope="row">Rides swiped away by a driver</th><td data-label="How long">Until you delete your account</td></tr>
+            <tr><th scope="row">Driver's live location</th><td data-label="How long">In our server's memory only. Never saved to our database or backups.</td></tr>
+            <tr><th scope="row">Ride and payment records: bookings, trip details, fares, payments, payouts and ratings</th><td data-label="How long">Kept after you delete your account, without your name, phone number or email, for <mark class="ph">[[RETENTION PERIOD FOR RIDE AND PAYMENT RECORDS]]</mark></td></tr>
+            <tr><th scope="row">Web server logs</th><td data-label="How long">A few size-limited files, overwritten as new logs come in</td></tr>
+            <tr><th scope="row">App logs</th><td data-label="How long">Rotated automatically by our server</td></tr>
+            <tr><th scope="row">Daily backups</th><td data-label="How long">14 days on our server, and <mark class="ph">[[OFF-SITE BACKUP RETENTION]]</mark> in off-site storage</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>An automatic job runs every day. It deletes expired sessions, verification check logs older than 180 days, and any photos of deleted driver accounts that are still left.</li>
+          <li>Deleted data stays in backups until those backups age out. If we ever restore a backup, we delete again every account that was deleted after that backup was made.</li>
+        </ul>
+      </section>
+
+      <section id="deletion" aria-labelledby="deletion-h">
+        <h2 id="deletion-h"><span class="n">9</span>Deleting your account</h2>
+        <p>Open the <strong>Account</strong> tab and tap <strong>Delete account</strong>. This works the same in both apps. You can also ask us by email (<a href="#contact">section 14</a>).</p>
+        <p>We can't delete an account while a driver has accepted a ride, has arrived, or the trip is under way. We also can't delete it while a completed trip is unpaid.</p>
+        <p>We don't remove the account row itself, because ride and payment records point to it. Instead, we <strong>anonymise</strong> it.</p>
+        <h3>What we remove, for everyone</h3>
+        <ul>
+          <li>Your name, phone number, email and date of birth are removed or replaced, so the account no longer identifies you.</li>
+          <li>You are signed out on every device at once.</li>
+          <li>Your notification tokens are deleted.</li>
+          <li>You can sign up again later with the same number.</li>
+        </ul>
+        <h3>Customers</h3>
+        <ul>
+          <li>Your saved cars and recent pickups are deleted.</li>
+          <li>Bookings that no driver has taken are cancelled.</li>
+        </ul>
+        <h3>Drivers</h3>
+        <ul>
+          <li>Your bank account, the rides you swiped away, and all verification details (DigiLocker, licence, selfie and review notes) are deleted.</li>
+          <li>Your photos are deleted from storage, and you are taken off duty.</li>
+          <li>The licence number and Aadhaar digits are removed from the log of verification checks. The rest of that log is deleted after 180 days.</li>
+          <li>Earnings not yet paid out are still owed to you. Contact us so we can pay them.</li>
+        </ul>
+        <h3>What we keep</h3>
+        <ul>
+          <li>Records of rides and payments: bookings, trip details (such as pickup and stop addresses, and the car), fares, payments, payouts and ratings. We keep them for accounting, tax and legal reasons, and to deal with disputes. They are no longer linked to your name, phone number or email.</li>
+          <li>If our team rejected a driver's verification, we keep the fingerprint of that driver's verified Aadhaar details, so the same identity can't come back on a new account.</li>
+        </ul>
+      </section>
+
+      <section id="rights" aria-labelledby="rights-h">
+        <h2 id="rights-h"><span class="n">10</span>Your rights and choices</h2>
+        <p>You can do the following. These follow the rights in India's Digital Personal Data Protection Act, 2023.</p>
+        <ul>
+          <li><strong>Access</strong> your data: ask us for a summary of the personal data we hold about you, how we use it, and who we've shared it with.</li>
+          <li><strong>Correct</strong> it: drivers can update their verification details in the app. For anything else, contact us.</li>
+          <li><strong>Erase</strong> it: delete your account in the app, or ask us (see <a href="#deletion">section 9</a> for what we must keep).</li>
+          <li><strong>Withdraw consent</strong>: delete your account. Withdrawing doesn't affect what we did before.</li>
+          <li><strong>Nominate</strong> someone to use these rights for you if you die or can't act yourself.</li>
+          <li><strong>Complain</strong>: contact our Grievance Officer. If you're not satisfied with our answer, you can complain to the Data Protection Board of India.</li>
+        </ul>
+        <p>To use a right, email us from, or tell us, the mobile number on your account. We may need to confirm it's you before we act. We aim to reply within <mark class="ph">[[GRIEVANCE RESPONSE TIME]]</mark>.</p>
+        <p>You can also turn off location or notifications in your phone's settings. Features that need them won't work, and drivers can't take rides without location.</p>
+      </section>
+
+      <section id="security" aria-labelledby="security-h">
+        <h2 id="security-h"><span class="n">11</span>How we protect it</h2>
+        <ul>
+          <li>The apps talk to our servers over encrypted connections (HTTPS).</li>
+          <li>You sign in with a one-time code. We keep only a fingerprint of your sign-in token, not the token itself.</li>
+          <li>Bank account numbers are stored encrypted. We never store a full Aadhaar number.</li>
+          <li>Drivers' photos are kept in private storage. Only the driver and our reviewers can open them. A customer sees only a small copy of their own driver's selfie.</li>
+          <li>Only authorised people can use our admin tools.</li>
+          <li>Our app logs avoid names and phone numbers.</li>
+          <li>We back up our database every day.</li>
+        </ul>
+        <p>No system is perfectly secure. If a breach affects your data, we will tell you and the authorities as the law requires.</p>
+      </section>
+
+      <section id="children" aria-labelledby="children-h">
+        <h2 id="children-h"><span class="n">12</span>Children</h2>
+        <ul>
+          <li>MOJUD is only for people aged 18 or older. We check a customer's age at sign-up, and a driver's age during verification.</li>
+          <li>We don't knowingly collect data from children. If you think a child has an account, contact us and we'll delete it.</li>
+        </ul>
+      </section>
+
+      <section id="changes" aria-labelledby="changes-h">
+        <h2 id="changes-h"><span class="n">13</span>Changes to this policy</h2>
+        <ul>
+          <li>We may update this policy. The version and date at the top of this page will change when we do.</li>
+          <li>If a change is significant, we'll tell you in the app before it applies, and ask for your consent again where the law requires it.</li>
+        </ul>
+      </section>
+
+      <section id="contact" aria-labelledby="contact-h">
+        <h2 id="contact-h"><span class="n">14</span>Contact and grievances</h2>
+        <div class="contact">
+          <p><strong>MOJUD</strong>, <mark class="ph">[[REGISTERED ENTITY NAME AND ADDRESS]]</mark></p>
+          <p>Email: <mark class="ph">[[CONTACT EMAIL]]</mark></p>
+          <p>Grievance Officer: <mark class="ph">[[GRIEVANCE OFFICER NAME]]</mark>, at the same email</p>
+        </div>
+      </section>
+    </article>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-row">
+      <a class="brand" href="/">
+        <svg width="22" height="22" viewBox="0 0 144 144" aria-hidden="true"><g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none"><line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/><line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/><line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/></g><circle cx="72" cy="72" r="9" fill="#CE9A3C"/></svg>
+        MOJUD
+      </a>
+      <ul>
+        <li><a href="/terms/">Terms of Service</a></li>
+        <li><a href="/privacy/" aria-current="page">Privacy Policy</a></li>
+        <li><a href="/">Get the apps</a></li>
+      </ul>
+    </div>
+    <div class="foot-base">© 2026 MOJUD · A driver for your own car, in Delhi NCR.</div>
+  </div>
+</footer>
+</body>
+</html>
