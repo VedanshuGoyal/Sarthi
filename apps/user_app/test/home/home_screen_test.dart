@@ -60,6 +60,10 @@ Future<void> _bookRoundTrip(
       if (request.method != 'POST') {
         return http.Response(jsonEncode({'bookings': bookings}), 200);
       }
+      // Opening a due ride re-checks its payment; that's not a booking.
+      if (request.url.path.endsWith('/payment/sync')) {
+        return http.Response(jsonEncode(bookings.first), 200);
+      }
       posts.add(request);
       return answer(posts.length);
     }),
