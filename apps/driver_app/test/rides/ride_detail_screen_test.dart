@@ -144,6 +144,145 @@ void main() {
     check(find.text('Complete trip').evaluate()).isEmpty();
   });
 
+  testWidgets('a ride the customer cancelled at the pickup shows the fee '
+      'and its payment, not as the fare\'s', (tester) async {
+    final cancelledRide = ride(
+      id: 'r',
+      status: 'cancelled',
+      cancelledAt: '2026-10-25T08:00:00+05:30',
+      cancelledBy: 'customer',
+      cancelReason: 'Plans changed',
+      cancellationFeePaise: 5000,
+      paymentStatus: 'paid',
+      sharePaise: 4350,
+    );
+    repo.mine = [cancelledRide];
+
+    await pump(tester, cancelledRide);
+
+    check(
+      find.text('Customer cancelled at the pickup').evaluate(),
+    ).isNotEmpty();
+    check(find.text('Reason: Plans changed').evaluate()).isNotEmpty();
+    check(find.text('₹50 cancellation fee').evaluate()).isNotEmpty();
+    check(
+      find.text('Paid · your share ₹44 after commission').evaluate(),
+    ).isNotEmpty();
+    // The booked fare isn't what was paid.
+    check(find.text('trip fare').evaluate()).isNotEmpty();
+    check(find.text('trip fare · paid').evaluate()).isEmpty();
+    check(find.text('Rate your customer').evaluate()).isEmpty();
+  });
+
+  for (final (status, says) in [
+    ('due', 'Awaiting payment'),
+    ('paid_out', 'Paid out'),
+  ]) {
+    testWidgets('a cancellation fee that is $status says "$says"', (
+      tester,
+    ) async {
+      final cancelledRide = ride(
+        id: 'r',
+        status: 'cancelled',
+        cancelledBy: 'customer',
+        cancellationFeePaise: 5000,
+        paymentStatus: status,
+      );
+      repo.mine = [cancelledRide];
+      await pump(tester, cancelledRide);
+
+      check(find.text('₹50 cancellation fee').evaluate()).isNotEmpty();
+      check(find.text(says).evaluate()).isNotEmpty();
+    });
+  }
+
+  testWidgets('a trip the customer ended early shows the charge for the '
+      'time used against the booked fare', (tester) async {
+    final ended = ride(
+      id: 'r',
+      status: 'completed',
+      farePaise: 20000,
+      bookedFarePaise: 34000,
+      paymentStatus: 'due',
+    );
+    repo.mine = [ended];
+
+    await pump(tester, ended);
+
+    check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+    check(
+      find.text('Charged ₹200 for the time used (booked ₹340)').evaluate(),
+    ).isNotEmpty();
+    check(find.text('₹200').evaluate()).isNotEmpty();
+    check(find.text('trip fare · awaiting payment').evaluate()).isNotEmpty();
+  });
+
+  group('a trip the customer ends while its screen is open', () {
+    final onTrip = ride(id: 'r', status: 'in_progress');
+    final ended = ride(
+      id: 'r',
+      status: 'completed',
+      farePaise: 20000,
+      bookedFarePaise: 34000,
+      paymentStatus: 'due',
+    );
+
+    /// What the `ride_ended_early` push (or coming back to the app) does:
+    /// re-read the rides.
+    Future<void> reload(WidgetTester tester) async {
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(RideDetailScreen)),
+      );
+      repo.mine = [ended];
+      await container.read(myRidesViewModelProvider).load();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('turns completed on the next reload, without the driver '
+        'tapping Complete', (tester) async {
+      repo.mine = [onTrip];
+      await pump(tester, onTrip);
+      check(find.text('Complete trip').evaluate()).isNotEmpty();
+
+      await reload(tester);
+
+      check(find.text('Complete trip').evaluate()).isEmpty();
+      check(find.text('Completed').evaluate()).isNotEmpty(); // status chip
+      check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+      check(find.text('Rate your customer').evaluate()).isNotEmpty();
+      check(find.byType(SnackBar).evaluate()).isEmpty();
+      check(repo.acted).isEmpty();
+      check(tester.takeException()).isNull();
+    });
+
+    testWidgets('a Complete confirmed after it ended sends nothing and says '
+        'what the customer pays', (tester) async {
+      repo.mine = [onTrip];
+      await pump(tester, onTrip);
+
+      await tester.tap(find.text('Complete trip'));
+      await tester.pumpAndSettle();
+      check(find.text('Complete the trip?').evaluate()).isNotEmpty();
+
+      // The customer ends it while the dialog is open.
+      await reload(tester);
+      await tester.tap(find.widgetWithText(TextButton, 'Complete'));
+      await tester.pumpAndSettle();
+
+      check(repo.acted).isEmpty();
+      check(
+        find
+            .text(
+              'The customer ended the trip early. They can now pay ₹200 by '
+              'UPI in their app.',
+            )
+            .evaluate(),
+      ).isNotEmpty();
+      check(find.text('Complete trip').evaluate()).isEmpty();
+      check(find.text('Customer ended the trip early').evaluate()).isNotEmpty();
+    });
+  });
+
   testWidgets(
     'a completed ride with no rating shows the rating form, and submitting '
     'it shows the given stars',
