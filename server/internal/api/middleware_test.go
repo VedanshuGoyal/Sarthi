@@ -18,24 +18,53 @@ func okHandler() http.Handler {
 }
 
 func TestLimitBodiesCapsJSONButNotUploads(t *testing.T) {
-	read := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := io.ReadAll(r.Body); err != nil {
-			w.WriteHeader(http.StatusRequestEntityTooLarge)
+	// Like every real handler: a body that won't decode is a 400. The cap
+	// must still come back as 413, so it can't be left to the handler.
+	decode := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var v map[string]any
+		if err := decodeJSON(r, &v); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	h := limitBodies(read, isUpload)
-	big := strings.Repeat("x", maxJSONBody+1)
+	h := limitBodies(decode, isUpload)
+	big := `{"pad":"` + strings.Repeat("x", maxJSONBody) + `"}`
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/me/bookings", strings.NewReader(big)))
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized JSON body: got %d, want 413", rec.Code)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "body_too_large") {
+		t.Fatalf("oversized JSON body: got %d %s, want 413 body_too_large", rec.Code, rec.Body)
 	}
 
+	// Chunked: no Content-Length to refuse up front.
+	chunked := httptest.NewRequest(http.MethodPost, "/me/bookings", io.MultiReader(strings.NewReader(big)))
+	chunked.ContentLength = -1
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/driver/kyc/documents/selfie", strings.NewReader(big)))
+	h.ServeHTTP(rec, chunked)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized chunked JSON body: got %d, want 413", rec.Code)
+	}
+
+	// A chunked body under the cap reaches the handler whole.
+	small := httptest.NewRequest(http.MethodPost, "/me/bookings", io.MultiReader(strings.NewReader(`{"ok":true}`)))
+	small.ContentLength = -1
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, small)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("small chunked JSON body: got %d %s, want 200", rec.Code, rec.Body)
+	}
+
+	read := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.ReadAll(r.Body); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	rec = httptest.NewRecorder()
+	limitBodies(read, isUpload).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/driver/kyc/documents/selfie", strings.NewReader(big)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("upload route must keep its own limit: got %d", rec.Code)
 	}
