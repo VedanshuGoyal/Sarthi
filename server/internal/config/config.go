@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -86,6 +87,9 @@ type Config struct {
 	KYCAutoClear bool
 }
 
+// supportPhoneRe is a WhatsApp-ready number: country code and number, digits only.
+var supportPhoneRe = regexp.MustCompile(`^[1-9][0-9]{9,14}$`)
+
 // DefaultAppDownloadURL is where the APKs are published.
 const DefaultAppDownloadURL = "https://apps.mojud.life"
 
@@ -94,6 +98,10 @@ const DefaultAppDownloadURL = "https://apps.mojud.life"
 type AppsConfig struct {
 	// DownloadURL (APP_DOWNLOAD_URL) is the page the update screen opens.
 	DownloadURL string
+	// SupportPhone (SUPPORT_PHONE) is the ops WhatsApp number shown as
+	// "Contact support", digits with country code (e.g. 91XXXXXXXXXX). Kept
+	// out of the repo; empty hides the button.
+	SupportPhone string
 	// User is the customer app: MIN_BUILD_USER_APP, LATEST_BUILD_USER_APP.
 	User AppBuilds
 	// Driver is the driver app: MIN_BUILD_DRIVER_APP, LATEST_BUILD_DRIVER_APP.
@@ -333,7 +341,11 @@ func loadPhonePe() (PhonePeConfig, error) {
 // fails the boot rather than silently turning the gate off.
 func loadApps() (AppsConfig, error) {
 	c := AppsConfig{
-		DownloadURL: cmp.Or(strings.TrimSpace(os.Getenv("APP_DOWNLOAD_URL")), DefaultAppDownloadURL),
+		DownloadURL:  cmp.Or(strings.TrimSpace(os.Getenv("APP_DOWNLOAD_URL")), DefaultAppDownloadURL),
+		SupportPhone: strings.TrimPrefix(strings.TrimSpace(os.Getenv("SUPPORT_PHONE")), "+"),
+	}
+	if c.SupportPhone != "" && !supportPhoneRe.MatchString(c.SupportPhone) {
+		return AppsConfig{}, fmt.Errorf("SUPPORT_PHONE must be digits with country code, e.g. 91XXXXXXXXXX")
 	}
 	if u, err := url.Parse(c.DownloadURL); err != nil || u.Host == "" ||
 		(u.Scheme != "https" && u.Scheme != "http") {

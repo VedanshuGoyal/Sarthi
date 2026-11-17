@@ -42,8 +42,11 @@ type AppBuilds struct {
 type AppPolicy struct {
 	// DownloadURL is where the current APKs are published.
 	DownloadURL string
-	UserApp     AppBuilds
-	DriverApp   AppBuilds
+	// SupportPhone is the ops WhatsApp number the apps' "Contact support"
+	// opens (digits with country code). Empty hides that button.
+	SupportPhone string
+	UserApp      AppBuilds
+	DriverApp    AppBuilds
 }
 
 func (p AppPolicy) builds(app string) AppBuilds {
@@ -190,7 +193,8 @@ type appBuildsJSON struct {
 // appConfigResponse is GET /app/config, keyed by the X-App values. Fields
 // are only ever added.
 type appConfigResponse struct {
-	Apps struct {
+	SupportPhone string `json:"supportPhone,omitempty"`
+	Apps         struct {
 		UserApp   appBuildsJSON `json:"user_app"`
 		DriverApp appBuildsJSON `json:"driver_app"`
 	} `json:"apps"`
@@ -208,6 +212,7 @@ func appConfig(policy AppPolicy) http.HandlerFunc {
 		}
 	}
 	var body appConfigResponse
+	body.SupportPhone = policy.SupportPhone
 	body.Apps.UserApp = entry(policy.UserApp)
 	body.Apps.DriverApp = entry(policy.DriverApp)
 	return func(w http.ResponseWriter, _ *http.Request) {

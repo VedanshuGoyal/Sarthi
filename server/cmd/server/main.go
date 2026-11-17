@@ -351,9 +351,10 @@ func run() error {
 // appPolicy is the client compatibility contract the router enforces.
 func appPolicy(c config.AppsConfig) api.AppPolicy {
 	return api.AppPolicy{
-		DownloadURL: c.DownloadURL,
-		UserApp:     api.AppBuilds{MinBuild: c.User.MinBuild, LatestBuild: c.User.LatestBuild},
-		DriverApp:   api.AppBuilds{MinBuild: c.Driver.MinBuild, LatestBuild: c.Driver.LatestBuild},
+		DownloadURL:  c.DownloadURL,
+		SupportPhone: c.SupportPhone,
+		UserApp:      api.AppBuilds{MinBuild: c.User.MinBuild, LatestBuild: c.User.LatestBuild},
+		DriverApp:    api.AppBuilds{MinBuild: c.Driver.MinBuild, LatestBuild: c.Driver.LatestBuild},
 	}
 }
 

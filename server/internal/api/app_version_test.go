@@ -179,3 +179,19 @@ func TestLegacyCounterTalliesWithoutALinePerRequest(t *testing.T) {
 		t.Fatalf("after the report: %d user, %d driver; want a fresh window", u, d)
 	}
 }
+
+func TestAppConfigCarriesTheSupportPhone(t *testing.T) {
+	for _, phone := range []string{"", "919876543210"} {
+		h := appConfig(AppPolicy{DownloadURL: "https://apps.mojud.life", SupportPhone: phone})
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/app/config", nil))
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		got, present := body["supportPhone"]
+		if (phone == "") == present || (present && got != phone) {
+			t.Errorf("phone %q: got %v (present %v)", phone, got, present)
+		}
+	}
+}
