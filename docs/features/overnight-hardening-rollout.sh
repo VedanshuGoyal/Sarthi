@@ -135,6 +135,9 @@ echo "==> required secrets"
 for v in FAST2SMS_API_KEY FAST2SMS_OTP_ID ADMIN_TOKEN; do
   grep -q "^$v=." /etc/sarthi/sarthi.env || { echo "missing $v in /etc/sarthi/sarthi.env" >&2; exit 1; }
 done
+for v in PHONEPE_WEBHOOK_USERNAME PHONEPE_WEBHOOK_PASSWORD PHONEPE_ENV SUPPORT_PHONE LATEST_BUILD_USER_APP LATEST_BUILD_DRIVER_APP; do
+  grep -q "^$v=." /etc/sarthi/sarthi.env || echo "    note: $v not set (see docs/features/overnight-hardening.md)"
+done
 
 if ! grep -q '^DOCUMENT_ENCRYPTION_KEY=.' /etc/sarthi/sarthi.env; then
   echo "==> generating DOCUMENT_ENCRYPTION_KEY + DOCUMENT_HASH_PEPPER (prod used the dev keys)"
