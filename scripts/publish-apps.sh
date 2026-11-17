@@ -39,6 +39,10 @@ cp "$USER_APK_SRC" "$DIST/$USER_APK"
 cp "$DRIVER_APK_SRC" "$DIST/$DRIVER_APK"
 cp "$REPO_ROOT/apps/user_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-icon.png"
 cp "$REPO_ROOT/apps/driver_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-driver-icon.png"
+mkdir -p "$DIST/terms" "$DIST/privacy"
+cp "$SRC/legal/terms.html" "$DIST/terms/index.html"
+cp "$SRC/legal/privacy.html" "$DIST/privacy/index.html"
+grep -q '\[\[' "$SRC"/legal/*.html && echo "⚠️  Legal pages still have [[placeholders]]: fill them before publishing." >&2
 
 QR_SVG="$(qrencode -t SVG -m 1 --foreground=0B2239 -o - "$PAGE_URL" | sed '1{/^<?xml/d}')"
 
