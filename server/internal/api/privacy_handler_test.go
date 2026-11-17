@@ -56,7 +56,7 @@ func newPrivacyRig(t *testing.T, adminToken string) *privacyRig {
 		t.Fatal(err)
 	}
 	e := &fakeEraser{}
-	h := NewRouter(nil, users, nil, nil, nil, nil, drivers, nil, nil, nil, nil, nil, nil, nil, nil, adminToken, nil, nil, e)
+	h := NewRouter(nil, users, nil, nil, nil, nil, drivers, nil, nil, nil, nil, nil, nil, nil, nil, adminToken, nil, nil, e, AppPolicy{})
 	return &privacyRig{h: h, eraser: e, customerToken: cs.Token, driverToken: ds.Token}
 }
 

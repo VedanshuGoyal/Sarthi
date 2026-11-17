@@ -217,7 +217,7 @@ func withCORS(next http.Handler, allowed []string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App, X-Build")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}
 		if r.Method == http.MethodOptions {
@@ -258,6 +258,7 @@ func (s *statusRecorder) WriteHeader(code int) {
 // logRequests writes one access-log line per request with its status, and
 // tags the response with an X-Request-ID that appears in the log, so a user's
 // report can be matched to the server's view. 5xx lines log at error level.
+// Requests from an app that names its build (X-App/X-Build) carry it too.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -269,13 +270,17 @@ func logRequests(next http.Handler) http.Handler {
 		if rec.status >= 500 {
 			level = slog.LevelError
 		}
-		slog.Log(r.Context(), level, "request",
+		attrs := []any{
 			"id", id,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
 			"duration", time.Since(start).String(),
-		)
+		}
+		if c, ok := identifyClient(r); ok {
+			attrs = append(attrs, "app", c.app, "build", c.build)
+		}
+		slog.Log(r.Context(), level, "request", attrs...)
 	})
 }
 

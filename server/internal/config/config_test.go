@@ -101,3 +101,59 @@ func TestLoadFailsClosedWithoutDevFlag(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadApps(t *testing.T) {
+	envs := []string{"APP_DOWNLOAD_URL", "MIN_BUILD_USER_APP", "LATEST_BUILD_USER_APP",
+		"MIN_BUILD_DRIVER_APP", "LATEST_BUILD_DRIVER_APP"}
+	set := func(t *testing.T, kv map[string]string) {
+		for _, k := range envs {
+			t.Setenv(k, kv[k])
+		}
+	}
+
+	t.Run("defaults observe only", func(t *testing.T) {
+		set(t, nil)
+		got, err := loadApps()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := AppsConfig{DownloadURL: DefaultAppDownloadURL}
+		if got != want {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+	})
+	t.Run("reads every build", func(t *testing.T) {
+		set(t, map[string]string{
+			"APP_DOWNLOAD_URL":        "https://example.test/apps",
+			"MIN_BUILD_USER_APP":      "8",
+			"LATEST_BUILD_USER_APP":   " 9 ",
+			"MIN_BUILD_DRIVER_APP":    "7",
+			"LATEST_BUILD_DRIVER_APP": "7",
+		})
+		got, err := loadApps()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := AppsConfig{
+			DownloadURL: "https://example.test/apps",
+			User:        AppBuilds{MinBuild: 8, LatestBuild: 9},
+			Driver:      AppBuilds{MinBuild: 7, LatestBuild: 7},
+		}
+		if got != want {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+	})
+	for name, kv := range map[string]map[string]string{
+		"a version, not a build": {"MIN_BUILD_USER_APP": "1.5.1"},
+		"a negative build":       {"LATEST_BUILD_DRIVER_APP": "-1"},
+		"a download host only":   {"APP_DOWNLOAD_URL": "apps.mojud.life"},
+		"a non-web download URL": {"APP_DOWNLOAD_URL": "ftp://apps.mojud.life"},
+	} {
+		t.Run(name+" fails the boot", func(t *testing.T) {
+			set(t, kv)
+			if _, err := loadApps(); err == nil {
+				t.Fatal("want an error")
+			}
+		})
+	}
+}

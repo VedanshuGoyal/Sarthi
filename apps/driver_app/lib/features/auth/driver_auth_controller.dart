@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../../core/config/app_build.dart';
 import '../../core/services/app_http_client.dart';
+import '../update/update_providers.dart';
 import 'data/driver_session_storage.dart';
 import 'domain/driver_auth_session.dart';
 
@@ -60,16 +62,19 @@ final driverAuthControllerProvider =
 /// tests with a mock.
 final httpClientProvider = Provider<http.Client>((ref) => http.Client());
 
-/// The client for every call to the MOJUD backend: time-limited, and a 401
-/// to the current session signs the driver out (it expired or was revoked).
-/// A 401 for an older session's token — a request still in flight across a
-/// sign-out — is ignored.
+/// The client for every call to the MOJUD backend: time-limited, says which
+/// app and build is calling ([AppBuild.headers]), and a 401 to the current
+/// session signs the driver out (it expired or was revoked). A 401 for an
+/// older session's token — a request still in flight across a sign-out — is
+/// ignored. A 426 `update_required` closes the update gate.
 final backendClientProvider = Provider<http.Client>((ref) {
   return AppHttpClient(
     inner: ref.watch(httpClientProvider),
+    headers: AppBuild.headers,
     onSessionRejected: (token) {
       final auth = ref.read(driverAuthControllerProvider.notifier);
       if (auth.token == token) auth.signOut();
     },
+    onUpdateRequired: (url) => ref.read(updateGateProvider).require(url),
   );
 });

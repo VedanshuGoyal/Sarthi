@@ -129,7 +129,13 @@ class RideDetailsViewModel extends ChangeNotifier {
        _location = initialLocation,
        _locationChecked = initialLocation != null {
     _booking = _bookings.byId(bookingId);
+    _confirming = _bookings.isConfirmingPayment(bookingId);
     _bookings.addListener(_onBookingsChanged);
+    // Opening a ride that's due: it may have been paid while the app was
+    // away (Android can kill it behind the UPI app before it hears back).
+    if ((_booking?.canPay ?? false) && _checkout != null && !_confirming) {
+      _openCheck = _syncPayment(bookingId, attempts: 1);
+    }
   }
 
   final BookingRepository _repository;
@@ -172,11 +178,18 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   void _onBookingsChanged() {
     final latest = _bookings.byId(bookingId);
-    if (latest == null || identical(latest, _booking)) return;
+    final confirming = _bookings.isConfirmingPayment(bookingId);
+    final confirmingChanged = confirming != _confirming;
+    _confirming = confirming;
+    if (latest == null || identical(latest, _booking)) {
+      if (confirmingChanged) _notify();
+      return;
+    }
     final statusChanged = latest.status != _booking?.status;
     _booking = latest;
     // A new stage of the ride may be trackable even if the last wasn't.
     if (statusChanged) _notTracking = false;
+    if (latest.paymentStatus == RidePaymentStatus.paid) _payError = null;
     _syncPolling();
     _notify();
   }
@@ -420,26 +433,48 @@ class RideDetailsViewModel extends ChangeNotifier {
   bool _isPaying = false;
   String? _payError;
 
+  /// Whether the list is still confirming a payment the UPI app said went
+  /// through (see [MyBookingsViewModel.confirmPayment]).
+  bool _confirming = false;
+
+  /// The check made on opening a due ride; [pay] waits for it.
+  Future<MyBooking?>? _openCheck;
+
+  static const String _stillConfirming =
+      "We're still confirming your payment with the bank. This ride will "
+      'show as paid in a minute or two.';
+
   bool get isPaying => _isPaying;
 
-  /// Why the last payment didn't complete, safe to show.
-  String? get payError => _payError;
+  /// Why the last payment didn't complete, safe to show — or, while a
+  /// payment is being confirmed, that it is.
+  String? get payError => _payError ?? (_confirming ? _stillConfirming : null);
 
-  /// Whether the pay button should work: the ride is due and the app can
-  /// open the payment page.
-  bool get canPay => (_booking?.canPay ?? false) && _checkout != null;
+  /// Whether the pay button should work: the ride is due, the app can open
+  /// the payment page, and no payment that went through is still being
+  /// confirmed — paying again then could take the money twice.
+  bool get canPay =>
+      (_booking?.canPay ?? false) && _checkout != null && !_confirming;
 
   /// Opens the UPI payment page for the completed ride, then has the server
   /// check with the gateway; true once the ride is paid. Whatever the page
   /// says when it closes, only the server's check counts.
   Future<bool> pay() async {
-    final b = _booking;
+    var b = _booking;
     final checkout = _checkout;
-    if (b == null || checkout == null || !b.canPay || _isPaying) return false;
+    if (b == null || checkout == null || !canPay || _isPaying) return false;
     _isPaying = true;
     _payError = null;
     _notify();
     try {
+      // The open check may have found it paid: never start a second order.
+      if (_openCheck case final check?) {
+        _openCheck = null;
+        await check;
+        if (_disposed) return false;
+        b = _booking ?? b;
+        if (!b.canPay) return b.paymentStatus == RidePaymentStatus.paid;
+      }
       final PaymentCheckout order;
       try {
         order = await _repository.startPayment(b.id);
@@ -458,10 +493,12 @@ class RideDetailsViewModel extends ChangeNotifier {
         attempts: outcome == CheckoutOutcome.success ? 5 : 1,
       );
       if (latest?.paymentStatus == RidePaymentStatus.paid) return true;
+      // The UPI app says it went through: keep checking, with Pay off.
+      if (outcome == CheckoutOutcome.success) {
+        unawaited(_bookings.confirmPayment(b.id));
+      }
       _payError = switch (outcome) {
-        CheckoutOutcome.success =>
-          "We're still confirming your payment with the bank. This ride "
-              'will show as paid in a minute or two.',
+        CheckoutOutcome.success => _stillConfirming,
         CheckoutOutcome.failure =>
           "The payment didn't go through. Please try again.",
         CheckoutOutcome.interrupted => 'Payment cancelled.',

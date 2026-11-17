@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/services/push_service.dart';
+import '../../account/sign_out.dart';
 import '../../account/view/delete_account_button.dart';
 import '../../notifications/notification_providers.dart';
 import '../document_providers.dart';
@@ -96,6 +97,33 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
     }
   }
 
+  /// Lets a driver who can't get past this screen — a wrong number, a
+  /// revoked session — sign out; Log out otherwise lives on Home.
+  Future<void> _logOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'You can sign in again with your phone number. The steps you have '
+          'finished stay saved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await signOutDriver(ref);
+  }
+
   void _open(DocumentStep step) {
     final screen = switch (step) {
       DocumentStep.vehicleType => const VehicleTypeStep(),
@@ -115,6 +143,23 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
 
     if (vm.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    // Never heard from the backend: there is nothing to show but a way on.
+    if (vm.loadFailed) {
+      return SarthiFormScaffold(
+        title: "Couldn't load your registration",
+        subtitle: vm.error,
+        fields: const [],
+        footer: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SarthiPrimaryButton(label: 'Try again', onPressed: _reload),
+            const SizedBox(height: DeepSignalTokens.s8),
+            TextButton(onPressed: _logOut, child: const Text('Log out')),
+          ],
+        ),
+      );
     }
 
     final status = vm.kyc.status;
@@ -177,8 +222,17 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
           const SizedBox(height: DeepSignalTokens.s14),
           Text(vm.error!, style: t.body(size: 13, color: Colors.red)),
         ],
-        // Verified drivers have it on the Account tab.
-        if (status != KycStatus.verified) ...[
+        // Shown where this screen is the gate. A verified driver reaches it
+        // from Account, which has its own Log out and Delete account.
+        if (!vm.isVerified) ...[
+          const SizedBox(height: DeepSignalTokens.s14),
+          Center(
+            child: TextButton.icon(
+              onPressed: _logOut,
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Log out'),
+            ),
+          ),
           const SizedBox(height: DeepSignalTokens.s22),
           const DeleteAccountButton(),
         ],

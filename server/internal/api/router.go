@@ -32,6 +32,7 @@ func NewRouter(
 	corsOrigins []string,
 	ready func(context.Context) error,
 	erasure AccountEraser,
+	apps AppPolicy,
 ) http.Handler {
 	h := NewAuthHandler(auth, sessions)
 	rp := NewRecentPickupHandler(recents)
@@ -63,6 +64,10 @@ func NewRouter(
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+
+	// The client compatibility contract (app_version.go): each app reads its
+	// minimum and latest build, and where to download it, at startup.
+	mux.HandleFunc("GET /app/config", appConfig(apps))
 
 	// Public onboarding endpoints.
 	mux.HandleFunc("POST /auth/otp", h.RequestOTP)
@@ -176,13 +181,15 @@ func NewRouter(
 	mux.HandleFunc("POST /admin/accounts/{kind}/{id}/erase", requireAdmin(adminToken, pv.AdminErase))
 
 	// Outermost first: CORS answers preflights, every request is logged with
-	// its status, admin callers are audited and throttled, public login routes
-	// are rate-limited, and bodies are size-capped before any handler reads.
+	// its status, app builds below the minimum are told to update, admin
+	// callers are audited and throttled, public login routes are
+	// rate-limited, and bodies are size-capped before any handler reads.
 	var handler http.Handler = mux
 	handler = withDeadline(handler)
 	handler = limitBodies(handler, isUpload)
 	handler = rateLimit(handler, authRateLimits())
 	handler = guardAdmin(handler, newWindowLimiter(10, 15*time.Minute))
+	handler = requireMinBuild(handler, apps)
 	handler = logRequests(handler)
 	handler = securityHeaders(handler)
 	return withCORS(handler, corsOrigins)

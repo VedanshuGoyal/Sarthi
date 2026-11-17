@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import 'core/config/api_config.dart';
 import 'core/location_providers.dart';
 import 'features/auth/driver_auth_controller.dart';
 import 'features/auth/domain/driver.dart';
@@ -10,6 +11,7 @@ import 'features/documents/document_providers.dart';
 import 'features/documents/view/document_view_screen.dart';
 import 'features/home/view/driver_home_shell.dart';
 import 'features/home/view/start_driving_screen.dart';
+import 'features/update/view/update_gate.dart';
 
 /// Entry point for the Sarthi driver app.
 ///
@@ -19,6 +21,8 @@ import 'features/home/view/start_driving_screen.dart';
 /// driver app shares the customer app's light-only Skyline look — same
 /// [SkylineTheme] from `sarthi_shared` — so both feel like one product.
 Future<void> main() async {
+  // A release build without a server address stops here, not at loopback.
+  ApiConfig.ensureConfigured();
   await MCPToolkitBinding.instance.bootstrapFlutter(
     runApp: () => runApp(const ProviderScope(child: SarthiDriverApp())),
   );
@@ -32,6 +36,9 @@ class SarthiDriverApp extends StatelessWidget {
     return MaterialApp(
       title: 'MOJUD Driver',
       theme: SkylineTheme.light(),
+      // Above the navigator, so a build the backend no longer serves is
+      // stopped whichever screen is open.
+      builder: (context, child) => UpdateGate(child: child!),
       home: const _AppRoot(),
     );
   }
@@ -73,6 +80,8 @@ class _AppRoot extends ConsumerWidget {
 /// a reinstall and can't be bypassed from the device. It opens only at
 /// [KycStatus.verified] — the backend's checks passed, or a reviewer cleared
 /// the driver — which is also the only status the server sends rides to.
+/// Until the backend answers, the status it last gave stands in, so a
+/// verified driver who launches the app offline still reaches their rides.
 class _SignedInRoot extends ConsumerWidget {
   const _SignedInRoot({required this.driver});
 
@@ -80,9 +89,14 @@ class _SignedInRoot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final verified = ref.watch(
-      documentRegistrationViewModelProvider.select((vm) => vm.isVerified),
+    final (restoring, verified) = ref.watch(
+      documentRegistrationViewModelProvider.select(
+        (vm) => (vm.isRestoring, vm.isVerified),
+      ),
     );
+    if (restoring) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     return verified
         ? DriverHomeShell(driver: driver)
         : const DocumentViewScreen();

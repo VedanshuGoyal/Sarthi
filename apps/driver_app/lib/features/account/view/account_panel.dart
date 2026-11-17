@@ -4,12 +4,10 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../auth/domain/driver.dart';
-import '../../auth/driver_auth_controller.dart';
-import '../../auth/driver_auth_providers.dart';
 import '../../documents/document_providers.dart';
 import '../../documents/domain/driver_kyc.dart';
 import '../../documents/view/document_view_screen.dart';
-import '../../notifications/notification_providers.dart';
+import '../sign_out.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/ride_format.dart';
 import '../../rides/view/widgets/ride_widgets.dart';
@@ -60,20 +58,7 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
 
     setState(() => _loggingOut = true);
     await ref.read(dutyViewModelProvider).setOnline(false);
-    await ref
-        .read(pushRegistrationProvider)
-        .stop()
-        .timeout(const Duration(seconds: 5), onTimeout: () {});
-    final auth = ref.read(driverAuthControllerProvider.notifier);
-    final token = auth.token;
-    if (token != null) {
-      try {
-        await ref.read(driverAuthRepositoryProvider).logout(token);
-      } catch (_) {
-        // Clearing locally regardless; a failed revoke mustn't trap the driver.
-      }
-    }
-    await auth.signOut();
+    await signOutDriver(ref);
   }
 
   Future<void> _contactSupport() async {

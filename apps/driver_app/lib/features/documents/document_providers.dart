@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/driver_auth_controller.dart';
 import 'data/driver_kyc_repository.dart';
+import 'data/kyc_status_store.dart';
+import 'data/lost_capture.dart';
 import 'view_model/document_registration_view_model.dart';
 
 /// Single shared [DriverKycRepository].
@@ -18,6 +20,12 @@ final driverKycRepositoryProvider = Provider<DriverKycRepository>((ref) {
   );
 });
 
+/// Where the driver's last known KYC status is kept between launches.
+/// Overridden in tests with an in-memory fake.
+final kycStatusStoreProvider = Provider<KycStatusStore>((ref) {
+  return SecureKycStatusStore();
+});
+
 /// The Document View flow's view model.
 ///
 /// Not `autoDispose`: the driver navigates in and out of six sub-screens via
@@ -28,10 +36,13 @@ final driverKycRepositoryProvider = Provider<DriverKycRepository>((ref) {
 /// one's verified status (and show them that driver's KYC details).
 final documentRegistrationViewModelProvider =
     ChangeNotifierProvider<DocumentRegistrationViewModel>((ref) {
-      ref.watch(
+      final driverId = ref.watch(
         driverAuthControllerProvider.select((s) => s.valueOrNull?.driver.id),
       );
       return DocumentRegistrationViewModel(
         repository: ref.watch(driverKycRepositoryProvider),
+        statusStore: ref.watch(kycStatusStoreProvider),
+        driverId: driverId,
+        lostCaptures: retrieveLostCameraPhoto,
       );
     });

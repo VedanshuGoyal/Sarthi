@@ -25,10 +25,12 @@ void main() {
   setUp(() => tempDir = Directory.systemTemp.createTempSync('kyc_test'));
   tearDown(() => tempDir.deleteSync(recursive: true));
 
+  /// The bytes of every test photo.
+  const photo = [0xff, 0xd8, 0xff, 0xe0];
+
   /// A capture standing in for what `image_picker` hands back.
   String writePickedPhoto([String name = 'picked.jpg']) {
-    final file = File('${tempDir.path}/$name')
-      ..writeAsBytesSync([0xff, 0xd8, 0xff, 0xe0]);
+    final file = File('${tempDir.path}/$name')..writeAsBytesSync(photo);
     return file.path;
   }
 
@@ -135,25 +137,29 @@ void main() {
   });
 
   group('capturePhoto', () {
-    test('copies the capture somewhere durable and uploads it', () async {
-      final repository = _FakeKycRepository(
-        kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
-      );
-      final vm = viewModel(repository);
-      final picked = writePickedPhoto();
+    test(
+      'uploads a durable copy, then deletes it once the backend has it',
+      () async {
+        final repository = _FakeKycRepository(
+          kyc: const DriverKyc(uploadedKinds: {DocumentKind.selfie}),
+        );
+        final vm = viewModel(repository);
+        final picked = writePickedPhoto();
 
-      await vm.capturePhoto(DocumentKind.selfie, picked);
+        await vm.capturePhoto(DocumentKind.selfie, picked);
 
-      check(repository.uploaded).unorderedEquals([DocumentKind.selfie]);
-      check(
-        vm.data.uploadStateFor(DocumentKind.selfie),
-      ).equals(DocumentUploadState.uploaded);
-
-      // The stored path must not be the picker's, which the OS can reclaim.
-      final stored = vm.data.capturePathFor(DocumentKind.selfie);
-      check(stored).isNotNull().not((it) => it.equals(picked));
-      check(File(stored!).existsSync()).isTrue();
-    });
+        check(repository.uploaded).unorderedEquals([DocumentKind.selfie]);
+        check(
+          vm.data.uploadStateFor(DocumentKind.selfie),
+        ).equals(DocumentUploadState.uploaded);
+        // Sent from the durable copy, not the picker's, which the OS can
+        // reclaim; and that copy is gone once the backend has the image.
+        final sent = repository.uploadedPaths.single;
+        check(sent).not((it) => it.equals(picked));
+        check(File(sent).existsSync()).isFalse();
+        check(vm.data.capturePathFor(DocumentKind.selfie)).isNull();
+      },
+    );
 
     test('marks the upload failed and keeps the file for a retry', () async {
       final repository = _FakeKycRepository(
@@ -191,11 +197,35 @@ void main() {
       ).unorderedEquals([DocumentKind.aadhaar, DocumentKind.aadhaar]);
     });
 
+    // F14: the retry used to copy the stored capture onto itself, which
+    // truncates it, so every retry sent an empty file.
+    test('a retry sends the photo itself, not an emptied copy', () async {
+      final repository = _FakeKycRepository(
+        failWith: const KycException('upload failed'),
+      );
+      final vm = viewModel(repository);
+      await vm.capturePhoto(DocumentKind.aadhaar, writePickedPhoto());
+      final stored = vm.data.capturePathFor(DocumentKind.aadhaar)!;
+
+      repository.failWith = const KycException('upload failed again');
+      await vm.retryUpload(DocumentKind.aadhaar);
+      check(File(stored).readAsBytesSync()).deepEquals(photo);
+
+      repository.failWith = null;
+      await vm.retryUpload(DocumentKind.aadhaar);
+
+      check(repository.uploadedBytes).deepEquals([photo, photo, photo]);
+      check(
+        vm.data.uploadStateFor(DocumentKind.aadhaar),
+      ).equals(DocumentUploadState.uploaded);
+    });
+
     test(
       'a retake replaces the previous capture rather than piling up',
       () async {
+        // Failing uploads, so the captures stay on the phone.
         final repository = _FakeKycRepository(
-          kyc: const DriverKyc(uploadedKinds: {DocumentKind.aadhaar}),
+          failWith: const KycException('upload failed'),
         );
         final vm = viewModel(repository);
 
@@ -216,6 +246,62 @@ void main() {
         check(captures).length.equals(1);
       },
     );
+  });
+
+  group('a selfie taken while Android killed the app', () {
+    test('is uploaded on the next load, once', () async {
+      final repository = _FakeKycRepository();
+      final lost = writePickedPhoto('lost.jpg');
+      var asked = 0;
+      final vm = DocumentRegistrationViewModel(
+        repository: repository,
+        files: DocumentFileStore(directory: tempDir),
+        lostCaptures: () async {
+          asked++;
+          return lost;
+        },
+      );
+
+      await vm.load();
+      await pumpEventQueue();
+      await vm.load();
+      await pumpEventQueue();
+
+      check(asked).equals(1);
+      check(repository.uploaded).deepEquals([DocumentKind.selfie]);
+      check(repository.uploadedBytes.single).deepEquals(photo);
+    });
+
+    test('nothing lost, nothing sent', () async {
+      final repository = _FakeKycRepository();
+      final vm = DocumentRegistrationViewModel(
+        repository: repository,
+        files: DocumentFileStore(directory: tempDir),
+        lostCaptures: () async => null,
+      );
+
+      await vm.load();
+      await pumpEventQueue();
+
+      check(repository.uploaded).isEmpty();
+    });
+  });
+
+  group('DocumentFileStore', () {
+    test('persisting the stored capture again leaves it intact', () async {
+      final store = DocumentFileStore(directory: tempDir);
+      final stored = await store.persist(
+        DocumentKind.selfie,
+        writePickedPhoto(),
+      );
+
+      final again = await store.persist(DocumentKind.selfie, stored);
+
+      check(again).equals(stored);
+      check(
+        File(stored).readAsBytesSync(),
+      ).deepEquals([0xff, 0xd8, 0xff, 0xe0]);
+    });
   });
 
   group('per driver', () {
@@ -530,6 +616,12 @@ class _FakeKycRepository implements DriverKycRepository {
   /// Every kind uploaded, in order, including repeats from a retry.
   final List<DocumentKind> uploaded = [];
 
+  /// The bytes of each upload's file, read when it was sent.
+  final List<List<int>> uploadedBytes = [];
+
+  /// The file each upload was sent from.
+  final List<String> uploadedPaths = [];
+
   /// Every license number sent for checking.
   final List<String> verifiedLicenses = [];
 
@@ -545,6 +637,8 @@ class _FakeKycRepository implements DriverKycRepository {
   @override
   Future<DriverKyc> uploadDocument(DocumentKind kind, String path) async {
     uploaded.add(kind);
+    uploadedBytes.add(File(path).readAsBytesSync());
+    uploadedPaths.add(path);
     return _respond();
   }
 
