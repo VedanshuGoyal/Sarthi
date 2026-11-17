@@ -59,9 +59,20 @@ type oneBookingResponse struct {
 }
 
 // cancelRequest is the POST /me/bookings/{id}/cancel body. The reason is
-// optional; an empty or missing body cancels without one.
+// optional; an empty or missing body cancels without one. AcceptFeePaise is
+// the cancellation fee the app showed the customer (0 for none); apps from
+// before the fee send none.
 type cancelRequest struct {
-	Reason string `json:"reason"`
+	Reason         string `json:"reason"`
+	AcceptFeePaise *int64 `json:"acceptFeePaise"`
+}
+
+// cancellationFeeResponse is the 409 for a cancel that now costs more than
+// the app showed: FeePaise is what it costs.
+type cancellationFeeResponse struct {
+	Error    string `json:"error"`
+	Code     string `json:"code"`
+	FeePaise int64  `json:"feePaise"`
 }
 
 // ratingRequest is the body of a rating, from either app.
@@ -137,9 +148,31 @@ func (h *BookingHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	b, err := h.svc.Cancel(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Reason)
+	b, err := h.svc.Cancel(r.Context(), userIDFrom(r.Context()), r.PathValue("id"), req.Reason, req.AcceptFeePaise)
+	if fee, ok := errors.AsType[*service.CancellationFeeError](err); ok {
+		writeJSON(w, http.StatusConflict, cancellationFeeResponse{
+			Error: fee.Error(), Code: "cancellation_fee", FeePaise: fee.FeePaise,
+		})
+		return
+	}
 	if err != nil {
 		writeBookingError(w, err, "could not cancel the ride")
+		return
+	}
+	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})
+}
+
+// End handles POST /me/bookings/{id}/end: the customer ends their trip in
+// progress and pays for the time used. 409 cannot_end when it isn't in
+// progress.
+func (h *BookingHandler) End(w http.ResponseWriter, r *http.Request) {
+	b, err := h.svc.EndEarly(r.Context(), userIDFrom(r.Context()), r.PathValue("id"))
+	if errors.Is(err, service.ErrCannotEnd) {
+		writeErrorCode(w, http.StatusConflict, "cannot_end", err.Error(), 0)
+		return
+	}
+	if err != nil {
+		writeBookingError(w, err, "could not end the trip")
 		return
 	}
 	writeJSON(w, http.StatusOK, oneBookingResponse{Booking: b})

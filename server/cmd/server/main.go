@@ -305,13 +305,14 @@ func run() error {
 	// money+ops: the back office's booking tools and its audit trail. Assign
 	// runs the same conditional accept as a driver's own tap (driverRideStore).
 	ops := service.NewOpsService(service.OpsDeps{
-		Bookings:  bookingStore,
-		Rides:     driverRideStore,
-		Payments:  paymentStore,
-		Checkouts: payments,
-		Profiles:  driverProfiles,
-		Audit:     repository.NewAdminActionRepository(pool),
-		Alerts:    notify,
+		CommissionBP: cfg.CommissionBasisPoints,
+		Bookings:     bookingStore,
+		Rides:        driverRideStore,
+		Payments:     paymentStore,
+		Checkouts:    payments,
+		Profiles:     driverProfiles,
+		Audit:        repository.NewAdminActionRepository(pool),
+		Alerts:       notify,
 	})
 
 	// /readyz fails until the schema has this build's migrations, so

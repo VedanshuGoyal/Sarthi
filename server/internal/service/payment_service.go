@@ -16,8 +16,8 @@ import (
 // ErrPaymentsOff is returned when no payment gateway is configured.
 var ErrPaymentsOff = errors.New("payments aren't set up yet")
 
-// ErrNotPayable is returned when a customer tries to pay for a ride that
-// isn't completed, or has no fare to pay.
+// ErrNotPayable is returned when a customer tries to pay for a booking
+// that owes nothing: not completed, or cancelled free.
 var ErrNotPayable = fmt.Errorf("you can pay for a ride once it's completed: %w",
 	repository.ErrBookingStateConflict)
 
@@ -113,9 +113,10 @@ func NewPaymentService(gateway PaymentGateway, store PaymentStore, bookings Cust
 // Enabled reports whether a gateway is configured.
 func (s *PaymentService) Enabled() bool { return s.gateway != nil }
 
-// Checkout opens a UPI checkout for userID's completed booking and returns
-// what the app hands the gateway's SDK. A checkout the customer already
-// paid through is found first, so paying twice is refused with
+// Checkout opens a UPI checkout for userID's completed booking — or the fee
+// of one cancelled at the pickup — and returns what the app hands the
+// gateway's SDK. A checkout the customer already paid through is found
+// first, so paying twice is refused with
 // [ErrAlreadyPaid] rather than charged; one still open at the gateway (a
 // collect request waiting on the customer's UPI app, say) is handed out
 // again instead of opening a second payable order.
@@ -128,7 +129,7 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 		return domain.PaymentCheckout{}, err
 	}
 	b := ub.Booking
-	if b.Status != domain.RideStatusCompleted {
+	if b.PaymentStatus() == "" {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}
 	paid := b.PaidAt != nil
@@ -142,7 +143,7 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 	if paid {
 		return domain.PaymentCheckout{}, ErrAlreadyPaid
 	}
-	amount := b.FarePaise
+	amount := b.AmountDue()
 	if amount < minPaymentPaise {
 		return domain.PaymentCheckout{}, ErrNotPayable
 	}

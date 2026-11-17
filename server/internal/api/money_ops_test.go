@@ -43,7 +43,10 @@ func (s *submitStore) ListForUser(context.Context, string, int) ([]domain.UserBo
 func (s *submitStore) FindForUser(context.Context, string, string) (domain.UserBooking, error) {
 	return domain.UserBooking{}, repository.ErrBookingNotFound
 }
-func (s *submitStore) Cancel(context.Context, string, string, string, time.Time) (domain.Booking, error) {
+func (s *submitStore) Cancel(context.Context, string, string, string, time.Time, repository.PickupCancel) (domain.Booking, error) {
+	return domain.Booking{}, repository.ErrBookingStateConflict
+}
+func (s *submitStore) EndEarly(context.Context, string, string, int64, time.Time) (domain.Booking, error) {
 	return domain.Booking{}, repository.ErrBookingStateConflict
 }
 func (s *submitStore) RateDriver(context.Context, string, string, domain.RideRating) error {
@@ -150,7 +153,7 @@ func (f *apiOpsBookings) CancelByOps(_ context.Context, id, reason string, at ti
 
 type apiOpsPayments struct{ bookings *apiOpsBookings }
 
-func (f *apiOpsPayments) SettleByHand(_ context.Context, id string, mode domain.SettleMode, note string, at time.Time) (domain.Booking, error) {
+func (f *apiOpsPayments) SettleByHand(_ context.Context, id string, mode domain.SettleMode, note string, _ int64, at time.Time) (domain.Booking, error) {
 	r, ok := f.bookings.rows[id]
 	if !ok {
 		return domain.Booking{}, repository.ErrBookingNotFound

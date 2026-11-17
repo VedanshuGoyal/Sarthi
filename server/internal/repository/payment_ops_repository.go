@@ -11,39 +11,51 @@ import (
 	"github.com/sarthi/server/internal/domain"
 )
 
-// SettleByHand closes the bill of completed booking id without the gateway:
-// mode cash (the customer paid the driver) or waived (nobody pays), with
-// the operator's note. The ride is stamped paid like a gateway payment —
-// which is what lets its customer book again — but with paid_paise and
-// commission_paise zero: MOJUD received nothing, so a payout owes its
-// driver nothing for it.
+// SettleByHand closes the bill of booking id without the gateway — a
+// completed ride, or a cancellation that charged a fee — with the
+// operator's note:
 //
-// A ride with a gateway order still pending or completed is refused with
+//   - cash: the customer paid the driver directly. paid_paise and
+//     commission_paise are zero: MOJUD received nothing and owes the driver
+//     nothing.
+//   - waived: the customer pays nothing, and MOJUD pays the driver their
+//     usual share itself. paid_paise is what was owed (the amount MOJUD
+//     covers) and commission_paise its usual cut at commissionBP basis
+//     points, rounded as PaymentService.commission rounds, so the payout
+//     owes the driver the same as if the customer had paid.
+//
+// Either way the booking is stamped paid, which is what lets its customer
+// book again.
+//
+// A booking with a gateway order still pending or completed is refused with
 // [ErrGatewayOrderOpen]: the customer may have paid (or be paying) by UPI,
 // and stamping it by hand would leave that money owed to nobody. Sync the
 // booking's orders with the gateway first so only a live one blocks.
 //
 // Returns the booking, [ErrBookingNotFound], or [ErrBookingStateConflict]
-// when it isn't completed or is already paid.
+// when there is nothing to pay or it is already paid.
 func (r *PaymentRepository) SettleByHand(
-	ctx context.Context, id string, mode domain.SettleMode, note string, at time.Time,
+	ctx context.Context, id string, mode domain.SettleMode, note string, commissionBP int64, at time.Time,
 ) (domain.Booking, error) {
 	b, err := scanBooking(r.db.QueryRow(ctx, `
 		UPDATE bookings
-		SET paid_at = $2, paid_paise = 0, commission_paise = 0,
-		    paid_mode = $3, paid_note = nullif($4, '')
-		WHERE id = $1 AND status = 'completed' AND paid_at IS NULL
+		SET paid_at = $2, paid_mode = $3, paid_note = nullif($4, ''),
+		    paid_paise       = CASE WHEN $3 = 'waived' THEN `+owedPaise+` ELSE 0 END,
+		    commission_paise = CASE WHEN $3 = 'waived' THEN (`+owedPaise+` * $5 + 5000) / 10000 ELSE 0 END
+		WHERE id = $1 AND paid_at IS NULL
+		  AND (status = 'completed' OR (status = 'cancelled' AND cancellation_fee_paise IS NOT NULL))
 		  AND NOT EXISTS (SELECT 1 FROM payment_orders po
 		                  WHERE po.booking_id = bookings.id AND po.state IN ('pending', 'completed'))
 		RETURNING `+bookingColumns,
-		id, at, string(mode), note))
+		id, at, string(mode), note, commissionBP))
 	if err != nil {
 		err = bookingExplain(ctx, r.db, err, id, "settling booking")
 		if errors.Is(err, ErrBookingStateConflict) {
 			var open bool
 			if qerr := r.db.QueryRow(ctx, `
 				SELECT EXISTS (SELECT 1 FROM payment_orders po JOIN bookings b ON b.id = po.booking_id
-				               WHERE b.id = $1 AND b.status = 'completed' AND b.paid_at IS NULL
+				               WHERE b.id = $1 AND b.paid_at IS NULL
+				                 AND (b.status = 'completed' OR b.cancellation_fee_paise IS NOT NULL)
 				                 AND po.state IN ('pending', 'completed'))`, id).Scan(&open); qerr == nil && open {
 				return domain.Booking{}, ErrGatewayOrderOpen
 			}
@@ -52,6 +64,10 @@ func (r *PaymentRepository) SettleByHand(
 	}
 	return b, nil
 }
+
+// owedPaise is what a booking's customer owes: a completed ride's fare, or a
+// cancellation's fee.
+const owedPaise = `(CASE WHEN status = 'completed' THEN fare_paise ELSE cancellation_fee_paise END)`
 
 // ErrGatewayOrderOpen refuses settling a ride by hand while one of its UPI
 // checkouts is pending or completed. It matches [ErrBookingStateConflict].

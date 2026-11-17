@@ -58,7 +58,7 @@ type fakeOpsPayments struct {
 	checkoutOpen map[string]bool
 }
 
-func (f *fakeOpsPayments) SettleByHand(_ context.Context, id string, mode domain.SettleMode, note string, at time.Time) (domain.Booking, error) {
+func (f *fakeOpsPayments) SettleByHand(_ context.Context, id string, mode domain.SettleMode, note string, _ int64, at time.Time) (domain.Booking, error) {
 	r, ok := f.bookings.rows[id]
 	if !ok {
 		return domain.Booking{}, repository.ErrBookingNotFound

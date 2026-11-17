@@ -42,6 +42,7 @@ const (
 	pushTypeRideReminder   = "ride_reminder"
 	pushTypeDutyOff        = "duty_off"
 	pushTypeRideNoShow     = "ride_no_show"
+	pushTypeRideEndedEarly = "ride_ended_early"
 )
 
 const (
@@ -508,6 +509,19 @@ func scheduledOrCreated(b domain.Booking) time.Time {
 	return b.CreatedAt
 }
 
+// RideEndedEarly tells the driver of b that the customer ended the trip
+// before its booked end, and what it's charged for the time used.
+func (s *NotifyService) RideEndedEarly(ctx context.Context, b domain.Booking, plan tripPlan) {
+	if b.DriverID == "" {
+		return
+	}
+	s.background(ctx, func(ctx context.Context) {
+		body := fmt.Sprintf("The customer ended the trip. They pay %s for the time used (booked %s).",
+			formatFare(b.FarePaise, false), formatFare(b.BookedFarePaise, false))
+		s.tellDriver(ctx, b.DriverID, b.ID, pushTypeRideEndedEarly, "Trip ended by the customer", body, 24*time.Hour)
+	})
+}
+
 // RideCancelled tells the driver who had booking b that the customer
 // cancelled it, and why if they said.
 func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, plan tripPlan) {
@@ -519,6 +533,10 @@ func (s *NotifyService) RideCancelled(ctx context.Context, b domain.Booking, pla
 			formatWhen(plan.ScheduledAt), tripLabel(b.TripType, plan))
 		if b.CancelReason != "" {
 			body += "\nReason: " + b.CancelReason
+		}
+		if b.CancellationFeePaise > 0 {
+			body += fmt.Sprintf("\nThey pay a %s cancellation fee; your share comes with your payout.",
+				formatFare(b.CancellationFeePaise, false))
 		}
 		byDriver, err := s.tokens.ForDrivers(ctx, []string{b.DriverID})
 		if err != nil {

@@ -52,11 +52,12 @@ func (r *ErasureRepository) EraseUser(
 		// Lock the bookings that matter, so a driver can't accept a request
 		// between this read and the cancel below.
 		b, err := lockBlockers(ctx, tx, `
-			SELECT CASE WHEN status = 'completed' THEN 'unpaid' ELSE status END
+			SELECT CASE WHEN status IN ('completed', 'cancelled') THEN 'unpaid' ELSE status END
 			FROM bookings
 			WHERE user_id = $1
 			  AND (status IN ('requested', 'accepted', 'arrived', 'in_progress')
-			       OR (status = 'completed' AND paid_at IS NULL AND fare_paise > 0))
+			       OR (status = 'completed' AND paid_at IS NULL AND fare_paise > 0)
+			       OR (status = 'cancelled' AND paid_at IS NULL AND cancellation_fee_paise IS NOT NULL))
 			FOR UPDATE`, userID)
 		if err != nil {
 			return err
@@ -119,13 +120,14 @@ func (r *ErasureRepository) EraseDriver(
 		// account it would be paid to is deleted below.
 		b, err := lockBlockers(ctx, tx, `
 			SELECT CASE WHEN paid_at IS NOT NULL THEN 'payout'
-			            WHEN status = 'completed' THEN 'unpaid'
+			            WHEN status IN ('completed', 'cancelled') THEN 'unpaid'
 			            ELSE status END
 			FROM bookings
 			WHERE driver_id = $1
 			  AND (status IN ('accepted', 'arrived', 'in_progress')
 			       OR (status = 'completed' AND paid_at IS NULL AND fare_paise > 0)
-			       OR (paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL))
+			       OR (status = 'cancelled' AND paid_at IS NULL AND cancellation_fee_paise IS NOT NULL)
+			       OR (paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS DISTINCT FROM 'cash'))
 			FOR UPDATE`, driverID)
 		if err != nil {
 			return err

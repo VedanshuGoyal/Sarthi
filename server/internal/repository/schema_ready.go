@@ -13,14 +13,17 @@ import (
 // so it also covers what a ping would. Bump the probes when a migration
 // adds something the server can't run without.
 func SchemaReady(ctx context.Context, db DB) error {
-	var adminActions, erasedAt, erasedIndex bool
+	var adminActions, erasedAt, erasedIndex, cancellationFee bool
 	err := db.QueryRow(ctx, `
 		SELECT to_regclass('admin_actions') IS NOT NULL,
 		       EXISTS (SELECT 1 FROM pg_attribute
 		               WHERE attrelid = to_regclass('drivers')
 		                 AND attname = 'erased_at' AND NOT attisdropped),
-		       to_regclass('drivers_erased') IS NOT NULL`).
-		Scan(&adminActions, &erasedAt, &erasedIndex)
+		       to_regclass('drivers_erased') IS NOT NULL,
+		       EXISTS (SELECT 1 FROM pg_attribute
+		               WHERE attrelid = to_regclass('bookings')
+		                 AND attname = 'cancellation_fee_paise' AND NOT attisdropped)`).
+		Scan(&adminActions, &erasedAt, &erasedIndex, &cancellationFee)
 	if err != nil {
 		return fmt.Errorf("checking schema: %w", err)
 	}
@@ -33,6 +36,9 @@ func SchemaReady(ctx context.Context, db DB) error {
 	}
 	if !erasedIndex {
 		missing = append(missing, "index drivers_erased (0029)")
+	}
+	if !cancellationFee {
+		missing = append(missing, "column bookings.cancellation_fee_paise (0030)")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("schema is behind this build; apply migrations first: missing %s",

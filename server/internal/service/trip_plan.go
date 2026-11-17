@@ -219,6 +219,17 @@ func roundTripFareRupees(start time.Time, hours int, luxury bool) int {
 	return hourlyTariffRupees(hours, luxury) + nightSurchargeRupees(start, hours)
 }
 
+// chargeForTimeUsed is what a trip the customer ended early costs: the
+// hourly tariff, with the night surcharge, for the time from started to
+// ended — each started hour counting as a whole one, at least one — and
+// never more than booked, the fare as booked. One-way and multi-stop trips
+// are charged the same way: their fares are hourly estimates too.
+func chargeForTimeUsed(p tripPlan, booked int64, started, ended time.Time) int64 {
+	minutes := max(int(ended.Sub(started)/time.Minute), 0)
+	hours := min(max((minutes+59)/60, 1), maxHireHours)
+	return min(int64(roundTripFareRupees(started, hours, p.luxury()))*100, booked)
+}
+
 // nightSurchargeRupees is the customer app's nightSurchargeFor: nothing
 // unless some of the hire runs at or after 22:00 IST on the start's day;
 // then a flat fee plus a rate per night hour, a part hour counting as whole.

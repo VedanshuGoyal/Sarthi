@@ -16,7 +16,8 @@ type requestAlerts struct{ requested []string }
 func (a *requestAlerts) RideRequested(_ context.Context, b domain.Booking, _ tripPlan) {
 	a.requested = append(a.requested, b.ID)
 }
-func (a *requestAlerts) RideCancelled(context.Context, domain.Booking, tripPlan) {}
+func (a *requestAlerts) RideCancelled(context.Context, domain.Booking, tripPlan)  {}
+func (a *requestAlerts) RideEndedEarly(context.Context, domain.Booking, tripPlan) {}
 
 // A customer with a completed ride still to pay is refused before anything
 // is read or stored, with the ride to pay named.

@@ -58,7 +58,7 @@ type OpsRideStore interface {
 // OpsPaymentStore settles rides by hand and finds orders needing a person
 // (repository.PaymentRepository).
 type OpsPaymentStore interface {
-	SettleByHand(ctx context.Context, id string, mode domain.SettleMode, note string, at time.Time) (domain.Booking, error)
+	SettleByHand(ctx context.Context, id string, mode domain.SettleMode, note string, commissionBP int64, at time.Time) (domain.Booking, error)
 	PaymentAttention(ctx context.Context, pendingBefore time.Time, limit int) (domain.PaymentAttention, error)
 }
 
@@ -85,7 +85,11 @@ type OpsCheckouts interface {
 
 // OpsDeps is what [NewOpsService] wires together. Alerts nil sends no
 // pushes; Checkouts nil skips the gateway check before a settle.
+// CommissionBP is COMMISSION_PERCENT in basis points: MOJUD's cut of a
+// waived ride, whose driver it pays itself.
 type OpsDeps struct {
+	CommissionBP int64
+
 	Bookings  OpsBookingStore
 	Rides     OpsRideStore
 	Payments  OpsPaymentStore
@@ -244,10 +248,11 @@ func (s *OpsService) Cancel(ctx context.Context, op Operator, bookingID, reason 
 	return s.booking(ctx, bookingID)
 }
 
-// Settle closes the bill of completed, unpaid bookingID without the
-// gateway (see [domain.SettleMode]), with the reason the operator must
-// give. The customer can book again; the driver is owed nothing by MOJUD
-// for it.
+// Settle closes the bill of unpaid bookingID — a completed ride or a
+// cancellation fee — without the gateway (see [domain.SettleMode]), with
+// the reason the operator must give. The customer can book again. Cash: the
+// driver is owed nothing by MOJUD. Waived: MOJUD owes the driver their
+// usual share, in the next payout.
 //
 // The ride's UPI checkouts are re-checked with the gateway first, as
 // Checkout does: one the customer paid meanwhile settles the ride for real,
@@ -268,13 +273,15 @@ func (s *OpsService) Settle(ctx context.Context, op Operator, bookingID string, 
 			slog.WarnContext(ctx, "ops: settle could not re-check the ride's checkouts", "rideId", bookingID, "error", err)
 		}
 	}
-	b, err := s.d.Payments.SettleByHand(ctx, bookingID, mode, reason, s.now())
+	b, err := s.d.Payments.SettleByHand(ctx, bookingID, mode, reason, s.d.CommissionBP, s.now())
 	if err != nil {
 		return domain.AdminBooking{}, err
 	}
-	slog.InfoContext(ctx, "ops: ride settled by hand", "rideId", b.ID, "mode", mode, "farePaise", b.FarePaise, "by", op.Name)
+	slog.InfoContext(ctx, "ops: ride settled by hand", "rideId", b.ID, "mode", mode,
+		"owedPaise", b.AmountDue(), "driverSharePaise", b.PaidPaise-b.CommissionPaise, "by", op.Name)
 	s.Audit(ctx, op, domain.ActionBookingSettle, b.ID, map[string]any{
-		"mode": string(mode), "reason": reason, "farePaise": b.FarePaise, "driverId": b.DriverID,
+		"mode": string(mode), "reason": reason, "farePaise": b.FarePaise, "owedPaise": b.AmountDue(),
+		"driverSharePaise": b.PaidPaise - b.CommissionPaise, "driverId": b.DriverID,
 	})
 	return s.booking(ctx, bookingID)
 }
@@ -365,6 +372,9 @@ func toAdminBooking(row domain.AdminBookingRow, now time.Time) domain.AdminBooki
 		PaidNote:      row.PaidNote,
 		PaidPaise:     b.PaidPaise,
 		PayoutID:      b.PayoutID,
+
+		CancellationFeePaise: b.CancellationFeePaise,
+		BookedFarePaise:      b.BookedFarePaise,
 	}
 	if b.ScheduledAt != nil {
 		ab.ScheduledAt = *b.ScheduledAt

@@ -63,19 +63,34 @@ func (f *fakeBookingStore) FindForUser(_ context.Context, id, userID string) (do
 	return *ub, nil
 }
 
-func (f *fakeBookingStore) Cancel(_ context.Context, id, userID, reason string, at time.Time) (domain.Booking, error) {
+func (f *fakeBookingStore) Cancel(_ context.Context, id, userID, reason string, at time.Time, atPickup repository.PickupCancel) (domain.Booking, error) {
 	ub, err := f.find(id, userID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
 	b := &ub.Booking
-	switch b.Status {
-	case domain.RideStatusRequested, domain.RideStatusAccepted, domain.RideStatusArrived:
+	switch {
+	case b.Status == domain.RideStatusRequested, b.Status == domain.RideStatusAccepted:
+	case b.Status == domain.RideStatusArrived && atPickup.Allowed:
+		b.CancellationFeePaise = atPickup.FeePaise
 	default:
 		return domain.Booking{}, repository.ErrBookingStateConflict
 	}
 	b.Status, b.CancelledAt, b.CancelledBy, b.CancelReason, b.StartOTP =
 		domain.RideStatusCancelled, &at, domain.CancelledByCustomer, reason, ""
+	return *b, nil
+}
+
+func (f *fakeBookingStore) EndEarly(_ context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error) {
+	ub, err := f.find(id, userID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	b := &ub.Booking
+	if b.Status != domain.RideStatusInProgress {
+		return domain.Booking{}, repository.ErrBookingStateConflict
+	}
+	b.Status, b.CompletedAt, b.BookedFarePaise, b.FarePaise = domain.RideStatusCompleted, &at, b.FarePaise, farePaise
 	return *b, nil
 }
 
@@ -334,11 +349,14 @@ func TestBookingService_ListMine_expiresUntakenRequests(t *testing.T) {
 }
 
 // cancelAlerts records the bookings a BookingAlerter was told were cancelled.
-type cancelAlerts struct{ cancelled []domain.Booking }
+type cancelAlerts struct{ cancelled, ended []domain.Booking }
 
 func (c *cancelAlerts) RideRequested(context.Context, domain.Booking, tripPlan) {}
 func (c *cancelAlerts) RideCancelled(_ context.Context, b domain.Booking, _ tripPlan) {
 	c.cancelled = append(c.cancelled, b)
+}
+func (c *cancelAlerts) RideEndedEarly(_ context.Context, b domain.Booking, _ tripPlan) {
+	c.ended = append(c.ended, b)
 }
 
 // customerRide is u1's round trip from roundTripDetails, in status, with
@@ -367,7 +385,7 @@ func TestBookingService_Cancel(t *testing.T) {
 	ctx := context.Background()
 
 	// An open request: cancelled, nobody to tell.
-	got, err := svc.Cancel(ctx, "u1", "open", "  Plans changed ")
+	got, err := svc.Cancel(ctx, "u1", "open", "  Plans changed ", nil)
 	if err != nil {
 		t.Fatalf("Cancel(open): %v", err)
 	}
@@ -381,7 +399,7 @@ func TestBookingService_Cancel(t *testing.T) {
 
 	// A ride a driver took: the driver is told, and the start code is gone.
 	long := strings.Repeat("ड", 250) // over the cap, in multi-byte runes
-	got, err = svc.Cancel(ctx, "u1", "coming", long)
+	got, err = svc.Cancel(ctx, "u1", "coming", long, nil)
 	if err != nil {
 		t.Fatalf("Cancel(coming): %v", err)
 	}
@@ -396,11 +414,11 @@ func TestBookingService_Cancel(t *testing.T) {
 	}
 
 	// Underway, or someone else's: refused.
-	if _, err := svc.Cancel(ctx, "u1", "driving", ""); !errors.Is(err, ErrCannotCancel) ||
+	if _, err := svc.Cancel(ctx, "u1", "driving", "", nil); !errors.Is(err, ErrCannotCancel) ||
 		!errors.Is(err, repository.ErrBookingStateConflict) {
 		t.Errorf("Cancel(driving) err = %v, want ErrCannotCancel", err)
 	}
-	if _, err := svc.Cancel(ctx, "u2", "open", ""); !errors.Is(err, repository.ErrBookingNotFound) {
+	if _, err := svc.Cancel(ctx, "u2", "open", "", nil); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("Cancel(other user) err = %v, want ErrBookingNotFound", err)
 	}
 	if len(alerts.cancelled) != 1 {

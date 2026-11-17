@@ -10,8 +10,8 @@ const (
 	// SettledCash: the customer paid the driver directly. MOJUD received
 	// nothing, takes no commission on it, and owes the driver nothing.
 	SettledCash SettleMode = "cash"
-	// SettledWaived: nobody pays — a goodwill or disputed ride. The driver is
-	// not paid for it either.
+	// SettledWaived: the customer pays nothing — a goodwill or disputed ride.
+	// MOJUD still pays the driver their usual share (fare less commission).
 	SettledWaived SettleMode = "waived"
 )
 
@@ -106,6 +106,11 @@ type AdminBooking struct {
 	PaidNote      string            `json:"paidNote,omitempty"`
 	PaidPaise     int64             `json:"paidPaise,omitempty"`
 	PayoutID      string            `json:"payoutId,omitempty"`
+
+	// CancellationFeePaise is the fee a cancellation at the pickup charged;
+	// BookedFarePaise the booked fare of a trip the customer ended early.
+	CancellationFeePaise int64 `json:"cancellationFeePaise,omitempty"`
+	BookedFarePaise      int64 `json:"bookedFarePaise,omitempty"`
 }
 
 // AttentionOrder is a payment order someone at MOJUD has to look at.

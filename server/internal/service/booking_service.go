@@ -21,6 +21,20 @@ var ErrInvalidBooking = errors.New("booking tripType and details are required")
 var ErrCannotCancel = fmt.Errorf("this ride has already started or ended, so it can't be cancelled: %w",
 	repository.ErrBookingStateConflict)
 
+// ErrCannotEnd is returned when a customer ends a trip that isn't in
+// progress.
+var ErrCannotEnd = fmt.Errorf("this trip isn't in progress, so it can't be ended: %w",
+	repository.ErrBookingStateConflict)
+
+// CancellationFeeError refuses a cancellation that costs more than the
+// customer agreed to — the driver reached the pickup after the app showed
+// a free cancel. Nothing changed; FeePaise is what cancelling costs now.
+type CancellationFeeError struct{ FeePaise int64 }
+
+func (e *CancellationFeeError) Error() string {
+	return "Your driver has reached the pickup, so cancelling now costs " + formatFare(e.FeePaise, false) + "."
+}
+
 // ErrCannotRate is returned when a customer rates a ride that isn't
 // completed, or rates it twice.
 var ErrCannotRate = fmt.Errorf("you can rate a ride once, after it's completed: %w",
@@ -31,11 +45,12 @@ var ErrCannotRate = fmt.Errorf("you can rate a ride once, after it's completed: 
 var ErrBookingTooSoon = errors.New("pick a start time at least 45 minutes from now")
 
 // ErrPaymentDue matches a [PaymentDueError]: the customer has a completed
-// ride to pay for before they book another.
+// ride (or a cancellation fee) to pay for before they book another.
 var ErrPaymentDue = errors.New("pay for your last ride before booking another")
 
 // PaymentDueError is why a booking was refused: ride BookingID is completed
-// and still unpaid. The app takes the customer to it.
+// and still unpaid, or was cancelled at the pickup and its fee is. The app
+// takes the customer to it.
 type PaymentDueError struct{ BookingID string }
 
 func (e *PaymentDueError) Error() string { return ErrPaymentDue.Error() }
@@ -83,7 +98,8 @@ type BookingStore interface {
 	UnpaidRide(ctx context.Context, userID string, minPaise int64) (string, error)
 	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
-	Cancel(ctx context.Context, id, userID, reason string, at time.Time) (domain.Booking, error)
+	Cancel(ctx context.Context, id, userID, reason string, at time.Time, atPickup repository.PickupCancel) (domain.Booking, error)
+	EndEarly(ctx context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error)
 	RateDriver(ctx context.Context, id, userID string, rating domain.RideRating) error
 	DriverBusyElsewhere(ctx context.Context, driverID, bookingID string) (bool, error)
 }
@@ -94,6 +110,7 @@ type BookingStore interface {
 type BookingAlerter interface {
 	RideRequested(ctx context.Context, b domain.Booking, plan tripPlan)
 	RideCancelled(ctx context.Context, b domain.Booking, plan tripPlan)
+	RideEndedEarly(ctx context.Context, b domain.Booking, plan tripPlan)
 }
 
 // DriverLocator reads the positions drivers' apps share while on a ride
@@ -241,34 +258,95 @@ func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.
 	now := s.now()
 	out := []domain.CustomerBooking{}
 	for _, ub := range rows {
-		if cb, ok := toCustomerBooking(ctx, ub, now); ok {
+		if cb, ok := toCustomerBooking(ctx, ub, now, s.pickupFee()); ok {
 			out = append(out, cb)
 		}
 	}
 	return out, nil
 }
 
-// Cancel cancels userID's booking before its trip starts, with the reason
-// they picked (optional). A driver who had taken it is told, and is free to
-// take other rides; their rides list keeps it, as cancelled.
-func (s *BookingService) Cancel(ctx context.Context, userID, bookingID, reason string) (domain.CustomerBooking, error) {
+// Cancel cancels userID's booking before the trip starts. It is free until
+// the driver reaches the pickup; after that it costs
+// [domain.CancellationFeePaise], paid like a ride. acceptFeePaise is the fee
+// the app showed the customer: a cancel that would cost more is refused
+// with [*CancellationFeeError] so the app can ask again. Apps from before
+// the fee send none (nil) and cancel free.
+func (s *BookingService) Cancel(ctx context.Context, userID, bookingID, reason string, acceptFeePaise *int64) (domain.CustomerBooking, error) {
 	reason = strings.TrimSpace(reason)
 	if r := []rune(reason); len(r) > maxCancelReason {
 		reason = strings.TrimSpace(string(r[:maxCancelReason]))
 	}
-	b, err := s.store.Cancel(ctx, bookingID, userID, reason, s.now())
+	fee := s.pickupFee()
+	atPickup := repository.PickupCancel{Allowed: true}
+	if acceptFeePaise != nil {
+		atPickup = repository.PickupCancel{Allowed: *acceptFeePaise >= fee, FeePaise: fee}
+	}
+	b, err := s.store.Cancel(ctx, bookingID, userID, reason, s.now(), atPickup)
 	if errors.Is(err, repository.ErrBookingStateConflict) {
+		if !atPickup.Allowed {
+			if ub, ferr := s.store.FindForUser(ctx, bookingID, userID); ferr == nil &&
+				ub.Booking.Status == domain.RideStatusArrived {
+				return domain.CustomerBooking{}, &CancellationFeeError{FeePaise: fee}
+			}
+		}
 		return domain.CustomerBooking{}, ErrCannotCancel
 	}
 	if err != nil {
 		return domain.CustomerBooking{}, err
 	}
 	slog.InfoContext(ctx, "booking cancelled by customer",
-		"bookingId", b.ID, "userId", userID, "driverId", b.DriverID)
+		"bookingId", b.ID, "userId", userID, "driverId", b.DriverID, "feePaise", b.CancellationFeePaise)
 	if b.DriverID != "" && s.alerts != nil {
 		if plan, err := planOf(b); err == nil {
 			s.alerts.RideCancelled(ctx, b, plan)
 		}
+	}
+	return s.mine(ctx, userID, bookingID)
+}
+
+// pickupFee is what cancelling at the pickup costs: nothing while payments
+// are off, since it couldn't be paid.
+func (s *BookingService) pickupFee() int64 {
+	if s.paymentsOff {
+		return 0
+	}
+	return domain.CancellationFeePaise
+}
+
+// EndEarly ends userID's trip in progress now, on the customer's say. They
+// pay for the time used on the hourly tariff (see [chargeForTimeUsed]),
+// never more than booked; the driver is told.
+func (s *BookingService) EndEarly(ctx context.Context, userID, bookingID string) (domain.CustomerBooking, error) {
+	ub, err := s.store.FindForUser(ctx, bookingID, userID)
+	if err != nil {
+		return domain.CustomerBooking{}, err
+	}
+	b := ub.Booking
+	if b.Status != domain.RideStatusInProgress || b.StartedAt == nil {
+		return domain.CustomerBooking{}, ErrCannotEnd
+	}
+	plan, err := planOf(b)
+	if err != nil {
+		return domain.CustomerBooking{}, err
+	}
+	booked := b.FarePaise
+	if booked == 0 {
+		booked, _ = plan.Fare()
+	}
+	now := s.now()
+	fare := chargeForTimeUsed(plan, booked, *b.StartedAt, now)
+	ended, err := s.store.EndEarly(ctx, b.ID, userID, fare, now)
+	if errors.Is(err, repository.ErrBookingStateConflict) {
+		return domain.CustomerBooking{}, ErrCannotEnd
+	}
+	if err != nil {
+		return domain.CustomerBooking{}, err
+	}
+	slog.InfoContext(ctx, "trip ended early by customer", "bookingId", b.ID, "userId", userID,
+		"driverId", b.DriverID, "minutes", int(now.Sub(*b.StartedAt)/time.Minute),
+		"farePaise", fare, "bookedFarePaise", booked)
+	if s.alerts != nil {
+		s.alerts.RideEndedEarly(ctx, ended, plan)
 	}
 	return s.mine(ctx, userID, bookingID)
 }
@@ -350,7 +428,7 @@ func (s *BookingService) mine(ctx context.Context, userID, bookingID string) (do
 	if err != nil {
 		return domain.CustomerBooking{}, err
 	}
-	cb, ok := toCustomerBooking(ctx, ub, s.now())
+	cb, ok := toCustomerBooking(ctx, ub, s.now(), s.pickupFee())
 	if !ok {
 		return domain.CustomerBooking{}, fmt.Errorf("booking %s: unreadable details", bookingID)
 	}
@@ -397,9 +475,10 @@ func roundTripBreakdown(plan tripPlan, farePaise int64) *domain.FareBreakdown {
 	return &domain.FareBreakdown{BasePaise: base, NightPaise: night}
 }
 
-// toCustomerBooking renders a stored booking for the customer app. ok is
+// toCustomerBooking renders a stored booking for the customer app, with
+// pickupFee what cancelling costs once the driver is at the pickup. ok is
 // false for one whose details can't be read.
-func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time) (domain.CustomerBooking, bool) {
+func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time, pickupFee int64) (domain.CustomerBooking, bool) {
 	b := ub.Booking
 	plan, err := planOf(b)
 	if err != nil {
@@ -436,6 +515,13 @@ func toCustomerBooking(ctx context.Context, ub domain.UserBooking, now time.Time
 		CancelReason:     b.CancelReason,
 		MyRating:         b.DriverRating,
 		PaidAt:           b.PaidAt,
+		BookedFarePaise:  b.BookedFarePaise,
+	}
+	switch b.Status {
+	case domain.RideStatusArrived:
+		cb.CancellationFeePaise = pickupFee // what cancelling now costs
+	case domain.RideStatusCancelled:
+		cb.CancellationFeePaise = b.CancellationFeePaise
 	}
 	// Paid out is the driver's business; to the customer it's just paid.
 	switch b.PaymentStatus() {

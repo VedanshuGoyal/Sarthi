@@ -40,7 +40,8 @@ const bookingColumns = `id, user_id, trip_type, details, created_at, status,
 	driver_rating, coalesce(driver_rating_note, ''),
 	customer_rating, coalesce(customer_rating_note, ''),
 	paid_at, coalesce(paid_paise, 0), coalesce(commission_paise, 0),
-	coalesce(payout_id::text, '')`
+	coalesce(payout_id::text, ''),
+	coalesce(cancellation_fee_paise, 0), coalesce(booked_fare_paise, 0)`
 
 // bookingColumnsB is bookingColumns read through the `b` alias.
 const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, b.status,
@@ -50,7 +51,8 @@ const bookingColumnsB = `b.id, b.user_id, b.trip_type, b.details, b.created_at, 
 	b.driver_rating, coalesce(b.driver_rating_note, ''),
 	b.customer_rating, coalesce(b.customer_rating_note, ''),
 	b.paid_at, coalesce(b.paid_paise, 0), coalesce(b.commission_paise, 0),
-	coalesce(b.payout_id::text, '')`
+	coalesce(b.payout_id::text, ''),
+	coalesce(b.cancellation_fee_paise, 0), coalesce(b.booked_fare_paise, 0)`
 
 // rideColumns is bookingColumnsB plus the customer's name and phone from `u`
 // and their average rating from drivers — the shape scanRide reads.
@@ -271,8 +273,9 @@ func (r *DriverRideRepository) SetCommissionBasisPoints(bp int64) { r.commission
 // the given window starts — the fares and the driver's net share of them —
 // along with their average rating from customers (ratings are only given on
 // completed rides) and where their money stands: unpaid by the customer,
-// owed to the driver, or paid out. A ride settled by hand (cash, waived) is
-// never owed by MOJUD.
+// owed to the driver, or paid out. Cancellation fees count in where the
+// money stands, not in the rides or fares. A ride settled in cash is never
+// owed by MOJUD; a waived one is, like a paid one.
 func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	const q = `
 		SELECT
@@ -284,22 +287,23 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		    count(*) FILTER (WHERE completed_at >= $3),
 		    coalesce(sum(fare_paise) FILTER (WHERE completed_at >= $4), 0),
 		    count(*) FILTER (WHERE completed_at >= $4),
-		    coalesce(sum(fare_paise), 0),
-		    count(*),
-		    coalesce(sum(fare_paise) FILTER (WHERE paid_at IS NULL), 0),
+		    coalesce(sum(fare_paise) FILTER (WHERE status = 'completed'), 0),
+		    count(*) FILTER (WHERE status = 'completed'),
+		    coalesce(sum(` + owedPaise + `) FILTER (WHERE paid_at IS NULL), 0),
 		    count(*) FILTER (WHERE paid_at IS NULL),
-		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
-		        FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL), 0),
-		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL),
+		    coalesce(sum(paid_paise - coalesce(commission_paise, 0)) FILTER (WHERE paid_at IS NOT NULL
+		        AND payout_id IS NULL AND paid_mode IS DISTINCT FROM 'cash'), 0),
+		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS DISTINCT FROM 'cash'),
 		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
 		        FILTER (WHERE payout_id IS NOT NULL), 0),
 		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1),
 		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $2), 0),
 		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $3), 0),
 		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $4), 0),
-		    coalesce(sum(` + netShare + `), 0)
+		    coalesce(sum(` + netShare + `) FILTER (WHERE status = 'completed'), 0)
 		FROM bookings
-		WHERE driver_id = $1 AND status = 'completed'`
+		WHERE driver_id = $1
+		  AND (status = 'completed' OR (status = 'cancelled' AND cancellation_fee_paise IS NOT NULL))`
 
 	var (
 		e       domain.DriverEarnings
@@ -410,6 +414,7 @@ func (r *bookingRow) targets(extra ...any) []any {
 		&r.driverStars, &r.driverNote,
 		&r.customerStars, &r.customerNote,
 		&b.PaidAt, &b.PaidPaise, &b.CommissionPaise, &b.PayoutID,
+		&b.CancellationFeePaise, &b.BookedFarePaise,
 	}, extra...)
 }
 

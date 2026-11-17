@@ -94,8 +94,9 @@ func TestBookingRepository_InsertFindsRepeats_Integration(t *testing.T) {
 }
 
 // HUMAN REVIEW REQUIRED: payments. An unpaid ride blocks the customer until
-// it's paid or settled by hand; a ride settled by hand is never owed to
-// its driver, and its receipt says how.
+// it's paid or settled by hand. A ride settled in cash is never owed to its
+// driver; a waived one is owed their usual share (MOJUD pays it). The
+// receipt says how.
 func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 	ctx, tx := rollbackTx(t)
 	bookings, payments := NewBookingRepository(tx), NewPaymentRepository(tx)
@@ -115,7 +116,7 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 		t.Fatalf("unpaid = %q, %v; want %s", id, err, ride)
 	}
 
-	b, err := payments.SettleByHand(ctx, ride, domain.SettledCash, "Paid the driver in cash", time.Now())
+	b, err := payments.SettleByHand(ctx, ride, domain.SettledCash, "Paid the driver in cash", 1300, time.Now())
 	if err != nil {
 		t.Fatalf("SettleByHand: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 	} {
 		// In a savepoint: a malformed id aborts the statement's transaction.
 		err := inSavepoint(t, ctx, tx, func(db DB) error {
-			_, err := NewPaymentRepository(db).SettleByHand(ctx, tc.id, domain.SettledWaived, "x", time.Now())
+			_, err := NewPaymentRepository(db).SettleByHand(ctx, tc.id, domain.SettledWaived, "x", 1300, time.Now())
 			return err
 		})
 		if !errors.Is(err, tc.want) {
@@ -167,7 +168,7 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 			"MOJUD_settle_guard", state); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", time.Now()); !errors.Is(err, ErrGatewayOrderOpen) ||
+		if _, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", 1300, time.Now()); !errors.Is(err, ErrGatewayOrderOpen) ||
 			!errors.Is(err, ErrBookingStateConflict) {
 			t.Errorf("%s order: err = %v, want ErrGatewayOrderOpen", state, err)
 		}
@@ -175,22 +176,105 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 	if _, err := tx.Exec(ctx, `UPDATE payment_orders SET state = 'failed' WHERE merchant_order_id = 'MOJUD_settle_guard'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", time.Now()); err != nil {
-		t.Errorf("failed order: err = %v, want settled", err)
+	waived, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", 1300, time.Now())
+	if err != nil {
+		t.Fatalf("failed order: err = %v, want settled", err)
+	}
+	// ₹180 waived: MOJUD covers it, keeps its 13% (₹23.40), owes the driver ₹156.60.
+	if waived.PaidPaise != 18000 || waived.CommissionPaise != 2340 {
+		t.Errorf("waived booking paid %d commission %d, want 18000 / 2340", waived.PaidPaise, waived.CommissionPaise)
 	}
 
-	// Not owed: no payout lists it or covers it.
+	// Only the waived ride is owed — the cash one never is.
 	due, err := payments.DuePayouts(ctx, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
+	var owed []domain.PayoutDue
 	for _, d := range due {
 		if d.DriverID == driver {
-			t.Errorf("a hand-settled ride is listed as owed: %+v", d)
+			owed = append(owed, d)
 		}
 	}
-	if _, err := payments.RecordPayout(ctx, driver, "UTR", time.Now(), time.Now(), ExpectedPayout{}); !errors.Is(err, ErrNothingToPayOut) {
-		t.Errorf("payout over a hand-settled ride: err = %v, want ErrNothingToPayOut", err)
+	if len(owed) != 1 || owed[0].Rides != 1 || owed[0].AmountPaise != 15660 {
+		t.Errorf("owed to the driver = %+v, want the waived ride's 15660", owed)
+	}
+	p, err := payments.RecordPayout(ctx, driver, "UTR", time.Now(), time.Now(), ExpectedPayout{})
+	if err != nil || p.Rides != 1 || p.AmountPaise != 15660 {
+		t.Errorf("payout = %+v, %v; want the waived ride only", p, err)
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. A cancellation at the pickup charges the
+// fee only when allowed; the fee blocks the next booking until it's paid
+// or settled, and a waived fee is owed to the driver like a ride. A trip
+// ended early keeps its booked fare.
+func TestBookingRepository_CancellationCharges_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	bookings, payments := NewBookingRepository(tx), NewPaymentRepository(tx)
+	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
+	soon := time.Now().Add(time.Hour)
+	fee := PickupCancel{Allowed: true, FeePaise: domain.CancellationFeePaise}
+
+	// On the way: free, even with a fee on offer.
+	coming := rideIn(t, ctx, tx, user, driver, domain.RideStatusAccepted, soon, 44000)
+	b, err := bookings.Cancel(ctx, coming, user, "", time.Now(), fee)
+	if err != nil || b.CancellationFeePaise != 0 {
+		t.Fatalf("Cancel(accepted) = fee %d, %v; want free", b.CancellationFeePaise, err)
+	}
+
+	// At the pickup, not allowed: refused, unchanged.
+	waiting := rideIn(t, ctx, tx, user, driver, domain.RideStatusArrived, soon, 44000)
+	if _, err := bookings.Cancel(ctx, waiting, user, "", time.Now(), PickupCancel{FeePaise: fee.FeePaise}); !errors.Is(err, ErrBookingStateConflict) {
+		t.Fatalf("Cancel(arrived, not allowed) err = %v, want ErrBookingStateConflict", err)
+	}
+	// Allowed: cancelled with the fee, which now blocks the next booking.
+	b, err = bookings.Cancel(ctx, waiting, user, "Changed plans", time.Now(), fee)
+	if err != nil || b.Status != domain.RideStatusCancelled || b.CancellationFeePaise != fee.FeePaise ||
+		b.PaymentStatus() != domain.RidePaymentDue {
+		t.Fatalf("Cancel(arrived) = %+v, %v; want cancelled with the fee due", b, err)
+	}
+	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != waiting {
+		t.Errorf("unpaid = %q, %v; want the fee %s", id, err, waiting)
+	}
+
+	// Waived: the customer may book again, and MOJUD owes the driver ₹43.50.
+	if _, err := payments.SettleByHand(ctx, waiting, domain.SettledWaived, "goodwill", 1300, time.Now()); err != nil {
+		t.Fatalf("SettleByHand(fee): %v", err)
+	}
+	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != "" {
+		t.Errorf("after waiving: unpaid %q, %v", id, err)
+	}
+	due, err := payments.DuePayouts(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range due {
+		if d.DriverID == driver {
+			found = d.AmountPaise == 4350 && d.Rides == 1
+		}
+	}
+	if !found {
+		t.Errorf("waived fee not owed to the driver as 4350: %+v", due)
+	}
+	// A free cancellation has nothing to settle.
+	if _, err := payments.SettleByHand(ctx, coming, domain.SettledCash, "x", 1300, time.Now()); !errors.Is(err, ErrBookingStateConflict) {
+		t.Errorf("settle a free cancellation: err = %v, want ErrBookingStateConflict", err)
+	}
+
+	// Ended early: completed at the charge, the booked fare kept; only in progress.
+	driving := rideIn(t, ctx, tx, user, driver, domain.RideStatusInProgress, time.Now().Add(-time.Hour), 44000)
+	b, err = bookings.EndEarly(ctx, driving, user, 24000, time.Now())
+	if err != nil || b.Status != domain.RideStatusCompleted || b.FarePaise != 24000 || b.BookedFarePaise != 44000 ||
+		b.CompletedAt == nil {
+		t.Fatalf("EndEarly = %+v, %v; want completed at 24000, booked 44000", b, err)
+	}
+	if _, err := bookings.EndEarly(ctx, driving, user, 13900, time.Now()); !errors.Is(err, ErrBookingStateConflict) {
+		t.Errorf("EndEarly twice: err = %v, want ErrBookingStateConflict", err)
+	}
+	if id, err := bookings.UnpaidRide(ctx, user, 100); err != nil || id != driving {
+		t.Errorf("unpaid = %q, %v; want the ended trip %s", id, err, driving)
 	}
 }
 
@@ -425,8 +509,9 @@ func TestBookingRepository_ConcurrentRepeatsMakeOneBooking_Integration(t *testin
 }
 
 // The driver's net share: what was paid less commission, unpaid fares less
-// commission at the configured rate, the whole fare of a cash ride, nothing
-// for a waived one. Earnings needs a pool, so this commits and cleans up.
+// commission at the configured rate, the whole fare of a cash ride, and the
+// usual share of a waived one (MOJUD pays it). Earnings needs a pool, so
+// this commits and cleans up.
 func TestDriverRideRepository_EarningsNet_Integration(t *testing.T) {
 	pool := testDB(t)
 	ctx := context.Background()
@@ -445,7 +530,7 @@ func TestDriverRideRepository_EarningsNet_Integration(t *testing.T) {
 		mode domain.SettleMode
 	}{{20000, domain.SettledCash}, {10000, domain.SettledWaived}} {
 		id := rideIn(t, ctx, pool, user, driver, domain.RideStatusCompleted, when, s.fare)
-		if _, err := payments.SettleByHand(ctx, id, s.mode, "test", time.Now()); err != nil {
+		if _, err := payments.SettleByHand(ctx, id, s.mode, "test", 1300, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -457,12 +542,13 @@ func TestDriverRideRepository_EarningsNet_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Earnings: %v", err)
 	}
-	const wantNet = 26100 + 20880 + 20000 + 0
+	const wantNet = 26100 + 20880 + 20000 + 8700
 	if e.Total.FarePaise != 84000 || e.Total.NetPaise != wantNet || e.Today.NetPaise != wantNet {
 		t.Errorf("total = %+v, today = %+v; want fares 84000, net %d", e.Total, e.Today, wantNet)
 	}
-	// Only the gateway payment is owed to the driver.
-	if e.Payments.DuePaise != 26100 || e.Payments.DueRides != 1 ||
+	// The gateway payment and the waived ride are owed to the driver; the
+	// cash one isn't.
+	if e.Payments.DuePaise != 26100+8700 || e.Payments.DueRides != 2 ||
 		e.Payments.AwaitingCustomerPaise != 24000 || e.Payments.AwaitingCustomerRides != 1 {
 		t.Errorf("payments = %+v", e.Payments)
 	}

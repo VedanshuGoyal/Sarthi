@@ -16,7 +16,8 @@ import (
 type AdminBookingFilter struct {
 	// Status is a stored status ("requested", "completed", …).
 	Status domain.RideStatus
-	// Unpaid keeps only completed rides the customer hasn't paid for.
+	// Unpaid keeps only what the customer hasn't paid for: completed rides
+	// and cancellations that charged a fee.
 	Unpaid bool
 	// ScheduledFrom / ScheduledBefore bound the start time, [from, before).
 	ScheduledFrom, ScheduledBefore time.Time
@@ -46,7 +47,8 @@ func (r *BookingRepository) ListForAdmin(ctx context.Context, f AdminBookingFilt
 		JOIN users u ON u.id = b.user_id
 		LEFT JOIN drivers d ON d.id = b.driver_id
 		WHERE ($1 = '' OR b.status = $1)
-		  AND (NOT $2 OR (b.status = 'completed' AND b.paid_at IS NULL))
+		  AND (NOT $2 OR (b.paid_at IS NULL
+		                  AND (b.status = 'completed' OR b.cancellation_fee_paise IS NOT NULL)))
 		  AND ($3::timestamptz IS NULL OR b.scheduled_at >= $3)
 		  AND ($4::timestamptz IS NULL OR b.scheduled_at < $4)
 		ORDER BY b.scheduled_at DESC NULLS LAST, b.created_at DESC

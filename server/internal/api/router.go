@@ -95,10 +95,12 @@ func NewRouter(
 	mux.HandleFunc("POST /me/bookings", requireAuth(sessions, bk.Submit))
 	mux.HandleFunc("GET /me/bookings", requireAuth(sessions, bk.List))
 
-	// Before the trip starts the customer can cancel it; once it's done they
-	// rate the driver; while the driver is on the way (or driving) they can
-	// see where the driver is.
+	// Before the trip starts the customer can cancel it (free until the
+	// driver reaches the pickup); during it they can end it early and pay
+	// for the time used; once it's done they rate the driver; while the
+	// driver is on the way (or driving) they can see where the driver is.
 	mux.HandleFunc("POST /me/bookings/{id}/cancel", requireAuth(sessions, bk.Cancel))
+	mux.HandleFunc("POST /me/bookings/{id}/end", requireAuth(sessions, bk.End))
 	mux.HandleFunc("POST /me/bookings/{id}/rating", requireAuth(sessions, bk.Rate))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-location", requireAuth(sessions, bk.DriverLocation))
 	mux.HandleFunc("GET /me/bookings/{id}/driver-photo", requireAuth(sessions, bk.DriverPhoto))

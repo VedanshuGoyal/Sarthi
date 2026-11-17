@@ -59,7 +59,7 @@ type StatsCompletedRides struct {
 
 // StatsRideWindow is the rides completed since From, their summed fares, and
 // MOJUD's commission on those fares at the current rate — leaving out rides
-// settled by hand (cash or waived), on which MOJUD takes nothing.
+// settled by hand (cash or waived), on which MOJUD receives nothing.
 type StatsRideWindow struct {
 	From            time.Time `json:"from"`
 	Rides           int       `json:"rides"`

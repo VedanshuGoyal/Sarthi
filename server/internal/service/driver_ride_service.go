@@ -707,6 +707,9 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 		MyRating:         b.CustomerRating,
 		PaymentStatus:    b.PaymentStatus(),
 		PaidAt:           b.PaidAt,
+
+		CancellationFeePaise: b.CancellationFeePaise,
+		BookedFarePaise:      b.BookedFarePaise,
 	}
 	if b.PaidAt != nil {
 		ride.SharePaise = b.PaidPaise - b.CommissionPaise

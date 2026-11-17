@@ -62,7 +62,8 @@ const statsSQL = `
 	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $3), 0)::bigint AS week_fare,
 	           count(*) FILTER (WHERE status = 'completed' AND completed_at >= $4)  AS month_rides,
 	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $4), 0)::bigint AS month_fare,
-	           -- Settled by hand (cash or waived): no commission on these.
+	           -- Settled by hand (cash or waived): MOJUD received nothing, so no
+	           -- commission (and on a waived ride it pays the driver's share).
 	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $2
 	                                               AND paid_mode IS NOT NULL), 0)::bigint AS today_by_hand,
 	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $3
@@ -77,7 +78,7 @@ const statsSQL = `
 	           coalesce(sum(paid_paise - coalesce(commission_paise, 0)), 0)::bigint AS amount
 	    FROM bookings
 	    WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_at <= $5
-	      AND driver_id IS NOT NULL AND paid_mode IS NULL
+	      AND driver_id IS NOT NULL AND paid_mode IS DISTINCT FROM 'cash'
 	)
 	SELECT (SELECT count(*) FROM users),
 	       d.total, d.incomplete, d.submitted, d.verified, d.rejected,

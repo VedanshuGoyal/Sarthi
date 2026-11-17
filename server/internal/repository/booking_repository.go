@@ -115,15 +115,22 @@ func findRepeat(ctx context.Context, tx pgx.Tx, p InsertBookingParams) (domain.B
 	return b, true, nil
 }
 
-// UnpaidRide returns the id of userID's longest-unpaid completed ride whose
-// fare is at least minPaise (smaller fares can't be paid through the
-// gateway), or "" when every ride they took is paid for.
+// UnpaidRide returns the id of userID's longest-unpaid booking — a
+// completed ride, or a cancellation that charged a fee — owing at least
+// minPaise (smaller sums can't be paid through the gateway), or "" when
+// everything they owe is paid.
 func (r *BookingRepository) UnpaidRide(ctx context.Context, userID string, minPaise int64) (string, error) {
 	var id string
 	err := r.db.QueryRow(ctx, `
-		SELECT id::text FROM bookings
-		WHERE user_id = $1 AND status = 'completed' AND paid_at IS NULL AND fare_paise >= $2
-		ORDER BY completed_at NULLS FIRST, created_at
+		SELECT id::text FROM (
+		    SELECT id, completed_at AS owed_since, created_at FROM bookings
+		    WHERE user_id = $1 AND status = 'completed' AND paid_at IS NULL AND fare_paise >= $2
+		    UNION ALL
+		    SELECT id, cancelled_at, created_at FROM bookings
+		    WHERE user_id = $1 AND status = 'cancelled' AND cancellation_fee_paise IS NOT NULL
+		      AND paid_at IS NULL AND cancellation_fee_paise >= $2
+		) owed
+		ORDER BY owed_since NULLS FIRST, created_at
 		LIMIT 1`, userID, minPaise).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -221,21 +228,55 @@ func (r *BookingRepository) FindForUser(ctx context.Context, id, userID string) 
 	return ub, nil
 }
 
+// PickupCancel is whether Cancel may cancel a booking whose driver is
+// already waiting at the pickup, and the fee that charges (0 for none).
+type PickupCancel struct {
+	Allowed  bool
+	FeePaise int64
+}
+
 // Cancel cancels userID's booking id for the customer, provided the trip
-// hasn't started: it must still be requested, accepted or arrived. The
-// driver stays on the row so their rides list shows it as cancelled; the
-// start code is cleared. Returns the cancelled booking,
-// [ErrBookingNotFound], or [ErrBookingStateConflict].
-func (r *BookingRepository) Cancel(ctx context.Context, id, userID, reason string, at time.Time) (domain.Booking, error) {
+// hasn't started: it must still be requested or accepted, or arrived when
+// atPickup allows it — charging atPickup.FeePaise then. The driver stays on
+// the row so their rides list shows it as cancelled; the start code is
+// cleared. Returns the cancelled booking, [ErrBookingNotFound], or
+// [ErrBookingStateConflict] (including an arrived booking atPickup doesn't
+// allow).
+func (r *BookingRepository) Cancel(
+	ctx context.Context, id, userID, reason string, at time.Time, atPickup PickupCancel,
+) (domain.Booking, error) {
+	// SET reads the row as it was, so the fee goes only on a booking that
+	// was at the pickup.
 	q := `
 		UPDATE bookings
 		SET status = 'cancelled', cancelled_at = $3, cancelled_by = $4,
-		    cancel_reason = nullif($5, ''), start_otp = NULL
-		WHERE id = $1 AND user_id = $2 AND status IN ('requested', 'accepted', 'arrived')
+		    cancel_reason = nullif($5, ''), start_otp = NULL,
+		    cancellation_fee_paise = CASE WHEN status = 'arrived' THEN nullif($7::bigint, 0) END
+		WHERE id = $1 AND user_id = $2
+		  AND (status IN ('requested', 'accepted') OR (status = 'arrived' AND $6))
 		RETURNING ` + bookingColumns
-	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason))
+	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, domain.CancelledByCustomer, reason,
+		atPickup.Allowed, atPickup.FeePaise))
 	if err != nil {
 		return domain.Booking{}, r.whyUnchanged(ctx, err, id, userID, "cancelling booking")
+	}
+	return b, nil
+}
+
+// EndEarly completes userID's trip id at at, before its booked end, on the
+// customer's say: the fare becomes farePaise (the charge for the time used)
+// and the booked fare is kept in booked_fare_paise. Only a trip in
+// progress; [ErrBookingNotFound] or [ErrBookingStateConflict] otherwise.
+func (r *BookingRepository) EndEarly(ctx context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error) {
+	q := `
+		UPDATE bookings
+		SET status = 'completed', completed_at = $3,
+		    booked_fare_paise = fare_paise, fare_paise = $4
+		WHERE id = $1 AND user_id = $2 AND status = 'in_progress'
+		RETURNING ` + bookingColumns
+	b, err := scanBooking(r.db.QueryRow(ctx, q, id, userID, at, farePaise))
+	if err != nil {
+		return domain.Booking{}, r.whyUnchanged(ctx, err, id, userID, "ending trip")
 	}
 	return b, nil
 }
