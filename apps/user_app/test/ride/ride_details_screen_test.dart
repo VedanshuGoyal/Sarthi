@@ -9,6 +9,7 @@ import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/activity_panel.dart';
 import 'package:user_app/features/ride/view/ride_details_screen.dart';
+import 'package:user_app/features/ride/view/widgets/cancel_ride_sheet.dart';
 import 'package:user_app/features/ride/view/widgets/receipt_card.dart';
 import 'package:user_app/features/ride/view/widgets/star_rating.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
@@ -43,6 +44,39 @@ Future<void> _pump(
 }
 
 bool _shows(String text) => find.text(text).evaluate().isNotEmpty;
+
+/// Whether [text] is on the receipt itself (the trip details card has a
+/// "Fare" row too).
+bool _onReceipt(String text) => find
+    .descendant(of: find.byType(ReceiptCard), matching: find.text(text))
+    .evaluate()
+    .isNotEmpty;
+
+/// Opens the cancel sheet from the details screen.
+Future<void> _openCancelSheet(WidgetTester tester) async {
+  await tester.ensureVisible(find.text('Cancel ride'));
+  await tester.pump();
+  await tester.tap(find.text('Cancel ride'));
+  await tester.pumpAndSettle();
+}
+
+/// Picks [reason] in the open cancel sheet and taps its confirm button,
+/// labelled [confirm].
+Future<void> _confirmCancel(
+  WidgetTester tester, {
+  String reason = 'Plans changed',
+  String confirm = 'Cancel ride',
+}) async {
+  await tester.ensureVisible(find.text(reason));
+  await tester.pump();
+  await tester.tap(find.text(reason));
+  await tester.pumpAndSettle();
+  final button = find.widgetWithText(FilledButton, confirm);
+  await tester.ensureVisible(button);
+  await tester.pump();
+  await tester.tap(button);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('a request still looking for a driver can be cancelled', (
@@ -354,6 +388,341 @@ void main() {
     });
   });
 
+  group('cancellation fee', () {
+    const freeLine =
+        'Cancelling is free until the driver reaches your pickup. After '
+        'that it costs ₹50.';
+    const feeLine =
+        'Ravi has reached your pickup, so cancelling now costs ₹50.';
+
+    Map<String, dynamic> atPickup() =>
+        bookingJson(status: 'arrived', otp: '4821', cancellationFeePaise: 5000);
+
+    testWidgets('before the driver arrives, the sheet says it is free until '
+        'then', (tester) async {
+      final server = FakeBookingServer([bookingJson(otp: '4821')]);
+      await _pump(tester, server);
+      await _openCancelSheet(tester);
+
+      check(_shows(freeLine)).isTrue();
+      check(_shows(feeLine)).isFalse();
+      check(
+        find.widgetWithText(FilledButton, 'Cancel ride').evaluate(),
+      ).isNotEmpty();
+    });
+
+    testWidgets('at the pickup, the sheet names the fee and cancelling '
+        'leaves it to pay', (tester) async {
+      final server = FakeBookingServer([atPickup()]);
+      await _pump(tester, server);
+      await _openCancelSheet(tester);
+
+      check(_shows(feeLine)).isTrue();
+      check(_shows(freeLine)).isFalse();
+      await _confirmCancel(tester, confirm: 'Cancel and pay ₹50');
+
+      final post = server.requests.firstWhere((r) => r.method == 'POST');
+      check(post.url.path).equals('/me/bookings/b1/cancel');
+      check(
+        jsonDecode(post.body) as Map,
+      ).deepEquals({'reason': 'Plans changed', 'acceptFeePaise': 5000});
+      check(_shows('Ride cancelled')).isTrue();
+      check(_shows('Your ride is cancelled. Please pay the ₹50 fee.')).isTrue();
+      check(_shows('Pay the cancellation fee')).isTrue();
+      check(_shows('Pay ₹50 by UPI')).isTrue();
+    });
+
+    testWidgets('a driver who arrives while the sheet is open gets the fee '
+        'shown again before cancelling', (tester) async {
+      final server = FakeBookingServer([bookingJson(otp: '4821')]);
+      await _pump(tester, server);
+      await _openCancelSheet(tester);
+      check(_shows(freeLine)).isTrue();
+
+      // The driver reaches the pickup before the customer confirms.
+      server.bookings[0] = atPickup();
+      await _confirmCancel(tester);
+
+      // Not cancelled: asked again, with the fee and the same reason.
+      check(server.bookings.single['status']).equals('arrived');
+      check(_shows('Cancel this ride?')).isTrue();
+      check(_shows(feeLine)).isTrue();
+      check(_shows('Ride cancelled')).isFalse();
+      final confirm = find.widgetWithText(FilledButton, 'Cancel and pay ₹50');
+      check(tester.widget<FilledButton>(confirm).onPressed).isNotNull();
+
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+
+      final cancels = [
+        for (final r in server.requests)
+          if (r.url.path.endsWith('/cancel')) jsonDecode(r.body) as Map,
+      ];
+      check(cancels).deepEquals([
+        {'reason': 'Plans changed', 'acceptFeePaise': 0},
+        {'reason': 'Plans changed', 'acceptFeePaise': 5000},
+      ]);
+      check(_shows('Ride cancelled')).isTrue();
+      check(_shows('Pay ₹50 by UPI')).isTrue();
+    });
+
+    testWidgets('keeping the ride after seeing the fee sends nothing more', (
+      tester,
+    ) async {
+      final server = FakeBookingServer([bookingJson(otp: '4821')]);
+      await _pump(tester, server);
+      await _openCancelSheet(tester);
+      server.bookings[0] = atPickup();
+      await _confirmCancel(tester);
+      check(_shows(feeLine)).isTrue();
+
+      await tester.ensureVisible(find.text('Keep my ride'));
+      await tester.pump();
+      await tester.tap(find.text('Keep my ride'));
+      await tester.pumpAndSettle();
+
+      check(
+        server.requests.where((r) => r.url.path.endsWith('/cancel')),
+      ).length.equals(1);
+      check(_shows('Ravi is at your pickup')).isTrue();
+    });
+
+    testWidgets('a ride cancelled with its fee due offers the Pay button', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'cancelled',
+            cancelReason: 'Plans changed',
+            cancellationFeePaise: 5000,
+            paymentStatus: 'due',
+          ),
+        ]),
+        // Opening a due ride re-checks its payment; don't settle.
+        settle: false,
+      );
+      check(_shows('Ride cancelled')).isTrue();
+      check(_shows('Pay the cancellation fee')).isTrue();
+      check(_shows('Pay ₹50 by UPI')).isTrue();
+      check(_shows('Receipt')).isFalse();
+      check(_shows('Cancel ride')).isFalse();
+    });
+
+    testWidgets('a paid fee has a receipt that reads as the fee', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'cancelled',
+            cancellationFeePaise: 5000,
+            paymentStatus: 'paid',
+            payment: {'mode': 'UPI_INTENT', 'utr': '412345678901'},
+            fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+          ),
+        ]),
+      );
+      await tester.ensureVisible(find.text('Receipt'));
+      await tester.pump();
+      check(_onReceipt('Cancellation fee')).isTrue();
+      check(_onReceipt('₹50')).isTrue();
+      check(_onReceipt('Fare')).isFalse();
+      check(_onReceipt('Base fare')).isFalse();
+      check(_onReceipt('₹640')).isFalse();
+      check(_onReceipt('412345678901')).isTrue();
+      check(find.textContaining('by UPI').evaluate()).isEmpty();
+    });
+
+    testWidgets('a ride cancelled for free shows nothing to pay', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([bookingJson(status: 'cancelled')]),
+      );
+      check(_shows('Pay the cancellation fee')).isFalse();
+      check(find.textContaining('by UPI').evaluate()).isEmpty();
+      check(_shows('Cancellation fee')).isFalse();
+    });
+  });
+
+  group('cancel sheet copy', () {
+    Future<void> pumpSheet(
+      WidgetTester tester,
+      Map<String, dynamic> json, {
+      int feePaise = 0,
+      String? initialReason,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: SkylineTheme.light(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: CancelRideSheet(
+              booking: MyBooking.tryParse(json)!,
+              feePaise: feePaise,
+              initialReason: initialReason,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('at the pickup without a fee from the server, it is free', (
+      tester,
+    ) async {
+      await pumpSheet(tester, bookingJson(status: 'arrived'));
+      check(_shows('Cancelling is free.')).isTrue();
+      check(find.textContaining('₹').evaluate()).isEmpty();
+    });
+
+    testWidgets('a request with no driver yet is free until one arrives', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        bookingJson(status: 'requested', withDriver: false),
+      );
+      check(
+        _shows(
+          'Cancelling is free until the driver reaches your pickup. After '
+          'that it costs ₹50.',
+        ),
+      ).isTrue();
+    });
+
+    testWidgets('shown again, it keeps the reason given, typed ones too', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        bookingJson(status: 'arrived', cancellationFeePaise: 5000),
+        feePaise: 5000,
+        initialReason: 'Car is in service',
+      );
+      check(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      ).equals('Car is in service');
+      final confirm = find.widgetWithText(FilledButton, 'Cancel and pay ₹50');
+      check(tester.widget<FilledButton>(confirm).onPressed).isNotNull();
+    });
+  });
+
+  group('end trip early', () {
+    testWidgets('only a trip in progress offers "End trip now"', (
+      tester,
+    ) async {
+      for (final status in ['accepted', 'arrived', 'completed', 'cancelled']) {
+        await _pump(tester, FakeBookingServer([bookingJson(status: status)]));
+        check(because: status, _shows('End trip now')).isFalse();
+        // A fresh ProviderScope for the next ride.
+        await tester.pumpWidget(const SizedBox());
+      }
+      await _pump(
+        tester,
+        FakeBookingServer([bookingJson(status: 'in_progress')]),
+      );
+      check(_shows('End trip now')).isTrue();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('the confirmation explains the charge, and keeping going '
+        'sends nothing', (tester) async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      await _pump(tester, server);
+      await tester.ensureVisible(find.text('End trip now'));
+      await tester.pump();
+      await tester.tap(find.text('End trip now'));
+      await tester.pumpAndSettle();
+
+      check(_shows('End trip now?')).isTrue();
+      check(
+        find.textContaining('by the hour for the time used').evaluate(),
+      ).isNotEmpty();
+      check(
+        find
+            .textContaining('Each started hour counts as a full hour')
+            .evaluate(),
+      ).isNotEmpty();
+      check(_shows('Never more than your booked fare of ≈ ₹640.')).isTrue();
+
+      await tester.tap(find.text('Keep going'));
+      await tester.pumpAndSettle();
+      check(_shows('End trip now?')).isFalse();
+      check(server.requests.where((r) => r.method == 'POST')).isEmpty();
+      check(_shows('On your trip')).isTrue();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('ending the trip shows it charged for the time used, ready '
+        'to pay', (tester) async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      await _pump(tester, server);
+      await tester.ensureVisible(find.text('End trip now'));
+      await tester.pump();
+      await tester.tap(find.text('End trip now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'End trip now'));
+      await tester.pumpAndSettle();
+
+      final post = server.requests.firstWhere((r) => r.method == 'POST');
+      check(post.url.path).equals('/me/bookings/b1/end');
+      check(_shows('Your trip has ended.')).isTrue();
+      check(_shows('Trip ended early')).isTrue();
+      check(_shows('Charged ₹240 for the time used (booked ₹640).')).isTrue();
+      check(_shows('Pay for your trip')).isTrue();
+      check(_shows('Pay ₹240 by UPI')).isTrue();
+      check(_shows('End trip now')).isFalse();
+      check(_shows('Booked fare')).isTrue();
+    });
+
+    testWidgets('a trip that already ended says so', (tester) async {
+      final server = FakeBookingServer([bookingJson(status: 'in_progress')]);
+      await _pump(tester, server);
+      await tester.ensureVisible(find.text('End trip now'));
+      await tester.pump();
+      await tester.tap(find.text('End trip now'));
+      await tester.pumpAndSettle();
+      // The driver ends it before the customer confirms.
+      server.bookings[0] = bookingJson(status: 'completed');
+      await tester.tap(find.widgetWithText(FilledButton, 'End trip now'));
+      await tester.pumpAndSettle();
+
+      check(_shows("This trip isn't in progress any more.")).isTrue();
+      check(_shows('Trip completed')).isTrue();
+      check(_shows('End trip now')).isFalse();
+    });
+
+    testWidgets('a paid trip ended early reads as the time used on its '
+        'receipt', (tester) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'completed',
+            farePaise: 24000,
+            bookedFarePaise: 64000,
+            paymentStatus: 'paid',
+            payment: {'mode': 'UPI_INTENT'},
+            // The booked fare's parts: they don't explain the charge.
+            fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+          ),
+        ]),
+      );
+      await tester.ensureVisible(find.text('Receipt'));
+      await tester.pump();
+      check(_onReceipt('Fare for the time used')).isTrue();
+      check(_onReceipt('₹240')).isTrue();
+      check(_onReceipt('Booked fare')).isTrue();
+      check(_onReceipt('₹640')).isTrue();
+      check(_onReceipt('Base fare')).isFalse();
+    });
+  });
+
   testWidgets('tapping a ride in Activity opens its details', (tester) async {
     await _pump(
       tester,
@@ -401,5 +770,52 @@ void main() {
     await tester.tap(find.text('Not now'));
     await tester.pumpAndSettle();
     check(_shows('How was your trip with Ravi?')).isFalse();
+  });
+
+  testWidgets('Activity cards show a fee that needs paying, and a trip '
+      'ended early', (tester) async {
+    await _pump(
+      tester,
+      FakeBookingServer([
+        bookingJson(
+          status: 'completed',
+          farePaise: 24000,
+          bookedFarePaise: 64000,
+          myRating: {'stars': 5},
+        ),
+        bookingJson(
+          id: 'b2',
+          status: 'cancelled',
+          cancelReason: 'Plans changed',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'due',
+          scheduledAt: '2030-10-20T05:00:00Z',
+        ),
+        bookingJson(
+          id: 'b3',
+          status: 'cancelled',
+          cancellationFeePaise: 5000,
+          paymentStatus: 'paid',
+          scheduledAt: '2030-10-19T05:00:00Z',
+        ),
+      ]),
+      home: const ActivityPanel(),
+    );
+    await tester.tap(find.text('Completed · 3'));
+    await tester.pumpAndSettle();
+
+    check(
+      _shows('Ended early. Charged ₹240 for the time used (booked ₹640).'),
+    ).isTrue();
+    check(find.text('Cancellation fee').evaluate()).length.equals(2);
+    check(find.text('Paid').evaluate()).length.equals(1);
+    // Only the unpaid fee asks to be paid.
+    check(find.textContaining('by UPI').evaluate()).length.equals(1);
+
+    await tester.tap(find.text('Pay ₹50 by UPI'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    check(find.byType(RideDetailsScreen).evaluate()).isNotEmpty();
+    check(_shows('Pay the cancellation fee')).isTrue();
   });
 }

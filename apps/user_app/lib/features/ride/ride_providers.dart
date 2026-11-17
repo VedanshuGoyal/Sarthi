@@ -86,17 +86,18 @@ final myBookingsViewModelProvider = ChangeNotifierProvider<MyBookingsViewModel>(
   },
 );
 
-/// One ride's details screen (and the rating sheet): cancel, pay, rate, and
-/// the driver's live location. A `family` keyed on the booking id — the ride
-/// itself is read from [myBookingsViewModelProvider], so the screen follows
-/// every list refresh. `autoDispose` so leaving the screen stops its polling
-/// and drops a half-written rating.
+/// One ride's details screen (and the rating sheet): cancel, end early,
+/// pay, rate, and the driver's live location. A `family` keyed on the
+/// booking id — the ride itself is read from [myBookingsViewModelProvider],
+/// which the view model listens to, so the screen follows every list
+/// refresh. `autoDispose` so leaving the screen stops its polling and drops
+/// a half-written rating.
 ///
 /// It watches the list's `.notifier` — the instance, not its changes — so a
 /// list refresh doesn't rebuild the view model: that would drop the rating
-/// being written and the driver's last fix, and re-run the payment check
-/// made on opening a due ride on every refresh, each check refreshing the
-/// list again.
+/// being written, the driver's last fix and a fee the server quoted, and
+/// re-run the payment check made on opening a due ride on every refresh,
+/// each check refreshing the list again.
 final rideDetailsViewModelProvider = ChangeNotifierProvider.autoDispose
     .family<RideDetailsViewModel, String>((ref, bookingId) {
       return RideDetailsViewModel(

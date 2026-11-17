@@ -47,6 +47,18 @@ abstract final class RideFormat {
   static String fare(MyBooking b) =>
       b.fareEstimated ? '≈ ₹${b.fareRupees}' : '₹${b.fareRupees}';
 
+  /// An amount in paise in whole rupees, the way fares read: "₹50".
+  static String rupees(int paise) => '₹${(paise / 100).round()}';
+
+  /// "Charged ₹320 for the time used (booked ₹640).", for a trip the
+  /// customer ended early; null for any other.
+  static String? endedEarly(MyBooking b) {
+    final booked = b.bookedFarePaise;
+    if (!b.endedEarly || booked == null) return null;
+    return 'Charged ${rupees(b.farePaise)} for the time used '
+        '(booked ${rupees(booked)}).';
+  }
+
   /// "4 h", "1 h 30 min", "45 min".
   static String duration(Duration d) {
     final hours = d.inHours;

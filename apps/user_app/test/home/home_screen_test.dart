@@ -14,6 +14,7 @@ import 'package:user_app/features/ride/data/cars_repository.dart';
 import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
+import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
@@ -42,12 +43,14 @@ const _sedan = Car(
 
 /// Pumps the Home tab over a backend that answers each booking POST with
 /// [answer] (given how many have arrived so far) and lists [bookings], then
-/// books a two-hour Round Trip through the real flow.
+/// books a two-hour Round Trip through the real flow. With [listLoaded] the
+/// rides list already holds [bookings], as after Activity has loaded.
 Future<void> _bookRoundTrip(
   WidgetTester tester, {
   required List<http.Request> posts,
   required http.Response Function(int count) answer,
   List<Map<String, dynamic>> bookings = const [],
+  bool listLoaded = false,
 }) async {
   tester.view.physicalSize = const Size(1200, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -76,7 +79,9 @@ Future<void> _bookRoundTrip(
         myBookingsViewModelProvider.overrideWith(
           (ref) => MyBookingsViewModel(
             repository: repository,
-            initialBookings: const [],
+            initialBookings: listLoaded
+                ? [for (final b in bookings) MyBooking.tryParse(b)!]
+                : const [],
           ),
         ),
         savedCarsViewModelProvider.overrideWith(
@@ -214,4 +219,56 @@ void main() {
     // Paying isn't booking: nothing more was posted.
     check(posts).length.equals(1);
   });
+
+  for (final listLoaded in [true, false]) {
+    testWidgets('an unpaid cancellation fee blocks booking, and Pay now opens '
+        'that ride (list ${listLoaded ? 'loaded' : 'not loaded'})', (
+      tester,
+    ) async {
+      final posts = <http.Request>[];
+      await _bookRoundTrip(
+        tester,
+        posts: posts,
+        answer: (_) => http.Response(
+          jsonEncode({
+            'error': 'pay for your last ride before booking another',
+            'code': 'payment_due',
+            'bookingId': 'fee-1',
+          }),
+          409,
+        ),
+        bookings: [
+          bookingJson(
+            id: 'fee-1',
+            status: 'cancelled',
+            cancellationFeePaise: 5000,
+            paymentStatus: 'due',
+            scheduledAt: '2030-10-20T05:00:00Z',
+          ),
+        ],
+        listLoaded: listLoaded,
+      );
+
+      // Named for what it is once the list knows the ride.
+      expect(
+        find.text(
+          listLoaded
+              ? 'Pay the ₹50 cancellation fee for your last ride before '
+                    'booking another.'
+              : 'Pay for your last ride before booking another.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining("wasn't booked"), findsNothing);
+
+      await tester.tap(find.text('Pay now'));
+      await tester.pumpAndSettle();
+
+      check(find.byType(RideDetailsScreen).evaluate()).isNotEmpty();
+      expect(find.text('Ride cancelled'), findsOneWidget);
+      expect(find.text('Pay the cancellation fee'), findsOneWidget);
+      expect(find.text('Pay ₹50 by UPI'), findsOneWidget);
+      check(posts).length.equals(1);
+    });
+  }
 }

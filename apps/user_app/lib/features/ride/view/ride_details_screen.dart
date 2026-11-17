@@ -9,6 +9,7 @@ import '../view_model/ride_details_view_model.dart';
 import 'widgets/booking_status_pill.dart';
 import 'widgets/cancel_ride_sheet.dart';
 import 'widgets/driver_row.dart';
+import 'widgets/end_trip_dialog.dart';
 import 'widgets/help_safety_row.dart';
 import 'widgets/live_ride_map.dart';
 import 'widgets/receipt_card.dart';
@@ -19,8 +20,9 @@ import 'widgets/start_code_panel.dart';
 /// One ride, opened from its Activity card: where it stands, the driver's
 /// live location while they're on their way, the start code, the driver,
 /// the full route and plan, a timeline of what happened when — and the
-/// actions that fit: cancel before the trip starts, pay for it by UPI and
-/// rate it once it's done.
+/// actions that fit: cancel before the trip starts (free until the driver
+/// reaches the pickup), end it early while it's on, pay for it — or for its
+/// cancellation fee — by UPI, and rate it once it's done.
 ///
 /// State lives in [rideDetailsViewModelProvider] for [bookingId]; this view
 /// renders it and tells the view model when it's visible, so the driver's
@@ -69,15 +71,52 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _cancel(RideDetailsViewModel vm, MyBooking booking) async {
-    final reason = await showCancelRideSheet(context, booking);
-    if (reason == null || !mounted) return;
-    final cancelled = await vm.cancel(reason: reason);
+  /// Asks to confirm with what cancelling costs, then cancels agreeing to
+  /// exactly that. If the driver reached the pickup meanwhile and it now
+  /// costs more, asks again with the new fee — never cancels for one the
+  /// customer didn't see.
+  Future<void> _cancel(RideDetailsViewModel vm) async {
+    String? lastReason;
+    while (true) {
+      final booking = vm.booking;
+      if (booking == null || !booking.canCancel) return;
+      final fee = vm.cancelFeePaise;
+      final reason = await showCancelRideSheet(
+        context,
+        booking,
+        feePaise: fee,
+        initialReason: lastReason,
+      );
+      if (reason == null || !mounted) return;
+      final outcome = await vm.cancel(reason: reason, acceptFeePaise: fee);
+      if (!mounted) return;
+      switch (outcome) {
+        case CancelOutcome.feeChanged:
+          lastReason = reason;
+          continue;
+        case CancelOutcome.cancelled:
+          final owed = vm.booking;
+          _say(
+            owed != null && owed.canPay
+                ? 'Your ride is cancelled. Please pay the '
+                      '${RideFormat.rupees(owed.chargePaise)} fee.'
+                : 'Your ride is cancelled.',
+          );
+        case CancelOutcome.failed:
+          _say(vm.cancelError ?? "Couldn't cancel the ride.");
+      }
+      return;
+    }
+  }
+
+  Future<void> _endTrip(RideDetailsViewModel vm, MyBooking booking) async {
+    if (!await showEndTripDialog(context, booking) || !mounted) return;
+    final ended = await vm.endTrip();
     if (!mounted) return;
     _say(
-      cancelled
-          ? 'Your ride is cancelled.'
-          : vm.cancelError ?? "Couldn't cancel the ride.",
+      ended
+          ? 'Your trip has ended.'
+          : vm.endTripError ?? "Couldn't end the trip.",
     );
   }
 
@@ -135,7 +174,8 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
             avatarRadius: 28,
           ),
         ),
-      if (booking.status == BookingStatus.completed &&
+      if ((booking.status == BookingStatus.completed ||
+              booking.hasCancellationFee) &&
           booking.paymentStatus != RidePaymentStatus.none)
         _PaymentCard(vm: vm, booking: booking, onPay: () => _pay(vm)),
       if (booking.status == BookingStatus.completed)
@@ -148,12 +188,24 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
       _TimelineCard(milestones: vm.timeline),
     ];
     final actions = <Widget>[
+      if (vm.canEndTrip) ...[
+        OutlinedButton.icon(
+          onPressed: vm.isEndingTrip ? null : () => _endTrip(vm, booking),
+          icon: vm.isEndingTrip
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.stop_circle_outlined),
+          label: const Text('End trip now'),
+        ),
+      ],
       if (booking.canCancel) ...[
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             foregroundColor: SkylineTokens.of(context).danger,
           ),
-          onPressed: vm.isCancelling ? null : () => _cancel(vm, booking),
+          onPressed: vm.isCancelling ? null : () => _cancel(vm),
           icon: vm.isCancelling
               ? const SizedBox.square(
                   dimension: 18,
@@ -248,8 +300,9 @@ class _StatusHeader extends StatelessWidget {
             : 'Started ${RideFormat.when(context, b.startedAt!)}',
       ),
       BookingStatus.completed => (
-        'Trip completed',
-        RideFormat.when(context, b.completedAt ?? b.scheduledAt),
+        b.endedEarly ? 'Trip ended early' : 'Trip completed',
+        RideFormat.endedEarly(b) ??
+            RideFormat.when(context, b.completedAt ?? b.scheduledAt),
       ),
       BookingStatus.cancelled => (
         'Ride cancelled',
@@ -330,8 +383,8 @@ class _TrackingCard extends StatelessWidget {
   }
 }
 
-/// Paying for a completed trip: a UPI button while it's due, the receipt
-/// once it's paid.
+/// Paying for a completed trip, or for the fee of a ride cancelled at the
+/// pickup: a UPI button while it's due, the receipt once it's paid.
 class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
     required this.vm,
@@ -346,14 +399,16 @@ class _PaymentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
-    final amount = '₹${booking.fareRupees}';
+    final amount = RideFormat.rupees(booking.chargePaise);
     if (booking.paymentStatus == RidePaymentStatus.paid) {
       return ReceiptCard(booking: booking);
     }
     final error = vm.payError;
+    final fee = booking.hasCancellationFee;
     return SkylineSection(
-      title: 'Pay for your trip',
+      title: fee ? 'Pay the cancellation fee' : 'Pay for your trip',
       subtitle:
+          '${fee ? 'You cancelled after your driver reached the pickup. ' : ''}'
           'Pay $amount with any UPI app: GPay, PhonePe, Paytm or your '
           "bank's.",
       child: Column(
@@ -588,6 +643,10 @@ class _TripInfoCard extends StatelessWidget {
             : ('Est. duration', '≈ ${RideFormat.duration(duration)}'),
       if (car != null) ('Car', car),
       ('Fare', RideFormat.fare(b)),
+      if (b.bookedFarePaise case final booked? when b.endedEarly)
+        ('Booked fare', RideFormat.rupees(booked)),
+      if (b.hasCancellationFee)
+        ('Cancellation fee', RideFormat.rupees(b.cancellationFeePaise)),
     ];
     final t = SkylineTokens.of(context);
     return SkylineSection(
