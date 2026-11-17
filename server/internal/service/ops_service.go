@@ -77,15 +77,22 @@ type OpsAlerter interface {
 	CancelledByOps(ctx context.Context, b domain.Booking, plan tripPlan)
 }
 
+// OpsCheckouts re-checks a booking's open UPI checkouts with the gateway
+// ([PaymentService.SyncBooking]).
+type OpsCheckouts interface {
+	SyncBooking(ctx context.Context, bookingID string) error
+}
+
 // OpsDeps is what [NewOpsService] wires together. Alerts nil sends no
-// pushes.
+// pushes; Checkouts nil skips the gateway check before a settle.
 type OpsDeps struct {
-	Bookings OpsBookingStore
-	Rides    OpsRideStore
-	Payments OpsPaymentStore
-	Profiles DriverProfileReader
-	Audit    AuditStore
-	Alerts   OpsAlerter
+	Bookings  OpsBookingStore
+	Rides     OpsRideStore
+	Payments  OpsPaymentStore
+	Checkouts OpsCheckouts
+	Profiles  DriverProfileReader
+	Audit     AuditStore
+	Alerts    OpsAlerter
 }
 
 // OpsService is the back office's hands on bookings: list and filter them,
@@ -241,6 +248,11 @@ func (s *OpsService) Cancel(ctx context.Context, op Operator, bookingID, reason 
 // gateway (see [domain.SettleMode]), with the reason the operator must
 // give. The customer can book again; the driver is owed nothing by MOJUD
 // for it.
+//
+// The ride's UPI checkouts are re-checked with the gateway first, as
+// Checkout does: one the customer paid meanwhile settles the ride for real,
+// and one still open refuses the settle ([repository.ErrGatewayOrderOpen],
+// a [repository.ErrBookingStateConflict]).
 func (s *OpsService) Settle(ctx context.Context, op Operator, bookingID string, mode domain.SettleMode, reason string) (domain.AdminBooking, error) {
 	if !mode.Valid() {
 		return domain.AdminBooking{}, fmt.Errorf("%w: mode must be %q or %q", ErrInvalidOpsRequest,
@@ -249,6 +261,12 @@ func (s *OpsService) Settle(ctx context.Context, op Operator, bookingID string, 
 	reason, err := opsReason(reason)
 	if err != nil {
 		return domain.AdminBooking{}, err
+	}
+	if s.d.Checkouts != nil {
+		// A failed check leaves the orders pending, which refuses below.
+		if err := s.d.Checkouts.SyncBooking(ctx, bookingID); err != nil {
+			slog.WarnContext(ctx, "ops: settle could not re-check the ride's checkouts", "rideId", bookingID, "error", err)
+		}
 	}
 	b, err := s.d.Payments.SettleByHand(ctx, bookingID, mode, reason, s.now())
 	if err != nil {

@@ -223,6 +223,18 @@ func (s *PaymentService) Sync(ctx context.Context, userID, bookingID string) err
 	return err
 }
 
+// SyncBooking re-checks bookingID's pending checkouts with the gateway, for
+// the back office before it settles the ride by hand: an order the
+// customer paid meanwhile is recorded, one that lapsed is failed. Nothing
+// to do with payments off.
+func (s *PaymentService) SyncBooking(ctx context.Context, bookingID string) error {
+	if s.gateway == nil {
+		return nil
+	}
+	_, _, err := s.syncBooking(ctx, bookingID)
+	return err
+}
+
 // OrderUpdated handles the gateway's webhook for merchantOrderID by asking
 // the gateway where the order stands. An order we never opened is ignored.
 func (s *PaymentService) OrderUpdated(ctx context.Context, merchantOrderID string) error {

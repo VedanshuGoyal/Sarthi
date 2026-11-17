@@ -153,6 +153,32 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 		t.Errorf("receipt = %+v, want CASH with no order", ub.Payment)
 	}
 
+	// A ride with a UPI checkout pending or paid is not settled by hand; a
+	// failed one doesn't block.
+	other := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 18000)
+	if err := payments.InsertOrder(ctx, domain.PaymentOrder{
+		MerchantOrderID: "MOJUD_settle_guard", BookingID: other, UserID: user, AmountPaise: 18000,
+		ProviderOrderID: "OMO-settle", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("InsertOrder: %v", err)
+	}
+	for _, state := range []string{"pending", "completed"} {
+		if _, err := tx.Exec(ctx, `UPDATE payment_orders SET state = $2 WHERE merchant_order_id = $1`,
+			"MOJUD_settle_guard", state); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", time.Now()); !errors.Is(err, ErrGatewayOrderOpen) ||
+			!errors.Is(err, ErrBookingStateConflict) {
+			t.Errorf("%s order: err = %v, want ErrGatewayOrderOpen", state, err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE payment_orders SET state = 'failed' WHERE merchant_order_id = 'MOJUD_settle_guard'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := payments.SettleByHand(ctx, other, domain.SettledWaived, "x", time.Now()); err != nil {
+		t.Errorf("failed order: err = %v, want settled", err)
+	}
+
 	// Not owed: no payout lists it or covers it.
 	due, err := payments.DuePayouts(ctx, time.Now())
 	if err != nil {
