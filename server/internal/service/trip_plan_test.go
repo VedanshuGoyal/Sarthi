@@ -61,6 +61,38 @@ func TestParseTripPlan_multiStop(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: payments. One-way and multi-stop trips are always
+// priced by the server: a "fare" slipped into their details is ignored, not
+// stored as the ride's fare. (The app shows no fare for them before
+// booking; it shows the server's estimate afterwards.)
+func TestParseTripPlan_ignoresAClientFareOffRoundTrips(t *testing.T) {
+	for _, tc := range []struct {
+		tripType string
+		details  map[string]any
+		want     int64
+	}{
+		{TripOneWay, map[string]any{
+			"start": place("A", 28.6, 77.2), "destination": place("B", 28.5, 77.1),
+			"scheduledAt": "2026-10-25T09:00:00.000", "estimatedTravelMinutes": 150.0, "fare": 1.0,
+		}, 34000},
+		{TripMultiStop, map[string]any{
+			"start": place("Home", 28.6, 77.2), "scheduledAt": "2026-10-25T10:00:00.000", "fare": 1.0,
+			"stops": []any{map[string]any{"location": place("Bank", 28.61, 77.21), "departBy": "2026-10-25T11:30:00.000"}},
+		}, 24000},
+	} {
+		p, err := parseTripPlan(tc.tripType, tc.details)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", tc.tripType, err)
+		}
+		if err := p.checkBookable(tc.tripType); err != nil {
+			t.Fatalf("%s: checkBookable: %v", tc.tripType, err)
+		}
+		if fare, estimated := p.Fare(); fare != tc.want || !estimated {
+			t.Errorf("%s: fare = %d (estimated %v), want the server's estimate %d", tc.tripType, fare, estimated, tc.want)
+		}
+	}
+}
+
 func TestParseTripPlan_luxuryEstimate(t *testing.T) {
 	p, err := parseTripPlan(TripOneWay, map[string]any{
 		"start":                  place("A", 1, 1),
