@@ -79,6 +79,11 @@ type Config struct {
 	// the API still serves and the newest one published, and where the APKs
 	// are downloaded from (GET /app/config, and 426 below the minimum).
 	Apps AppsConfig
+
+	// KYCAutoClear (KYC_AUTO_CLEAR=true) clears a driver at submission when
+	// every check names the same person. Default false: a person reviews
+	// every submission.
+	KYCAutoClear bool
 }
 
 // DefaultAppDownloadURL is where the APKs are published.
@@ -265,11 +270,16 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	kycAutoClear, err := envBool("KYC_AUTO_CLEAR")
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		Apps:                  apps,
 		PhonePe:               phonePe,
 		CommissionBasisPoints: commission,
+		KYCAutoClear:          kycAutoClear,
 		AllowDevDefaults:      allowDev,
 		CORSAllowedOrigins:    splitList(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		AdminToken:            adminToken,
@@ -406,6 +416,20 @@ func loadStorage() (StorageConfig, error) {
 	default:
 		return StorageConfig{}, fmt.Errorf("unknown STORAGE_BACKEND %q (want %q or %q)", backend, StorageLocal, StorageS3)
 	}
+}
+
+// envBool reads env var name as a boolean ("true", "1", "false", …); unset
+// or blank is false.
+func envBool(name string) (bool, error) {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false, not %q", name, v)
+	}
+	return b, nil
 }
 
 // splitList parses a comma-separated env value, dropping blanks.

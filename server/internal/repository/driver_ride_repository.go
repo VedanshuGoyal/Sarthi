@@ -71,6 +71,8 @@ var timestampColumn = map[domain.RideStatus]string{
 // drivers racing for the same ride can't both win.
 type DriverRideRepository struct {
 	pool DB
+	// commissionBP is what Earnings takes off unpaid fares (money+ops).
+	commissionBP int64
 }
 
 // NewDriverRideRepository wires the repository to a pool (or a transaction).
@@ -251,10 +253,26 @@ func (r *DriverRideRepository) Decline(ctx context.Context, id, driverID string)
 	return insertDecline(ctx, r.pool, id, driverID)
 }
 
+// netShare is one completed ride's share for its driver (see
+// [domain.EarningsPeriod]), with $5 the commission in basis points for
+// rides not paid yet — rounded as PaymentService.commission rounds.
+const netShare = `CASE
+	WHEN paid_at IS NULL THEN fare_paise - (fare_paise * $5 + 5000) / 10000
+	WHEN paid_mode = 'cash' THEN fare_paise
+	ELSE coalesce(paid_paise, 0) - coalesce(commission_paise, 0)
+END`
+
+// SetCommissionBasisPoints sets the commission (COMMISSION_PERCENT in basis
+// points) Earnings takes off rides the customer hasn't paid yet. Unset, a
+// driver's net share of an unpaid ride is its whole fare.
+func (r *DriverRideRepository) SetCommissionBasisPoints(bp int64) { r.commissionBP = bp }
+
 // Earnings sums driverID's completed rides over all time and since each of
-// the given window starts, along with their average rating from customers
-// (ratings are only given on completed rides) and where their money stands:
-// unpaid by the customer, owed to the driver, or paid out.
+// the given window starts — the fares and the driver's net share of them —
+// along with their average rating from customers (ratings are only given on
+// completed rides) and where their money stands: unpaid by the customer,
+// owed to the driver, or paid out. A ride settled by hand (cash, waived) is
+// never owed by MOJUD.
 func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, today, week, month time.Time) (domain.DriverEarnings, error) {
 	const q = `
 		SELECT
@@ -271,11 +289,15 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		    coalesce(sum(fare_paise) FILTER (WHERE paid_at IS NULL), 0),
 		    count(*) FILTER (WHERE paid_at IS NULL),
 		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
-		        FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL), 0),
-		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL),
+		        FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL), 0),
+		    count(*) FILTER (WHERE paid_at IS NOT NULL AND payout_id IS NULL AND paid_mode IS NULL),
 		    coalesce(sum(paid_paise - coalesce(commission_paise, 0))
 		        FILTER (WHERE payout_id IS NOT NULL), 0),
-		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1)
+		    (SELECT max(p.created_at) FROM driver_payouts p WHERE p.driver_id = $1),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $2), 0),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $3), 0),
+		    coalesce(sum(` + netShare + `) FILTER (WHERE completed_at >= $4), 0),
+		    coalesce(sum(` + netShare + `), 0)
 		FROM bookings
 		WHERE driver_id = $1 AND status = 'completed'`
 
@@ -284,7 +306,7 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		average *float64
 		rated   int
 	)
-	err := r.pool.QueryRow(ctx, q, driverID, today, week, month).Scan(
+	err := r.pool.QueryRow(ctx, q, driverID, today, week, month, r.commissionBP).Scan(
 		&average, &rated,
 		&e.Today.FarePaise, &e.Today.Rides,
 		&e.Week.FarePaise, &e.Week.Rides,
@@ -293,6 +315,7 @@ func (r *DriverRideRepository) Earnings(ctx context.Context, driverID string, to
 		&e.Payments.AwaitingCustomerPaise, &e.Payments.AwaitingCustomerRides,
 		&e.Payments.DuePaise, &e.Payments.DueRides,
 		&e.Payments.PaidOutPaise, &e.Payments.LastPayoutAt,
+		&e.Today.NetPaise, &e.Week.NetPaise, &e.Month.NetPaise, &e.Total.NetPaise,
 	)
 	if err != nil {
 		return domain.DriverEarnings{}, fmt.Errorf("summing earnings: %w", err)

@@ -90,6 +90,87 @@ class BookingStop {
   final DateTime? departBy;
 }
 
+/// How a paid ride was paid, for its receipt: the gateway's payment mode
+/// (`UPI_INTENT`, `UPI_QR`, …) or `CASH` / `WAIVED` for a ride MOJUD settled
+/// by hand, with the references a dispute would need.
+class RidePayment {
+  const RidePayment({
+    required this.mode,
+    this.utr,
+    this.transactionId,
+    this.merchantOrderId,
+    this.paidAt,
+  });
+
+  /// As the server sent it; may be empty.
+  final String mode;
+  final String? utr;
+  final String? transactionId;
+  final String? merchantOrderId;
+  final DateTime? paidAt;
+
+  /// How the customer paid, in words: "UPI", "Cash", "Waived by MOJUD", or
+  /// the gateway's mode made readable ("NET_BANKING" → "Net Banking").
+  String get modeLabel {
+    final m = mode.trim().toUpperCase();
+    if (m.isEmpty || m.startsWith('UPI')) return 'UPI';
+    if (m == 'CASH') return 'Cash';
+    if (m == 'WAIVED') return 'Waived by MOJUD';
+    return [
+      for (final word in m.split('_'))
+        if (word.isNotEmpty) '${word[0]}${word.substring(1).toLowerCase()}',
+    ].join(' ');
+  }
+
+  /// The bank's UTR, else the gateway's transaction id; null when neither.
+  String? get reference => utr ?? transactionId;
+
+  /// Reads a booking's `payment` block, or null when it's missing or not an
+  /// object.
+  static RidePayment? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final mode = json['mode'];
+    final paidAt = json['paidAt'];
+    return RidePayment(
+      mode: mode is String ? mode : '',
+      utr: _text(json['utr']),
+      transactionId: _text(json['transactionId']),
+      merchantOrderId: _text(json['merchantOrderId']),
+      paidAt: paidAt is String ? DateTime.tryParse(paidAt)?.toLocal() : null,
+    );
+  }
+
+  static String? _text(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value.trim() : null;
+}
+
+/// What a Round Trip's fare is made of: the hourly tariff and the late-night
+/// surcharge, in paise. The server only sends it when the two add up to the
+/// fare.
+class FareBreakdown {
+  const FareBreakdown({required this.basePaise, this.nightPaise = 0});
+
+  final int basePaise;
+  final int nightPaise;
+
+  int get baseRupees => (basePaise / 100).round();
+  int get nightRupees => (nightPaise / 100).round();
+
+  /// Reads a booking's `fareBreakdown` block, or null when it's missing or
+  /// malformed.
+  static FareBreakdown? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final base = json['basePaise'];
+    final night = json['nightPaise'];
+    if (base is! num || base <= 0) return null;
+    if (night != null && (night is! num || night < 0)) return null;
+    return FareBreakdown(
+      basePaise: base.toInt(),
+      nightPaise: (night as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// The stars (1–5) and optional note one side of a ride gave the other.
 class RideRating {
   const RideRating({required this.stars, this.note});
@@ -142,6 +223,8 @@ class MyBooking {
     this.myRating,
     this.paymentStatus = RidePaymentStatus.none,
     this.paidAt,
+    this.payment,
+    this.fareBreakdown,
   });
 
   final String id;
@@ -204,6 +287,13 @@ class MyBooking {
   /// Whether the completed ride is paid for, and when it was.
   final RidePaymentStatus paymentStatus;
   final DateTime? paidAt;
+
+  /// How a paid ride was paid, for its receipt; null until it's paid, and
+  /// from servers that don't say.
+  final RidePayment? payment;
+
+  /// A Round Trip's base fare and night surcharge; null when not sent.
+  final FareBreakdown? fareBreakdown;
 
   int get fareRupees => (farePaise / 100).round();
 
@@ -392,6 +482,8 @@ class MyBooking {
       myRating: _rating(json['myRating']),
       paymentStatus: RidePaymentStatus.fromWire(json['paymentStatus']),
       paidAt: _time(json['paidAt']),
+      payment: RidePayment.tryParse(json['payment']),
+      fareBreakdown: FareBreakdown.tryParse(json['fareBreakdown']),
     );
   }
 }

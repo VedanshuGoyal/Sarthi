@@ -11,6 +11,7 @@ import 'widgets/cancel_ride_sheet.dart';
 import 'widgets/driver_row.dart';
 import 'widgets/help_safety_row.dart';
 import 'widgets/live_ride_map.dart';
+import 'widgets/receipt_card.dart';
 import 'widgets/ride_format.dart';
 import 'widgets/star_rating.dart';
 import 'widgets/start_code_panel.dart';
@@ -329,8 +330,7 @@ class _TrackingCard extends StatelessWidget {
   }
 }
 
-/// "Rate your driver" until the customer has, then the stars they gave.
-/// Paying for a completed trip: a UPI button while it's due, a receipt line
+/// Paying for a completed trip: a UPI button while it's due, the receipt
 /// once it's paid.
 class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
@@ -348,18 +348,7 @@ class _PaymentCard extends StatelessWidget {
     final t = SkylineTokens.of(context);
     final amount = '₹${booking.fareRupees}';
     if (booking.paymentStatus == RidePaymentStatus.paid) {
-      return SkylineCard(
-        padding: const EdgeInsets.all(Skyline.s16),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle_rounded, color: t.success),
-            const SizedBox(width: Skyline.s12),
-            Expanded(child: Text('Paid $amount', style: t.title(15))),
-            if (booking.paidAt case final at?)
-              Text(RideFormat.when(context, at), style: t.body(size: 13)),
-          ],
-        ),
-      );
+      return ReceiptCard(booking: booking);
     }
     final error = vm.payError;
     return SkylineSection(
@@ -392,6 +381,7 @@ class _PaymentCard extends StatelessWidget {
   }
 }
 
+/// "Rate your driver" until the customer has, then the stars they gave.
 class _RatingCard extends StatelessWidget {
   const _RatingCard({
     required this.vm,

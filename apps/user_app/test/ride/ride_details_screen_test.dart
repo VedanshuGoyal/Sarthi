@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
+import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/activity_panel.dart';
 import 'package:user_app/features/ride/view/ride_details_screen.dart';
+import 'package:user_app/features/ride/view/widgets/receipt_card.dart';
 import 'package:user_app/features/ride/view/widgets/star_rating.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 
@@ -19,6 +21,7 @@ Future<void> _pump(
   WidgetTester tester,
   FakeBookingServer server, {
   Widget home = const RideDetailsScreen(bookingId: 'b1'),
+  bool settle = true,
 }) async {
   final repo = server.repository();
   final bookings = MyBookingsViewModel(repository: repo);
@@ -32,7 +35,11 @@ Future<void> _pump(
       child: MaterialApp(theme: SkylineTheme.light(), home: home),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 bool _shows(String text) => find.text(text).evaluate().isNotEmpty;
@@ -121,6 +128,118 @@ void main() {
     check(_shows('You rated ')).isTrue();
     check(tester.widget<StarRow>(find.byType(StarRow)).stars).equals(5);
     check(_shows('Rate your driver')).isFalse();
+  });
+
+  group('payment', () {
+    testWidgets('a paid ride shows its receipt', (tester) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'completed',
+            tripType: 'roundTrip',
+            paymentStatus: 'paid',
+            payment: {
+              'mode': 'UPI_INTENT',
+              'utr': '412345678901',
+              'merchantOrderId':
+                  'MOJUD_9f1c2a7b3d4e5f60718293a4b5c6d7e8_m3k9x2',
+              'paidAt': '2030-10-26T08:00:00Z',
+            },
+            fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+          ),
+        ]),
+      );
+      await tester.ensureVisible(find.text('Receipt'));
+      await tester.pump();
+      for (final text in [
+        'Receipt',
+        'Fare',
+        '₹640',
+        'Base fare',
+        '₹540',
+        'Night surcharge',
+        '₹100',
+        'Paid via',
+        'UPI',
+        'Reference',
+        '412345678901',
+        'Order',
+        'MOJUD_9f1c2a7b3d4e5f60718293a4b5c6d7e8_m3k9x2',
+      ]) {
+        check(because: text, _shows(text)).isTrue();
+      }
+      check(find.textContaining('by UPI').evaluate()).isEmpty();
+    });
+
+    testWidgets('a ride settled by hand says how, without a reference', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'completed',
+            paymentStatus: 'paid',
+            payment: {'mode': 'CASH', 'paidAt': '2030-10-26T08:00:00Z'},
+          ),
+        ]),
+      );
+      await tester.ensureVisible(find.text('Receipt'));
+      await tester.pump();
+      check(_shows('Cash')).isTrue();
+      check(_shows('Reference')).isFalse();
+      check(_shows('Order')).isFalse();
+      check(_shows('Base fare')).isFalse();
+    });
+
+    testWidgets('the receipt fits a narrow phone', (tester) async {
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final booking = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'paid',
+          payment: {
+            'mode': 'NET_BANKING',
+            'transactionId': 'T24111700012345678901234567890123456789',
+            'merchantOrderId': 'MOJUD_9f1c2a7b3d4e5f60718293a4b5c6d7e8_m3k9x2',
+            'paidAt': '2030-10-26T08:00:00Z',
+          },
+          fareBreakdown: {'basePaise': 54000, 'nightPaise': 10000},
+        ),
+      )!;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SkylineTheme.light(),
+          home: Scaffold(
+            body: ListView(
+              padding: const EdgeInsets.all(Skyline.s20),
+              children: [ReceiptCard(booking: booking)],
+            ),
+          ),
+        ),
+      );
+      check(_shows('Net Banking')).isTrue();
+      check(tester.takeException()).isNull();
+    });
+
+    testWidgets('a ride still due offers the Pay button, not a receipt', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(status: 'completed', paymentStatus: 'due'),
+        ]),
+        // Opening a due ride re-checks its payment in the background (a
+        // spinner never settles under the fake clock), so don't settle.
+        settle: false,
+      );
+      check(_shows('Pay ₹640 by UPI')).isTrue();
+      check(_shows('Receipt')).isFalse();
+    });
   });
 
   testWidgets('a cancelled ride says who cancelled and why', (tester) async {

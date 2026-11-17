@@ -25,8 +25,16 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.approve { background: var(--ok); border-color: var(--ok); color: #fff; }
   button.reject { background: #fff; border-color: var(--bad); color: var(--bad); }
-  input, textarea { font: inherit; width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+  input, textarea, select { font: inherit; width: 100%; padding: 9px 11px; border: 1px solid var(--line);
     border-radius: 8px; background: #fff; color: var(--ink); }
+  .row > input, .row > select { width: auto; flex: 1 1 140px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: var(--canvas); color: var(--muted); white-space: nowrap; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  details.act { margin-top: 6px; } details.act summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+  details.act .row { margin-top: 6px; }
+  h2.section { font-size: 16px; margin: 18px 0 8px; }
   textarea { min-height: 60px; resize: vertical; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
   .stack > * + * { margin-top: 12px; }
@@ -77,6 +85,7 @@
     <h2 style="margin:0;font-size:18px">Sign in</h2>
     <p class="sub" style="margin:0">Paste the admin token.</p>
     <input id="token" type="password" autocomplete="off" placeholder="Admin token">
+    <input id="actor" type="text" autocomplete="off" maxlength="60" placeholder="Your name (for the audit log)">
     <div class="row"><button id="signin-btn" class="primary" type="button">Sign in</button>
       <span id="signin-msg" class="msg bad"></span></div>
   </section>
@@ -88,6 +97,9 @@
       <button role="tab" data-tab="verified">Verified</button>
       <button role="tab" data-tab="incomplete">In progress</button>
       <button role="tab" data-tab="payouts">Payouts</button>
+      <button role="tab" data-tab="bookings">Bookings</button>
+      <button role="tab" data-tab="payments">Payments<span class="count hidden" id="count-payments"></span></button>
+      <button role="tab" data-tab="log">Log</button>
     </nav>
     <div id="list" class="stack"></div>
   </section>
@@ -97,8 +109,13 @@
 <script>
 "use strict";
 const KEY = "mojud-admin-token";
+const ACTOR_KEY = "mojud-admin-actor";
 const $ = (s) => document.querySelector(s);
 let token = sessionStorage.getItem(KEY) || "";
+// Who is at the keyboard, for the audit log: the token is shared, so every
+// change is stamped with the name given here (X-Admin-Actor).
+let actor = "";
+try { actor = localStorage.getItem(ACTOR_KEY) || ""; } catch {}
 let tab = "submitted";
 const photoURLs = [];
 
@@ -118,7 +135,8 @@ function el(tag, attrs, ...kids) {
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
-    headers: { "Authorization": "Bearer " + token, ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+    headers: { "Authorization": "Bearer " + token, ...(actor ? { "X-Admin-Actor": actor } : {}),
+      ...(opts.body ? { "Content-Type": "application/json" } : {}) },
   });
   if (res.status === 401) { signOut("Token not accepted."); throw new Error("unauthorized"); }
   if (!res.ok) {
@@ -141,6 +159,7 @@ function signOut(msg) {
   $("#signout").classList.add("hidden");
   $("#signin").classList.remove("hidden");
   $("#signin-msg").textContent = msg || "";
+  $("#actor").value = actor;
 }
 
 async function signIn() {
@@ -154,6 +173,8 @@ async function signIn() {
     return;
   }
   sessionStorage.setItem(KEY, token);
+  actor = $("#actor").value.trim();
+  try { actor ? localStorage.setItem(ACTOR_KEY, actor) : localStorage.removeItem(ACTOR_KEY); } catch {}
   $("#token").value = "";
   showApp();
 }
@@ -169,7 +190,8 @@ function select(name) {
   tab = name;
   for (const b of document.querySelectorAll("[data-tab]")) b.setAttribute("aria-selected", b.dataset.tab === name);
   photoURLs.splice(0).forEach(URL.revokeObjectURL);
-  name === "payouts" ? loadPayouts() : loadKYC(name);
+  const views = { payouts: loadPayouts, bookings: loadBookings, payments: loadPayments, log: loadLog };
+  (views[name] || (() => loadKYC(name)))();
 }
 
 async function refreshCount() {
@@ -178,6 +200,12 @@ async function refreshCount() {
     const c = $("#count-submitted");
     c.textContent = drivers.length;
     c.classList.toggle("hidden", drivers.length === 0);
+  } catch {}
+  try {
+    const a = await (await api("/admin/payments/attention")).json();
+    const n = a.paidTwice.length + a.stalePending.length, c = $("#count-payments");
+    c.textContent = n;
+    c.classList.toggle("hidden", n === 0);
   } catch {}
 }
 
@@ -317,6 +345,181 @@ async function loadPayouts() {
       el("thead", {}, el("tr", {}, ["Driver", "Rides", "Owed", "Pay to", "Transfer"].map((h) => el("th", {}, h)))),
       el("tbody", {}, rows))),
     el("p", { class: "sub" }, "Total owed: " + rupees(total)));
+}
+
+// ---- Bookings: find a ride, give it to a driver, cancel it, or settle one
+// paid outside the app. Every change is in the Log tab with your name.
+
+const STATUS = {
+  requested: ["Finding a driver", "warn"], expired: ["No driver found", "bad"], accepted: ["Driver assigned", "ok"],
+  arrived: ["At pickup", "ok"], in_progress: ["On trip", "ok"], completed: ["Completed", ""], cancelled: ["Cancelled", "bad"],
+};
+const TRIP = { roundTrip: "Round trip", oneWay: "One way", multiStop: "Multi-stop" };
+const GEARBOX = { manual: "manual", automatic: "automatic", both: "manual + automatic" };
+let bookingFilter = { status: "", date: "" };
+let verifiedDrivers = null;
+
+async function loadBookings() {
+  const list = $("#list");
+  const status = el("select", { "aria-label": "Status" },
+    [["", "All"], ["requested", "Finding a driver"], ["expired", "No driver found"], ["accepted", "Driver assigned"],
+     ["arrived", "At pickup"], ["in_progress", "On trip"], ["completed", "Completed"], ["unpaid", "Completed, unpaid"],
+     ["cancelled", "Cancelled"]].map(([v, l]) => el("option", { value: v, selected: v === bookingFilter.status }, l)));
+  const date = el("input", { type: "date", value: bookingFilter.date, "aria-label": "Start date" });
+  const go = el("button", { class: "primary", type: "button" }, "Show");
+  const head = el("div", { class: "row" }, status, date, go);
+  go.addEventListener("click", () => { bookingFilter = { status: status.value, date: date.value }; loadBookings(); });
+  list.replaceChildren(head, el("p", { class: "empty" }, "Loading…"));
+
+  const q = new URLSearchParams();
+  if (bookingFilter.status) q.set("status", bookingFilter.status);
+  if (bookingFilter.date) q.set("date", bookingFilter.date);
+  let bookings;
+  try {
+    ({ bookings } = await (await api("/admin/bookings?" + q)).json());
+    if (!verifiedDrivers) verifiedDrivers = (await (await api("/admin/kyc?status=verified")).json()).drivers;
+  } catch (e) {
+    list.replaceChildren(head, el("p", { class: "empty bad" }, e.message));
+    return;
+  }
+  refreshCount();
+  if (!bookings.length) {
+    list.replaceChildren(head, el("p", { class: "empty" }, "No bookings match."));
+    return;
+  }
+  list.replaceChildren(head,
+    el("div", { class: "table-wrap" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Start", "Trip", "Customer", "Driver", "Fare", "Status"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, bookings.map(bookingRow)))),
+    el("p", { class: "sub" }, bookings.length + " shown (latest start first, at most 200)."));
+}
+
+function party(p) {
+  return p ? [el("div", { class: "v" }, p.name || "—"), el("div", { class: "sub" }, el("a", { href: "tel:" + p.phone }, p.phone))]
+    : el("span", { class: "sub" }, "—");
+}
+
+function bookingRow(b) {
+  const [label, tone] = STATUS[b.status] || [b.status, ""];
+  const msg = el("div", { class: "msg" });
+  const pay = b.paymentStatus === "due" ? el("span", { class: "pill bad" }, "Unpaid")
+    : b.paidMode ? el("span", { class: "pill warn", title: b.paidNote || "" }, b.paidMode === "cash" ? "Settled: cash" : "Settled: waived")
+    : b.paymentStatus ? el("span", { class: "pill ok" }, b.paymentStatus === "paid_out" ? "Paid out" : "Paid") : null;
+  const actions = [];
+
+  async function act(path, body, done) {
+    msg.className = "msg"; msg.textContent = "Saving…";
+    try {
+      await api("/admin/bookings/" + encodeURIComponent(b.id) + "/" + path, { method: "POST", body: JSON.stringify(body) });
+      msg.className = "msg ok"; msg.textContent = done;
+      setTimeout(loadBookings, 900);
+    } catch (e) { msg.className = "msg bad"; msg.textContent = e.message; }
+  }
+
+  if (b.status === "requested" || b.status === "expired") {
+    const who = el("select", { "aria-label": "Driver" }, el("option", { value: "" }, "Pick a verified driver"),
+      (verifiedDrivers || []).map((d) => el("option", { value: d.driverId },
+        (d.profile.fullName || d.phone) + " · " + (GEARBOX[d.profile.transmission] || "gearbox not set"))));
+    const go = el("button", { class: "primary", type: "button" }, "Assign");
+    go.addEventListener("click", () => {
+      if (!who.value) { msg.className = "msg bad"; msg.textContent = "Pick a driver."; return; }
+      act("assign", { driverId: who.value }, "Assigned. Driver and customer notified.");
+    });
+    actions.push(el("details", { class: "act" }, el("summary", {}, "Assign a driver"), el("div", { class: "row" }, who, go)));
+  }
+  if (["requested", "expired", "accepted", "arrived", "in_progress"].includes(b.status)) {
+    const why = el("input", { placeholder: "Reason (shown to customer and driver)", maxlength: "300" });
+    const go = el("button", { class: "reject", type: "button" }, "Cancel ride");
+    go.addEventListener("click", () => {
+      if (!why.value.trim()) { msg.className = "msg bad"; msg.textContent = "Give a reason."; why.focus(); return; }
+      if (b.status === "in_progress" && !confirm("This trip is underway. Cancel it anyway? The customer won't be asked to pay.")) return;
+      act("cancel", { reason: why.value.trim() }, "Cancelled. Customer and driver notified.");
+    });
+    actions.push(el("details", { class: "act" }, el("summary", {}, "Cancel"), el("div", { class: "row" }, why, go)));
+  }
+  if (b.status === "completed" && b.paymentStatus === "due") {
+    const mode = el("select", { "aria-label": "How" },
+      el("option", { value: "cash" }, "Cash — customer paid the driver; no commission"),
+      el("option", { value: "waived" }, "Waived — nobody pays; driver not paid for it"));
+    const why = el("input", { placeholder: "Reason (for the log)", maxlength: "300" });
+    const go = el("button", { class: "primary", type: "button" }, "Mark settled");
+    go.addEventListener("click", () => {
+      if (!why.value.trim()) { msg.className = "msg bad"; msg.textContent = "Give a reason."; why.focus(); return; }
+      if (!confirm("Mark " + rupees(b.farePaise) + " as settled (" + mode.value + ")? This can't be undone here.")) return;
+      act("settle", { mode: mode.value, reason: why.value.trim() }, "Settled. The customer can book again.");
+    });
+    actions.push(el("details", { class: "act" }, el("summary", {}, "Mark settled (cash / waived)"),
+      el("div", { class: "stack" }, mode, el("div", { class: "row" }, why, go))));
+  }
+
+  return el("tr", {},
+    el("td", {}, el("div", { class: "v" }, fmtTime(b.scheduledAt)), el("div", { class: "sub" }, "booked " + fmtTime(b.createdAt))),
+    el("td", {}, el("div", { class: "v" }, TRIP[b.tripType] || b.tripType),
+      el("div", { class: "sub" }, b.pickup || "(no pickup)", b.destination ? " → " + b.destination : ""),
+      b.car ? el("div", { class: "sub mono" }, b.car.registration + " · " + b.car.transmission) : null,
+      el("div", { class: "sub mono", title: "Booking id" }, b.id)),
+    el("td", {}, party(b.customer)),
+    el("td", {}, party(b.driver)),
+    el("td", {}, el("div", { class: "v" }, rupees(b.farePaise) + (b.fareEstimated ? " (est.)" : ""))),
+    el("td", {}, el("div", { class: "row" }, el("span", { class: "pill " + tone }, label), pay),
+      b.cancelReason ? el("div", { class: "sub" }, (b.cancelledBy === "ops" ? "By MOJUD: " : b.cancelledBy ? "By " + b.cancelledBy + ": " : "") + b.cancelReason) : null,
+      actions, msg));
+}
+
+// ---- Payments: money a person has to deal with by hand.
+
+async function loadPayments() {
+  const list = $("#list");
+  list.replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  let a;
+  try {
+    a = await (await api("/admin/payments/attention")).json();
+  } catch (e) {
+    list.replaceChildren(el("p", { class: "empty bad" }, e.message));
+    return;
+  }
+  refreshCount();
+  const table = (orders, empty) => orders.length ? el("div", { class: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["Order", "Booking", "Amount", "UPI", "Opened", "Ride paid by"].map((h) => el("th", {}, h)))),
+    el("tbody", {}, orders.map((o) => el("tr", {},
+      el("td", { class: "mono" }, o.merchantOrderId),
+      el("td", { class: "mono" }, o.bookingId),
+      el("td", { class: "v" }, rupees(o.amountPaise)),
+      el("td", {}, o.utr ? el("div", { class: "mono" }, "UTR " + o.utr) : null,
+        o.transactionId ? el("div", { class: "sub mono" }, o.transactionId) : null, o.paymentMode ? el("div", { class: "sub" }, o.paymentMode) : null),
+      el("td", {}, fmtTime(o.createdAt)),
+      el("td", { class: "mono" }, o.paidBy || "—")))))) : el("p", { class: "empty" }, empty);
+  list.replaceChildren(
+    el("h2", { class: "section" }, "Paid twice — refund the extra payment in the PhonePe dashboard"),
+    table(a.paidTwice, "No ride has been paid twice."),
+    el("h2", { class: "section" }, "Pending for over a day — check each in the PhonePe dashboard"),
+    table(a.stalePending, "Nothing is stuck."));
+}
+
+// ---- Log: who changed what, newest first.
+
+async function loadLog() {
+  const list = $("#list");
+  list.replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  let actions;
+  try {
+    ({ actions } = await (await api("/admin/actions?limit=200")).json());
+  } catch (e) {
+    list.replaceChildren(el("p", { class: "empty bad" }, e.message));
+    return;
+  }
+  if (!actions.length) {
+    list.replaceChildren(el("p", { class: "empty" }, "Nothing recorded yet."));
+    return;
+  }
+  list.replaceChildren(el("div", { class: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, ["When", "Who", "What", "On", "Details"].map((h) => el("th", {}, h)))),
+    el("tbody", {}, actions.map((x) => el("tr", {},
+      el("td", {}, fmtTime(x.at)),
+      el("td", { class: "v" }, x.actor),
+      el("td", {}, x.action),
+      el("td", { class: "mono" }, x.target),
+      el("td", { class: "sub" }, Object.entries(x.details || {}).map(([k, v]) => el("div", {}, k + ": " + (typeof v === "object" ? JSON.stringify(v) : v))))))))));
 }
 
 async function downloadCSV(asOf) {

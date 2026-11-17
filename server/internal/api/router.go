@@ -27,6 +27,7 @@ func NewRouter(
 	payments *service.PaymentService,
 	payouts *service.PayoutService,
 	stats *service.StatsService,
+	ops *service.OpsService,
 	webhook WebhookVerifier,
 	adminToken string,
 	corsOrigins []string,
@@ -44,7 +45,7 @@ func NewRouter(
 	mp := NewMapsHandler(maps)
 	pt := NewPushTokenHandler(notify)
 	pay := NewPaymentHandler(payments, bookings, webhook)
-	adm := NewAdminHandler(payouts, driverKYC, notify, stats)
+	adm := NewAdminHandler(payouts, driverKYC, notify, stats, ops)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -128,6 +129,19 @@ func NewRouter(
 	// The back-office web page. Public HTML: every call it makes needs the
 	// admin token, which the person using it pastes in.
 	mux.HandleFunc("GET /admin", AdminPage)
+
+	// money+ops: the back office's booking tools (list, assign, cancel,
+	// settle a ride paid outside the app), the payments to-do list and the
+	// audit trail, behind ADMIN_TOKEN; and each driver's payout statement,
+	// scoped to their session.
+	money := NewDriverMoneyHandler(payouts)
+	mux.HandleFunc("GET /admin/bookings", requireAdmin(adminToken, adm.AdminBookings))
+	mux.HandleFunc("POST /admin/bookings/{id}/assign", requireAdmin(adminToken, adm.AssignBooking))
+	mux.HandleFunc("POST /admin/bookings/{id}/cancel", requireAdmin(adminToken, adm.CancelBooking))
+	mux.HandleFunc("POST /admin/bookings/{id}/settle", requireAdmin(adminToken, adm.SettleBooking))
+	mux.HandleFunc("GET /admin/payments/attention", requireAdmin(adminToken, adm.PaymentAttention))
+	mux.HandleFunc("GET /admin/actions", requireAdmin(adminToken, adm.AdminActions))
+	mux.HandleFunc("GET /driver/payouts", requireAuth(driverSessions, money.Payouts))
 
 	// Driver app: the same phone/OTP registration flow as the customer app,
 	// but a separate account type/session (see DriverAuthHandler).

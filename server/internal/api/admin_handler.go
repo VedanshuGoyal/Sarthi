@@ -42,12 +42,29 @@ type AdminHandler struct {
 	kyc     *service.DriverKYCService
 	notify  *service.NotifyService
 	stats   *service.StatsService
+	// ops runs the bookings tools and keeps the audit trail (nil: no
+	// bookings routes work and nothing is audited).
+	ops *service.OpsService
 }
 
 // NewAdminHandler wires the handler. notify tells drivers about KYC
-// decisions.
-func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService, notify *service.NotifyService, stats *service.StatsService) *AdminHandler {
-	return &AdminHandler{payouts: payouts, kyc: kyc, notify: notify, stats: stats}
+// decisions and payouts; ops audits every change.
+func NewAdminHandler(payouts *service.PayoutService, kyc *service.DriverKYCService, notify *service.NotifyService,
+	stats *service.StatsService, ops *service.OpsService) *AdminHandler {
+	return &AdminHandler{payouts: payouts, kyc: kyc, notify: notify, stats: stats, ops: ops}
+}
+
+// operator is who is calling: the name the admin page sends in
+// X-Admin-Actor (the token is shared, so this is their word), and their IP.
+func operator(r *http.Request) service.Operator {
+	return service.Operator{Name: service.OperatorName(r.Header.Get("X-Admin-Actor")), IP: clientIP(r)}
+}
+
+// audit records a change made through a route outside OpsService.
+func (h *AdminHandler) audit(r *http.Request, action, target string, details map[string]any) {
+	if h.ops != nil {
+		h.ops.Audit(r.Context(), operator(r), action, target, details)
+	}
 }
 
 // Stats handles GET /admin/stats: counts for the ops dashboard — accounts,
@@ -129,6 +146,9 @@ func (h *AdminHandler) DecideKYC(w http.ResponseWriter, r *http.Request) {
 	err := h.kyc.DecideKYC(r.Context(), driverID, status, req.Note, domain.KYCStatus(req.ExpectedStatus))
 	switch {
 	case err == nil:
+		h.audit(r, domain.ActionKYCDecide, driverID, map[string]any{
+			"status": string(status), "note": strings.TrimSpace(req.Note), "expectedStatus": req.ExpectedStatus,
+		})
 		if h.notify != nil {
 			h.notify.KYCDecided(r.Context(), driverID, status, strings.TrimSpace(req.Note))
 		}
@@ -236,6 +256,12 @@ func (h *AdminHandler) RecordPayout(w http.ResponseWriter, r *http.Request) {
 		slog.Error("admin: recording payout failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not record the payout")
 	default:
+		h.audit(r, domain.ActionPayoutRecord, p.ID, map[string]any{
+			"driverId": p.DriverID, "amountPaise": p.AmountPaise, "rides": p.Rides, "reference": p.Reference,
+		})
+		if h.notify != nil {
+			h.notify.PayoutSent(r.Context(), p)
+		}
 		writeJSON(w, http.StatusCreated, map[string]domain.DriverPayout{"payout": p})
 	}
 }

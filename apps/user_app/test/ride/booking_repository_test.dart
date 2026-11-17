@@ -151,6 +151,99 @@ void main() {
     );
   });
 
+  group('idempotency key', () {
+    final uuidV4 = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    );
+
+    test('a key passed in is sent verbatim on every submit', () async {
+      final captured = <http.Request>[];
+      final repo = _repo(
+        (_) => http.Response('{"id":"b1","status":"received"}', 202),
+        captured: captured,
+      );
+      await repo.submitRoundTrip(_booking, idempotencyKey: 'attempt-1');
+      await repo.submitRoundTrip(_booking, idempotencyKey: 'attempt-1');
+      check(
+        captured.map((r) => r.headers['Idempotency-Key']),
+      ).deepEquals(['attempt-1', 'attempt-1']);
+    });
+
+    test('without one, each submit gets a fresh UUID v4', () async {
+      final captured = <http.Request>[];
+      final repo = _repo(
+        (_) => http.Response('{"id":"b1","status":"received"}', 202),
+        captured: captured,
+      );
+      await repo.submitRoundTrip(_booking);
+      await repo.submitRoundTrip(_booking);
+      final keys = [for (final r in captured) r.headers['Idempotency-Key']!];
+      for (final key in keys) {
+        check(key).matchesPattern(uuidV4);
+      }
+      check(keys.first).not((k) => k.equals(keys.last));
+    });
+
+    test('newIdempotencyKey is a UUID v4', () {
+      for (var i = 0; i < 50; i++) {
+        check(newIdempotencyKey()).matchesPattern(uuidV4);
+      }
+    });
+
+    test('a repeat the server recognised is a success', () async {
+      final repo = _repo(
+        (_) => http.Response(
+          '{"id":"b1","status":"received","duplicate":true}',
+          200,
+        ),
+      );
+      await repo.submitRoundTrip(_booking, idempotencyKey: 'attempt-1');
+    });
+  });
+
+  test('a booking refused for an unpaid ride names that ride', () async {
+    final repo = _repo(
+      (_) => http.Response(
+        jsonEncode({
+          'error': 'pay for your last ride before booking another',
+          'code': 'payment_due',
+          'bookingId': 'unpaid-1',
+        }),
+        409,
+      ),
+    );
+    await check(repo.submitRoundTrip(_booking)).throws<BookingSubmitException>(
+      (e) => e
+        ..has((e) => e.isPaymentDue, 'isPaymentDue').isTrue()
+        ..has((e) => e.code, 'code').equals('payment_due')
+        ..has((e) => e.bookingId, 'bookingId').equals('unpaid-1')
+        ..has(
+          (e) => e.message,
+          'message',
+        ).equals('Pay for your last ride before booking another.'),
+    );
+  });
+
+  test('a payment_due refusal without a ride id is a plain refusal', () async {
+    final repo = _repo(
+      (_) => http.Response(
+        jsonEncode({
+          'error': 'pay for your last ride before booking another',
+          'code': 'payment_due',
+        }),
+        409,
+      ),
+    );
+    await check(repo.submitRoundTrip(_booking)).throws<BookingSubmitException>(
+      (e) => e
+        ..has((e) => e.isPaymentDue, 'isPaymentDue').isFalse()
+        ..has(
+          (e) => e.message,
+          'message',
+        ).equals('Pay for your last ride before booking another.'),
+    );
+  });
+
   test('an unreadable bookings list is a load failure', () async {
     for (final body in ['<html>ok</html>', '{"bookings": "nope"}', '[]']) {
       final repo = _repo((_) => http.Response(body, 200));

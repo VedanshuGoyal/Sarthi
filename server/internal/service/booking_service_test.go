@@ -21,6 +21,12 @@ type fakeBookingStore struct {
 	got       domain.Booking
 	err       error
 	listed    []domain.UserBooking
+
+	// unpaid is the customer's unpaid ride UnpaidRide reports ("" none);
+	// repeat, when set, is the booking Insert finds already made.
+	unpaid    string
+	unpaidMin int64
+	repeat    *domain.Booking
 }
 
 // DriverBusyElsewhere looks across every listed booking, whoever's it is.
@@ -85,19 +91,28 @@ func (f *fakeBookingStore) RateDriver(_ context.Context, id, userID string, r do
 	return nil
 }
 
-func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingParams) (domain.Booking, error) {
+func (f *fakeBookingStore) Insert(_ context.Context, p repository.InsertBookingParams) (domain.Booking, bool, error) {
 	if f.err != nil {
-		return domain.Booking{}, f.err
+		return domain.Booking{}, false, f.err
 	}
 	f.insertHit = true
 	f.params = p
+	if f.repeat != nil {
+		return *f.repeat, true, nil
+	}
 	f.got = domain.Booking{
 		ID:       "bk-1",
 		UserID:   p.UserID,
 		TripType: p.TripType,
 		Details:  p.Details,
 	}
-	return f.got, nil
+	return f.got, false, nil
+}
+
+// UnpaidRide answers with the preset unpaid ride, recording the minimum asked.
+func (f *fakeBookingStore) UnpaidRide(_ context.Context, _ string, minPaise int64) (string, error) {
+	f.unpaidMin = minPaise
+	return f.unpaid, nil
 }
 
 // roundTripDetails is a round-trip payload as the customer app sends it.
@@ -130,7 +145,7 @@ func TestBookingService_Record_persists(t *testing.T) {
 	svc := newTestBookingService(store)
 
 	// A leading/trailing space on the trip type is trimmed before storing.
-	got, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails())
+	got, _, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails(), "")
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -157,14 +172,14 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	svc := newTestBookingService(store)
 	details := map[string]any{"hours": 4}
 
-	if _, err := svc.Record(context.Background(), "u1", "  ", details); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "  ", details, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("blank tripType: err = %v, want ErrInvalidBooking", err)
 	}
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", nil); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", nil, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("nil details: err = %v, want ErrInvalidBooking", err)
 	}
 	// Details a driver couldn't read (no pickup coordinates) are refused.
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", details); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", details, ""); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("unreadable details: err = %v, want ErrInvalidBooking", err)
 	}
 	if store.insertHit {
@@ -184,7 +199,7 @@ func TestBookingService_Record_acceptsTheAppsFare(t *testing.T) {
 	d["car"] = map[string]any{"registration": "DL01AB1234", "carType": "luxury", "transmission": "automatic"}
 	d["fare"] = 538.0 // RoundTripTariff.luxury.fareFor(3) = 440, + 50 + 24×2
 
-	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); err != nil {
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 	if store.params.FarePaise != 53800 || store.params.FareEstimated {
@@ -199,7 +214,7 @@ func TestBookingService_Record_rejectsTamperedFare(t *testing.T) {
 	d["hours"] = 10.0
 	d["fare"] = 300.0 // the tariff is 1040
 
-	if _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d); !errors.Is(err, ErrFareMismatch) {
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); !errors.Is(err, ErrFareMismatch) {
 		t.Fatalf("err = %v, want ErrFareMismatch", err)
 	}
 	if store.insertHit {
@@ -211,7 +226,7 @@ func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 	wantErr := errors.New("db down")
 	svc := newTestBookingService(&fakeBookingStore{err: wantErr})
 
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, wantErr) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
@@ -260,7 +275,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// 30 minutes ahead: it would close to drivers the moment it's booked.
 	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); !errors.Is(err, ErrBookingTooSoon) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, ErrBookingTooSoon) {
 		t.Errorf("30 min ahead: err = %v, want ErrBookingTooSoon", err)
 	}
 	if store.insertHit {
@@ -269,7 +284,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// The earliest slot, submitted a couple of minutes later: still accepted.
 	svc.now = func() time.Time { return start.Add(-43 * time.Minute) }
-	if _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails()); err != nil {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); err != nil {
 		t.Errorf("43 min ahead: err = %v, want nil", err)
 	}
 }

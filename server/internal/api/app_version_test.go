@@ -19,7 +19,7 @@ var testPolicy = AppPolicy{
 // service is nil, so a request that gets past the gate to a handler that
 // needs one answers through requireAuth (401) rather than panicking.
 func policyRouter(p AppPolicy) http.Handler {
-	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil, nil, p)
+	return NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil, nil, nil, p)
 }
 
 func send(h http.Handler, method, path, app, build string) *httptest.ResponseRecorder {

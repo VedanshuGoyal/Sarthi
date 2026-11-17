@@ -24,9 +24,12 @@ import 'duty_panel.dart';
 ///
 /// The shell also owns push registration: a "New ride request" arriving
 /// while the app is open refreshes the feed at once, and tapping one opens
-/// Home, where the request is. A "Ride cancelled" push instead refreshes
-/// the driver's own rides and, on tap, opens the Rides tab (and the ride
-/// itself, once it's loaded).
+/// Home, where the request is. A "Ride cancelled" or "Ride assigned" push
+/// instead refreshes the driver's own rides and, on tap, opens the Rides tab
+/// (and the ride itself, once it's loaded). "Payment received" and "Payout
+/// sent" refresh the money and open Earnings; a KYC decision or a bank
+/// account change re-reads the driver's KYC, which sends a driver who is no
+/// longer cleared back to the Document View.
 ///
 /// It also starts [locationShareViewModelProvider] (read once, never
 /// watched here) so live-location sharing runs for as long as the driver
@@ -57,6 +60,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   static const int _homeTab = 0;
   static const int _ridesTab = 1;
   static const int _earningsTab = 2;
+  static const int _accountTab = 3;
 
   final List<StreamSubscription<void>> _push = [];
   int _index = 0;
@@ -102,6 +106,23 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   /// The push sent when a customer pays for a ride.
   static const String _paymentReceived = 'payment_received';
 
+  /// The push sent when MOJUD records a bank transfer to the driver.
+  static const String _payoutSent = 'payout_sent';
+
+  /// The pushes about one of the driver's own rides: the customer (or
+  /// MOJUD) cancelled it, or MOJUD assigned it to them.
+  static const String _rideCancelled = 'ride_cancelled';
+  static const String _rideAssigned = 'ride_assigned';
+
+  /// The pushes that change whether the driver is cleared: a reviewer's
+  /// decision, and a new payout account (which reopens KYC).
+  static const String _kycDecided = 'kyc_decided';
+  static const String _bankAccountChanged = 'bank_account_changed';
+
+  /// Re-reads the driver's KYC: if they're no longer cleared, main.dart's
+  /// gate sends them back to the Document View.
+  void _reloadKyc() => ref.read(documentRegistrationViewModelProvider).load();
+
   /// The customer paid: re-read the rides and the money on Earnings.
   void _reloadMoney() {
     ref.read(myRidesViewModelProvider).load();
@@ -113,44 +134,50 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _reloadMoney();
   }
 
-  /// Pushes about one of the driver's own rides: the customer cancelled it,
-  /// or it starts within the hour.
-  static const Set<String> _rideUpdates = {'ride_cancelled', 'ride_reminder'};
+  /// The push sent when a held ride starts within the hour.
+  static const String _rideReminder = 'ride_reminder';
 
   /// The push sent when the backend took a silent driver off duty.
   static const String _dutyOff = 'duty_off';
 
-  /// A push arrived while the app was open: a ride update needs the rides
-  /// list re-read (a cancelled ride shows as cancelled; a reminder's ride
-  /// re-checks whether to share location), a payment the earnings, and a
-  /// duty-off shows the driver offline; anything else is a new request, so
-  /// refresh the feed as before.
+  /// A push arrived while the app was open: a cancelled, assigned or
+  /// upcoming ride needs the rides list re-read (a reminder's ride re-checks
+  /// whether to share location), a duty-off shows the driver offline, a
+  /// payment or payout the earnings, a KYC decision or bank change the KYC
+  /// record; anything else is a new request, so refresh the feed as before.
   void _onPushArrival(PushEvent event) {
-    if (_rideUpdates.contains(event.type)) {
-      ref.read(myRidesViewModelProvider).load();
-    } else if (event.type == _dutyOff) {
-      ref.read(dutyViewModelProvider).markOffDuty();
-    } else if (event.type == 'kyc_decided') {
-      // A reviewer revoked the driver: re-reading KYC sends them back to the
-      // Document View (main.dart's gate).
-      ref.read(documentRegistrationViewModelProvider).load();
-    } else if (event.type == _paymentReceived) {
-      _reloadMoney();
-    } else {
-      _refreshRequests();
+    switch (event.type) {
+      case _rideCancelled || _rideAssigned || _rideReminder:
+        ref.read(myRidesViewModelProvider).load();
+      case _dutyOff:
+        ref.read(dutyViewModelProvider).markOffDuty();
+      case _kycDecided || _bankAccountChanged:
+        _reloadKyc();
+      case _paymentReceived || _payoutSent:
+        _reloadMoney();
+      default:
+        _refreshRequests();
     }
   }
 
   void _onPushTap(PushEvent event) {
-    if (_rideUpdates.contains(event.type)) {
-      _openRide(event.rideId);
-    } else if (event.type == _paymentReceived) {
-      _openEarnings();
-    } else if (event.type == _dutyOff) {
-      ref.read(dutyViewModelProvider).markOffDuty();
-      _select(_homeTab);
-    } else {
-      _openRequests();
+    switch (event.type) {
+      case _rideCancelled || _rideAssigned || _rideReminder:
+        _openRide(event.rideId);
+      case _paymentReceived || _payoutSent:
+        _openEarnings();
+      case _dutyOff:
+        ref.read(dutyViewModelProvider).markOffDuty();
+        _select(_homeTab);
+      case _bankAccountChanged:
+        // The account shows on the Account panel.
+        _reloadKyc();
+        _select(_accountTab);
+      case _kycDecided:
+        _reloadKyc();
+        _openRequests();
+      default:
+        _openRequests();
     }
   }
 

@@ -20,6 +20,8 @@ Map<String, dynamic> bookingJson({
   String? cancelReason,
   String cancelledBy = 'customer',
   String? paymentStatus,
+  Map<String, dynamic>? payment,
+  Map<String, dynamic>? fareBreakdown,
 }) => {
   'id': id,
   'tripType': tripType,
@@ -71,6 +73,8 @@ Map<String, dynamic> bookingJson({
   },
   'myRating': ?myRating,
   'paymentStatus': ?paymentStatus,
+  'payment': ?payment,
+  'fareBreakdown': ?fareBreakdown,
 };
 
 /// An in-memory stand-in for the booking endpoints, so repository, view

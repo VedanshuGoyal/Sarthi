@@ -19,6 +19,8 @@ type fakePayoutStore struct {
 	due       []domain.PayoutDue
 	recordErr error
 	gotExpect *repository.ExpectedPayout
+	// recorded is what PayoutsForDriver lists.
+	recorded []domain.DriverPayout
 }
 
 func (f *fakePayoutStore) DuePayouts(context.Context, time.Time) ([]domain.PayoutDue, error) {
@@ -35,12 +37,22 @@ func (f *fakePayoutStore) RecordPayout(
 	return domain.DriverPayout{ID: "p1", DriverID: driverID, Reference: reference, Rides: 2, AmountPaise: 13050, CreatedAt: at}, nil
 }
 
+func (f *fakePayoutStore) PayoutsForDriver(_ context.Context, driverID string, _ int) ([]domain.DriverPayout, error) {
+	var out []domain.DriverPayout
+	for _, p := range f.recorded {
+		if p.DriverID == driverID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
 type plainOpener struct{}
 
 func (plainOpener) Open(sealed []byte) ([]byte, error) { return sealed, nil }
 
 func adminPayouts(store *fakePayoutStore) *AdminHandler {
-	return NewAdminHandler(service.NewPayoutService(store, plainOpener{}), nil, nil, nil)
+	return NewAdminHandler(service.NewPayoutService(store, plainOpener{}), nil, nil, nil, nil)
 }
 
 func postPayout(h *AdminHandler, body string) *httptest.ResponseRecorder {

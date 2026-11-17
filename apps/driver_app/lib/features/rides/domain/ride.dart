@@ -448,20 +448,33 @@ enum RideAction {
   final String wireName;
 }
 
-/// Earnings over one window: the summed fares of rides completed in it.
+/// Earnings over one window: the summed fares of rides completed in it, and
+/// the driver's share of them.
 class EarningsPeriod {
-  const EarningsPeriod({this.farePaise = 0, this.rides = 0});
+  const EarningsPeriod({this.farePaise = 0, this.rides = 0, this.netPaise});
 
   final int farePaise;
   final int rides;
 
+  /// The driver's share of [farePaise]: what customers paid less MOJUD's
+  /// commission (for rides still unpaid, at today's rate). Null from older
+  /// servers, which only send the gross.
+  final int? netPaise;
+
   int get rupees => (farePaise / 100).round();
+
+  /// [netPaise] in whole rupees, or null when the server didn't send it.
+  int? get netRupees => switch (netPaise) {
+    final net? => (net / 100).round(),
+    null => null,
+  };
 
   factory EarningsPeriod.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) return const EarningsPeriod();
     return EarningsPeriod(
       farePaise: (json['farePaise'] as num?)?.toInt() ?? 0,
       rides: (json['rides'] as num?)?.toInt() ?? 0,
+      netPaise: (json['netPaise'] as num?)?.toInt(),
     );
   }
 }

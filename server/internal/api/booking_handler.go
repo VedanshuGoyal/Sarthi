@@ -32,10 +32,20 @@ type bookingRequest struct {
 }
 
 // bookingResponse confirms a stored booking, naming the id the app can use to
-// refer to it once ride tracking exists.
+// refer to it once ride tracking exists. Duplicate marks a repeated submit
+// answered with the booking the first one made.
 type bookingResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Duplicate bool   `json:"duplicate,omitempty"`
+}
+
+// paymentDueResponse is the 409 for a customer who must pay for a completed
+// ride (BookingID) before booking another.
+type paymentDueResponse struct {
+	Error     string `json:"error"`
+	Code      string `json:"code"`
+	BookingID string `json:"bookingId"`
 }
 
 // bookingsResponse is the customer's bookings list.
@@ -78,7 +88,10 @@ func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bookingsResponse{Bookings: bookings})
 }
 
-// Submit handles POST /me/bookings.
+// Submit handles POST /me/bookings. An Idempotency-Key header (the app's,
+// per booking attempt) makes a retry return the booking the first try made:
+// 202 for a new booking, 200 with "duplicate": true for a repeat. A
+// customer with an unpaid ride gets 409 payment_due naming it.
 func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	var req bookingRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -86,7 +99,14 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	booking, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details)
+	booking, duplicate, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details,
+		r.Header.Get("Idempotency-Key"))
+	if due, ok := errors.AsType[*service.PaymentDueError](err); ok {
+		writeJSON(w, http.StatusConflict, paymentDueResponse{
+			Error: due.Error(), Code: "payment_due", BookingID: due.BookingID,
+		})
+		return
+	}
 	if errors.Is(err, service.ErrFareMismatch) {
 		writeErrorCode(w, http.StatusBadRequest, "fare_mismatch", err.Error(), 0)
 		return
@@ -100,7 +120,11 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not record booking")
+		serverError(w, "could not record booking", err)
+		return
+	}
+	if duplicate {
+		writeJSON(w, http.StatusOK, bookingResponse{ID: booking.ID, Status: "received", Duplicate: true})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, bookingResponse{ID: booking.ID, Status: "received"})

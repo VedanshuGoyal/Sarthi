@@ -11,6 +11,7 @@ import '../../ride/domain/pickup_location.dart';
 import '../../ride/domain/round_trip_booking.dart';
 import '../../ride/domain/trip_type.dart';
 import '../../ride/ride_providers.dart';
+import '../../ride/view/activity_panel.dart';
 import '../../ride/view/booking_details_screen.dart';
 import '../../ride/view/multi_stop_planner_screen.dart';
 import '../../ride/view/one_way_details_screen.dart';
@@ -40,6 +41,11 @@ class HomeScreen extends ConsumerWidget {
   /// confirmation once the server has it; otherwise that nothing was booked,
   /// the server's reason, and a retry. A booking the server never took is
   /// no booking — no driver will see it — so it must never read as booked.
+  ///
+  /// [send] carries the attempt's idempotency key, so the retry re-sends the
+  /// same attempt: if the first one did land, the server answers with that
+  /// booking instead of making a second. A refusal because a finished ride
+  /// is unpaid offers to open that ride, where its Pay button is.
   Future<void> _book(
     BuildContext context,
     WidgetRef ref, {
@@ -47,33 +53,51 @@ class HomeScreen extends ConsumerWidget {
     required String booked,
     required Future<void> Function(BookingRepository repo) send,
   }) async {
-    String? failure;
+    BookingSubmitException? failure;
     try {
       await send(ref.read(bookingRepositoryProvider));
       // Show the new booking in Activity straight away.
       ref.read(myBookingsViewModelProvider).load();
     } on BookingSubmitException catch (e) {
-      failure = e.message;
+      failure = e;
     }
     if (!context.mounted) return;
+    final String message;
+    final SnackBarAction? action;
+    if (failure == null) {
+      (message, action) = (booked, null);
+    } else if (failure.isPaymentDue) {
+      final unpaid = failure.bookingId!;
+      message = failure.message;
+      action = SnackBarAction(
+        label: 'Pay now',
+        onPressed: () => _openUnpaidRide(context, ref, unpaid),
+      );
+    } else {
+      message = "Your $trip wasn't booked. ${failure.message}";
+      action = SnackBarAction(
+        label: 'Retry',
+        onPressed: () {
+          if (!context.mounted) return;
+          _book(context, ref, trip: trip, booked: booked, send: send);
+        },
+      );
+    }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            failure == null ? booked : "Your $trip wasn't booked. $failure",
-          ),
-          action: failure == null
-              ? null
-              : SnackBarAction(
-                  label: 'Retry',
-                  onPressed: () {
-                    if (!context.mounted) return;
-                    _book(context, ref, trip: trip, booked: booked, send: send);
-                  },
-                ),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(message), action: action));
+  }
+
+  /// Opens the unpaid ride [bookingId] once the rides list has it — the
+  /// details screen reads the ride from that list.
+  Future<void> _openUnpaidRide(
+    BuildContext context,
+    WidgetRef ref,
+    String bookingId,
+  ) async {
+    await ref.read(myBookingsViewModelProvider).load();
+    if (!context.mounted) return;
+    await openRideDetails(context, bookingId);
   }
 
   /// Routes the tapped trip choice to its next step. Round Trip opens the
@@ -94,6 +118,8 @@ class HomeScreen extends ConsumerWidget {
         );
         if (booking != null && context.mounted) {
           final hours = booking.hours;
+          // One key per confirmed booking, kept across its retries.
+          final key = newIdempotencyKey();
           await _book(
             context,
             ref,
@@ -101,7 +127,7 @@ class HomeScreen extends ConsumerWidget {
             booked:
                 'Round Trip booked: $hours ${hours == 1 ? 'hour' : 'hours'}, '
                 'in your ${booking.car.registration}.',
-            send: (repo) => repo.submitRoundTrip(booking),
+            send: (repo) => repo.submitRoundTrip(booking, idempotencyKey: key),
           );
         }
       case TripType.multiStop:
@@ -121,6 +147,7 @@ class HomeScreen extends ConsumerWidget {
         );
         if (trip != null && context.mounted) {
           final count = trip.stops.length;
+          final key = newIdempotencyKey();
           await _book(
             context,
             ref,
@@ -128,7 +155,7 @@ class HomeScreen extends ConsumerWidget {
             booked:
                 'Multi-Stop trip booked: $count '
                 '${count == 1 ? 'stop' : 'stops'} planned.',
-            send: (repo) => repo.submitMultiStop(trip),
+            send: (repo) => repo.submitMultiStop(trip, idempotencyKey: key),
           );
         }
       case TripType.oneWay:
@@ -147,6 +174,7 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
         if (trip != null && context.mounted) {
+          final key = newIdempotencyKey();
           await _book(
             context,
             ref,
@@ -155,7 +183,7 @@ class HomeScreen extends ConsumerWidget {
                 'One-Way Trip booked: ~${trip.estimatedTravelTime.inMinutes}'
                 ' min, in your ${trip.car.registration} '
                 'to ${trip.destination.address}.',
-            send: (repo) => repo.submitOneWay(trip),
+            send: (repo) => repo.submitOneWay(trip, idempotencyKey: key),
           );
         }
     }

@@ -20,7 +20,11 @@ var ErrInvalidPayout = errors.New("a payout needs the driverId and the bank's tr
 type PayoutStore interface {
 	DuePayouts(ctx context.Context, asOf time.Time) ([]domain.PayoutDue, error)
 	RecordPayout(ctx context.Context, driverID, reference string, asOf, at time.Time, expect repository.ExpectedPayout) (domain.DriverPayout, error)
+	PayoutsForDriver(ctx context.Context, driverID string, limit int) ([]domain.DriverPayout, error)
 }
+
+// maxDriverPayouts caps the payouts a driver's app lists.
+const maxDriverPayouts = 50
 
 // SealOpener decrypts a sealed bank account number (secret.Cipher).
 type SealOpener interface {
@@ -118,4 +122,17 @@ func (s *PayoutService) Record(
 	slog.InfoContext(ctx, "payout recorded",
 		"payoutId", p.ID, "driverId", driverID, "amountPaise", p.AmountPaise, "rides", p.Rides)
 	return p, nil
+}
+
+// ForDriver lists the transfers recorded to driverID, newest first — the
+// driver app's payout statement.
+func (s *PayoutService) ForDriver(ctx context.Context, driverID string) ([]domain.DriverPayout, error) {
+	out, err := s.store.PayoutsForDriver(ctx, driverID, maxDriverPayouts)
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []domain.DriverPayout{}
+	}
+	return out, nil
 }

@@ -191,6 +191,10 @@ func run() error {
 	)
 	// Every change to a driver's payout account is pushed to them.
 	driverKYC.SetAlerts(notify)
+	// money+ops: at launch a person reviews every submission; KYC_AUTO_CLEAR
+	// lets drivers whose checks all agree through without one.
+	driverKYC.SetAutoClear(cfg.KYCAutoClear)
+	slog.Info("kyc: auto-clear on submission", "enabled", cfg.KYCAutoClear)
 
 	// Confirmed bookings: persisted to PostgreSQL as the source of truth for
 	// what the customer asked for; each one alerts the drivers near it, and
@@ -204,6 +208,8 @@ func run() error {
 	driverRideStore := repository.NewDriverRideRepository(pool)
 	// Re-alerts skip the drivers who declined a ride or handed it back.
 	notify.SetDeclines(driverRideStore)
+	// money+ops: drivers' net share of rides not paid yet is the fare less this.
+	driverRideStore.SetCommissionBasisPoints(cfg.CommissionBasisPoints)
 	driverRides := service.NewDriverRideService(
 		driverRideStore,
 		driverProfiles,
@@ -289,12 +295,22 @@ func run() error {
 		"minUserApp", cfg.Apps.User.MinBuild, "latestUserApp", cfg.Apps.User.LatestBuild,
 		"minDriverApp", cfg.Apps.Driver.MinBuild, "latestDriverApp", cfg.Apps.Driver.LatestBuild,
 		"downloadUrl", cfg.Apps.DownloadURL)
+	// money+ops: the back office's booking tools and its audit trail. Assign
+	// runs the same conditional accept as a driver's own tap (driverRideStore).
+	ops := service.NewOpsService(service.OpsDeps{
+		Bookings: bookingStore,
+		Rides:    driverRideStore,
+		Payments: paymentStore,
+		Profiles: driverProfiles,
+		Audit:    repository.NewAdminActionRepository(pool),
+		Alerts:   notify,
+	})
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping, erasure,
+			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping, erasure,
 			appPolicy(cfg.Apps)),
 		// Bound every phase of a connection: a 12 MB KYC upload on a slow
 		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the

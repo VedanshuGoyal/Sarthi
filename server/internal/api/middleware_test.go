@@ -163,7 +163,7 @@ func TestReadyzReflectsTheDatabase(t *testing.T) {
 		{nil, http.StatusOK},
 		{errors.New("db down"), http.StatusServiceUnavailable},
 	} {
-		h := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil,
+		h := NewRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, "", nil,
 			func(context.Context) error { return tc.ready }, nil, AppPolicy{})
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
