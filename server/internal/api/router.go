@@ -51,7 +51,7 @@ func NewRouter(
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	// Readiness: the process is up AND can reach Postgres. redeploy.sh and
+	// Readiness: the process is up AND can reach a migrated Postgres. redeploy.sh and
 	// the watchdog gate on this; /healthz stays a plain liveness probe.
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if ready != nil {

@@ -306,11 +306,15 @@ func run() error {
 		Alerts:   notify,
 	})
 
+	// /readyz fails until the schema has this build's migrations, so
+	// redeploy.sh rolls back a binary started against an un-migrated DB.
+	ready := func(ctx context.Context) error { return repository.SchemaReady(ctx, pool) }
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(authService, sessions, recentPickups, cars, bookings,
 			driverAuthService, driverSessions, driverKYC, driverRides, mapsService, notify,
-			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, pool.Ping, erasure,
+			payments, payouts, stats, ops, webhook, cfg.AdminToken, cfg.CORSAllowedOrigins, ready, erasure,
 			appPolicy(cfg.Apps)),
 		// Bound every phase of a connection: a 12 MB KYC upload on a slow
 		// mobile link still fits ReadTimeout, and WriteTimeout exceeds the
