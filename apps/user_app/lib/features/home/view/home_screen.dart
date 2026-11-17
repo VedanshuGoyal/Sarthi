@@ -18,6 +18,7 @@ import '../../ride/view/one_way_details_screen.dart';
 import '../../ride/view/one_way_route_screen.dart';
 import '../../ride/view/pickup_location_screen.dart';
 import '../../ride/view/trip_type_selector.dart';
+import '../../ride/view/widgets/ride_format.dart';
 import '../../ride/view/widgets/ride_theme.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
@@ -45,7 +46,8 @@ class HomeScreen extends ConsumerWidget {
   /// [send] carries the attempt's idempotency key, so the retry re-sends the
   /// same attempt: if the first one did land, the server answers with that
   /// booking instead of making a second. A refusal because a finished ride
-  /// is unpaid offers to open that ride, where its Pay button is.
+  /// — or a cancellation fee — is unpaid offers to open that ride, where its
+  /// Pay button is.
   Future<void> _book(
     BuildContext context,
     WidgetRef ref, {
@@ -68,7 +70,11 @@ class HomeScreen extends ConsumerWidget {
       (message, action) = (booked, null);
     } else if (failure.isPaymentDue) {
       final unpaid = failure.bookingId!;
-      message = failure.message;
+      final owed = ref.read(myBookingsViewModelProvider).byId(unpaid);
+      message = owed != null && owed.hasCancellationFee
+          ? 'Pay the ${RideFormat.rupees(owed.cancellationFeePaise)} '
+                'cancellation fee for your last ride before booking another.'
+          : failure.message;
       action = SnackBarAction(
         label: 'Pay now',
         onPressed: () => _openUnpaidRide(context, ref, unpaid),

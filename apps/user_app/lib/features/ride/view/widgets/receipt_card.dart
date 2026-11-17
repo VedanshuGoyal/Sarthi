@@ -6,7 +6,9 @@ import 'ride_format.dart';
 
 /// The receipt of a paid ride: the fare (with its base and night parts when
 /// the server sent them), how it was paid, the reference to quote if it's
-/// ever disputed, and when.
+/// ever disputed, and when. A ride cancelled at the pickup reads as its
+/// cancellation fee, and a trip ended early as the charge for the time used
+/// beside the booked fare.
 ///
 /// Renders [booking] only; rows the server didn't send are left out, so a
 /// receipt from an older server is just the fare and the time.
@@ -20,12 +22,34 @@ class ReceiptCard extends StatelessWidget {
     final t = SkylineTokens.of(context);
     final b = booking;
     final payment = b.payment;
-    final breakdown = b.fareBreakdown;
+    // The parts only explain the fare they add up to — not a cancellation
+    // fee, nor the booked fare of a trip ended early.
+    final breakdown = switch (b.fareBreakdown) {
+      final parts?
+          when !b.hasCancellationFee &&
+              parts.basePaise + parts.nightPaise == b.farePaise =>
+        parts,
+      _ => null,
+    };
     final paidAt = payment?.paidAt ?? b.paidAt;
     final mono = t.body(size: 12.5).copyWith(fontFamily: 'monospace');
     // (label, value, style); null style is the regular value style.
     final rows = <(String, String, TextStyle?)>[
-      ('Fare', '₹${b.fareRupees}', t.title(16)),
+      if (b.hasCancellationFee)
+        (
+          'Cancellation fee',
+          RideFormat.rupees(b.cancellationFeePaise),
+          t.title(16),
+        )
+      else ...[
+        (
+          b.endedEarly ? 'Fare for the time used' : 'Fare',
+          '₹${b.fareRupees}',
+          t.title(16),
+        ),
+        if (b.bookedFarePaise case final booked? when b.endedEarly)
+          ('Booked fare', RideFormat.rupees(booked), null),
+      ],
       if (breakdown != null) ...[
         ('Base fare', '₹${breakdown.baseRupees}', null),
         if (breakdown.nightPaise > 0)

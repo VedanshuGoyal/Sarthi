@@ -22,13 +22,16 @@ Map<String, dynamic> bookingJson({
   String? paymentStatus,
   Map<String, dynamic>? payment,
   Map<String, dynamic>? fareBreakdown,
+  int farePaise = 64000,
+  int? cancellationFeePaise,
+  int? bookedFarePaise,
 }) => {
   'id': id,
   'tripType': tripType,
   'status': status,
   'scheduledAt': scheduledAt,
   'endsAt': '2030-10-26T07:30:00Z',
-  'farePaise': 64000,
+  'farePaise': farePaise,
   'fareEstimated': true,
   'pickup': {
     'address': 'Connaught Place, New Delhi',
@@ -75,13 +78,18 @@ Map<String, dynamic> bookingJson({
   'paymentStatus': ?paymentStatus,
   'payment': ?payment,
   'fareBreakdown': ?fareBreakdown,
+  'cancellationFeePaise': ?cancellationFeePaise,
+  'bookedFarePaise': ?bookedFarePaise,
 };
 
 /// An in-memory stand-in for the booking endpoints, so repository, view
 /// model and screen tests run the real request/parse code with no network.
 ///
-/// [bookings] is what `GET /me/bookings` lists; cancel and rating rewrite
-/// the stored booking like the server does. [location] is the driver fix
+/// [bookings] is what `GET /me/bookings` lists; cancel, end and rating
+/// rewrite the stored booking like the server does — a cancel at the pickup
+/// costs the booking's `cancellationFeePaise`, refused (409
+/// `cancellation_fee`) when the app agreed to less, and ending a trip early
+/// charges [endedFarePaise]. [location] is the driver fix
 /// to answer with (null → `{"location": null}`), and [locationError] a
 /// `(status, code)` to fail the location call with instead.
 class FakeBookingServer {
@@ -96,6 +104,9 @@ class FakeBookingServer {
 
   /// A `(status, code)` opening a checkout fails with.
   (int, String)? paymentError;
+
+  /// What ending a trip early charges, in paise.
+  int endedFarePaise = 24000;
 
   /// How many payment re-checks it takes for the gateway to report the ride
   /// paid; null never does.
@@ -132,13 +143,48 @@ class FakeBookingServer {
       case 'cancel':
         if (actionError case final error?) return _error(error);
         final body = jsonDecode(request.body) as Map<String, dynamic>;
+        final booking = bookings[index];
+        final fee = booking['status'] == 'arrived'
+            ? booking['cancellationFeePaise'] as int? ?? 0
+            : 0;
+        final accepted = body['acceptFeePaise'] as int?;
+        // Apps that don't say what they agreed to (before build 9) cancel
+        // free.
+        if (accepted != null && fee > accepted) {
+          return _json({
+            'error': 'cancelling now costs a fee',
+            'code': 'cancellation_fee',
+            'feePaise': fee,
+          }, 409);
+        }
+        final charged = accepted == null ? 0 : fee;
         bookings[index] = {
-          ...bookings[index],
+          ...booking,
           'status': 'cancelled',
           'cancelledAt': '2030-10-25T06:00:00Z',
           'cancelledBy': 'customer',
           'cancelReason': ?body['reason'],
+          if (charged > 0) ...{
+            'cancellationFeePaise': charged,
+            'paymentStatus': 'due',
+          },
         }..remove('startOtp');
+        if (charged == 0) bookings[index].remove('cancellationFeePaise');
+        return _json({'booking': bookings[index]});
+      case 'end':
+        if (actionError case final error?) return _error(error);
+        if (bookings[index]['status'] != 'in_progress') {
+          return _error((409, 'cannot_end'));
+        }
+        bookings[index] = {
+          ...bookings[index],
+          'status': 'completed',
+          'completedAt': '2030-10-26T06:00:00Z',
+          'farePaise': endedFarePaise,
+          'bookedFarePaise': bookings[index]['farePaise'],
+          'fareEstimated': false,
+          'paymentStatus': 'due',
+        };
         return _json({'booking': bookings[index]});
       case 'rating':
         if (actionError case final error?) return _error(error);
@@ -158,7 +204,10 @@ class FakeBookingServer {
             'orderId': 'OMO1',
             'token': 'order-token',
             'merchantOrderId': 'MOJUD_b1_1',
-            'amountPaise': bookings[index]['farePaise'],
+            // A cancelled ride's checkout is for its fee.
+            'amountPaise': bookings[index]['status'] == 'cancelled'
+                ? bookings[index]['cancellationFeePaise']
+                : bookings[index]['farePaise'],
           },
         });
       case 'payment':

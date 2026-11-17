@@ -29,6 +29,7 @@ import 'view/ride_details_screen.dart';
 import 'view/trip_type_selector.dart';
 import 'view/widgets/add_car_sheet.dart';
 import 'view/widgets/cancel_ride_sheet.dart';
+import 'view/widgets/end_trip_dialog.dart';
 import 'view/widgets/car_selector_field.dart';
 import 'view/widgets/fare_summary.dart';
 import 'view/widgets/map_pin_card.dart';
@@ -686,10 +687,19 @@ MyBooking _ride({
   DateTime? scheduledAt,
   RideRating? myRating,
   String? cancelReason,
+  int farePaise = 64000,
+  int cancellationFeePaise = 0,
+  int? bookedFarePaise,
+  RidePaymentStatus paymentStatus = RidePaymentStatus.none,
 }) {
   final at = scheduledAt ?? DateTime.now().add(const Duration(days: 1));
   final started =
       status == BookingStatus.inProgress || status == BookingStatus.completed;
+  // Cancelled with a fee: the driver had reached the pickup.
+  final arrived =
+      started ||
+      status == BookingStatus.arrived ||
+      (status == BookingStatus.cancelled && cancellationFeePaise > 0);
   return MyBooking(
     id: 'preview-ride',
     tripType: TripType.multiStop,
@@ -711,7 +721,7 @@ MyBooking _ride({
       ),
     ],
     estimatedMinutes: 150,
-    farePaise: 64000,
+    farePaise: farePaise,
     fareEstimated: status != BookingStatus.completed,
     carRegistration: 'DL01AB1234',
     carType: CarType.sedan,
@@ -723,7 +733,7 @@ MyBooking _ride({
     startOtp: otp,
     createdAt: at.subtract(const Duration(days: 1)),
     acceptedAt: driver ? at.subtract(const Duration(hours: 20)) : null,
-    arrivedAt: started ? at.subtract(const Duration(minutes: 5)) : null,
+    arrivedAt: arrived ? at.subtract(const Duration(minutes: 5)) : null,
     startedAt: started ? at.add(const Duration(minutes: 2)) : null,
     completedAt: status == BookingStatus.completed
         ? at.add(const Duration(hours: 2, minutes: 40))
@@ -734,6 +744,9 @@ MyBooking _ride({
     cancelledBy: status == BookingStatus.cancelled ? 'customer' : null,
     cancelReason: cancelReason,
     myRating: myRating,
+    cancellationFeePaise: cancellationFeePaise,
+    bookedFarePaise: bookedFarePaise,
+    paymentStatus: paymentStatus,
   );
 }
 
@@ -811,6 +824,64 @@ Widget rideDetailsCancelledPreview() => _rideDetails(
   _ride(status: BookingStatus.cancelled, cancelReason: 'Plans changed'),
 );
 
+/// Ended an hour in, booked for longer: charged for the time used.
+@Preview(
+  name: 'Ended early — pay',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsEndedEarlyPreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.completed,
+    scheduledAt: DateTime.now().subtract(const Duration(hours: 2)),
+    farePaise: 24000,
+    bookedFarePaise: 64000,
+    paymentStatus: RidePaymentStatus.due,
+  ),
+);
+
+@Preview(
+  name: 'Cancelled — fee due',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget rideDetailsCancelledFeeDuePreview() => _rideDetails(
+  _ride(
+    status: BookingStatus.cancelled,
+    cancelReason: 'Plans changed',
+    cancellationFeePaise: pickupCancellationFeePaise,
+    paymentStatus: RidePaymentStatus.due,
+  ),
+);
+
+@Preview(
+  name: 'Cancel sheet — at pickup',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget cancelRideSheetFeePreview() => Align(
+  alignment: Alignment.bottomCenter,
+  child: Material(
+    child: CancelRideSheet(
+      booking: _ride(
+        status: BookingStatus.arrived,
+        otp: '4821',
+        cancellationFeePaise: pickupCancellationFeePaise,
+      ),
+      feePaise: pickupCancellationFeePaise,
+    ),
+  ),
+);
+
+@Preview(
+  name: 'End trip dialog',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget endTripDialogPreview() => Center(
+  child: EndTripDialog(booking: _ride(status: BookingStatus.inProgress)),
+);
+
 @Preview(name: 'Cancel sheet', group: 'Ride details', theme: ridePreviewTheme)
 Widget cancelRideSheetPreview() => Align(
   alignment: Alignment.bottomCenter,
@@ -844,6 +915,23 @@ Widget receiptCardPreview() => Padding(
         paidAt: DateTime.now().subtract(const Duration(hours: 20)),
       ),
       fareBreakdown: const FareBreakdown(basePaise: 34000, nightPaise: 12200),
+    ),
+  ),
+);
+
+/// A ride cancelled at the pickup, its fee paid by UPI.
+@Preview(
+  name: 'Receipt — cancellation fee',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget receiptCancellationFeePreview() => Padding(
+  padding: const EdgeInsets.all(Skyline.s16),
+  child: ReceiptCard(
+    booking: _ride(
+      status: BookingStatus.cancelled,
+      cancellationFeePaise: pickupCancellationFeePaise,
+      paymentStatus: RidePaymentStatus.paid,
     ),
   ),
 );

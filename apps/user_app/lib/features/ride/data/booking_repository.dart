@@ -79,6 +79,14 @@ enum BookingErrorCode {
   /// The server couldn't reach the payment gateway.
   paymentGateway('payment_gateway'),
 
+  /// Cancelling now costs more than the customer agreed to — the driver
+  /// reached the pickup after the confirmation opened. Nothing changed; the
+  /// fee is in [BookingActionException.feePaise].
+  cancellationFee('cancellation_fee'),
+
+  /// The trip can't be ended early: it isn't in progress.
+  cannotEnd('cannot_end'),
+
   /// The server was unreachable, or sent a tag this app version doesn't know.
   other('');
 
@@ -99,6 +107,7 @@ class BookingActionException implements Exception {
     this.message, {
     this.code = BookingErrorCode.other,
     this.statusCode,
+    this.feePaise,
   });
 
   final String message;
@@ -107,6 +116,10 @@ class BookingActionException implements Exception {
   /// The HTTP status, or null when the server couldn't be reached.
   final int? statusCode;
 
+  /// What cancelling now costs, on a [BookingErrorCode.cancellationFee]
+  /// refusal; null when the server didn't say.
+  final int? feePaise;
+
   @override
   String toString() =>
       'BookingActionException(${code.wireName}, $statusCode): $message';
@@ -114,8 +127,9 @@ class BookingActionException implements Exception {
 
 /// Sends confirmed bookings to the Sarthi backend (`POST /me/bookings`),
 /// reads them back with their status, driver and start code
-/// (`GET /me/bookings`), and acts on one: cancel it, rate the driver, follow
-/// the driver on the map, or pay for it (`/me/bookings/{id}/…`).
+/// (`GET /me/bookings`), and acts on one: cancel it, end it early, rate the
+/// driver, follow the driver on the map, or pay for it
+/// (`/me/bookings/{id}/…`).
 ///
 /// The sole data-access seam for bookings, per the repository guideline.
 class BookingRepository {
@@ -187,17 +201,37 @@ class BookingRepository {
 
   /// Cancels a ride that hasn't started (`POST /me/bookings/{id}/cancel`),
   /// with the customer's [reason] if they gave one, and returns it as now
-  /// stored. Throws [BookingActionException] — `wrongState` once the trip has
-  /// started, finished or was already cancelled.
-  Future<MyBooking> cancel(String id, {String? reason}) async {
+  /// stored — with its fee due when the driver was at the pickup.
+  ///
+  /// [acceptFeePaise] is the fee the customer was shown and agreed to (0
+  /// when cancelling was free); it's always sent, and the server never
+  /// charges more. Throws [BookingActionException] — `cancellationFee` (with
+  /// [BookingActionException.feePaise]) when cancelling now costs more,
+  /// `wrongState` once the trip has started, finished or was already
+  /// cancelled.
+  Future<MyBooking> cancel(
+    String id, {
+    String? reason,
+    int acceptFeePaise = 0,
+  }) async {
     final reply = await _act(
       'POST',
       id,
       'cancel',
       body: {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        'acceptFeePaise': acceptFeePaise,
       },
     );
+    return _bookingIn(reply);
+  }
+
+  /// Ends a trip in progress now (`POST /me/bookings/{id}/end`) and returns
+  /// it completed: `farePaise` is then the charge for the time used,
+  /// `bookedFarePaise` the fare as booked, and it's due for payment. Throws
+  /// [BookingActionException] — `cannotEnd` when the trip isn't in progress.
+  Future<MyBooking> endTrip(String id) async {
+    final reply = await _act('POST', id, 'end');
     return _bookingIn(reply);
   }
 
@@ -241,8 +275,9 @@ class BookingRepository {
     );
   }
 
-  /// Opens a UPI checkout for a completed ride (`POST /me/bookings/{id}/payment`)
-  /// for the payment SDK to show. Throws [BookingActionException] —
+  /// Opens a UPI checkout for a completed ride, or a cancelled one whose fee
+  /// is due (`POST /me/bookings/{id}/payment`), for the payment SDK to show;
+  /// the server sets the amount. Throws [BookingActionException] —
   /// `alreadyPaid` when it's paid for, `wrongState` before it's completed,
   /// `paymentsOff` / `paymentGateway` when payments can't be taken.
   Future<PaymentCheckout> startPayment(String id) async {
@@ -286,12 +321,14 @@ class BookingRepository {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       // The server's error is a lower-case sentence; show it as one.
       final error = decoded?['error'];
+      final fee = decoded?['feePaise'];
       throw BookingActionException(
         error is String && error.isNotEmpty
             ? _sentence(error)
             : 'Something went wrong (${response.statusCode}).',
         code: BookingErrorCode.fromWire(decoded?['code']),
         statusCode: response.statusCode,
+        feePaise: fee is num && fee > 0 ? fee.toInt() : null,
       );
     }
     return decoded ?? const {};
@@ -306,7 +343,7 @@ class BookingRepository {
     }
   }
 
-  /// The `booking` of a cancel/rate reply.
+  /// The `booking` of a cancel/end/rate/sync reply.
   static MyBooking _bookingIn(Map<String, dynamic> reply) =>
       MyBooking.tryParse(reply['booking']) ??
       (throw const BookingActionException(
