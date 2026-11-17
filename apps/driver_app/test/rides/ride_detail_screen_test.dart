@@ -217,6 +217,125 @@ void main() {
     check(find.text('trip fare · awaiting payment').evaluate()).isNotEmpty();
   });
 
+  testWidgets('a trip that ran past the booked time shows the charge for '
+      'the time used against the booked fare', (tester) async {
+    final over = ride(
+      id: 'r',
+      status: 'completed',
+      farePaise: 51000,
+      bookedFarePaise: 34000,
+      paymentStatus: 'due',
+    );
+    repo.mine = [over];
+
+    await pump(tester, over);
+
+    check(find.text('Trip ran past the booked time').evaluate()).isNotEmpty();
+    check(
+      find.text('₹510 for the time used (booked ₹340)').evaluate(),
+    ).isNotEmpty();
+    check(find.text('₹510').evaluate()).isNotEmpty();
+    check(find.text('trip fare · awaiting payment').evaluate()).isNotEmpty();
+    check(find.text('Customer ended the trip early').evaluate()).isEmpty();
+  });
+
+  group('a trip underway', () {
+    const pastNote =
+        'Past the booked time — extra time is charged to the customer by '
+        'the hour.';
+
+    /// A 3-hour round trip started [ago].
+    Ride startedAgo(Duration ago) => ride(
+      id: 'r',
+      status: 'in_progress',
+      startedAt: DateTime.now().subtract(ago).toUtc().toIso8601String(),
+    );
+
+    for (final (ago, span) in const [
+      (Duration(hours: 1), 'within the booked hours'),
+      (Duration(hours: 3, minutes: 10), 'within the grace'),
+    ]) {
+      testWidgets('says nothing of extra time $span', (tester) async {
+        final onTrip = startedAgo(ago);
+        repo.mine = [onTrip];
+        await pump(tester, onTrip);
+
+        check(find.text(pastNote).evaluate()).isEmpty();
+        check(find.text('Complete trip').evaluate()).isNotEmpty();
+      });
+    }
+
+    testWidgets('past the booked hours and the grace, says the extra time '
+        'is charged to the customer', (tester) async {
+      final onTrip = startedAgo(const Duration(hours: 3, minutes: 16));
+      repo.mine = [onTrip];
+
+      await pump(tester, onTrip);
+
+      check(find.text(pastNote).evaluate()).isNotEmpty();
+      check(find.text('Complete trip').evaluate()).isNotEmpty();
+    });
+
+    testWidgets('completed past its booked time, says the new fare', (
+      tester,
+    ) async {
+      final onTrip = startedAgo(const Duration(hours: 4, minutes: 20));
+      repo
+        ..mine = [onTrip]
+        ..replies[RideAction.complete] = ride(
+          id: 'r',
+          status: 'completed',
+          farePaise: 51000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        );
+      await pump(tester, onTrip);
+      check(find.text(pastNote).evaluate()).isNotEmpty();
+
+      await tester.tap(find.text('Complete trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Complete'));
+      await tester.pumpAndSettle();
+
+      check(repo.acted.last).equals(('r', RideAction.complete));
+      check(
+        find
+            .text(
+              'Trip complete. It ran past the booked time, so the customer '
+              'can now pay ₹510 for the time used (booked ₹340) by UPI in '
+              'their app.',
+            )
+            .evaluate(),
+      ).isNotEmpty();
+      check(find.text('Trip ran past the booked time').evaluate()).isNotEmpty();
+      check(find.text(pastNote).evaluate()).isEmpty();
+      check(find.text('Complete trip').evaluate()).isEmpty();
+    });
+
+    testWidgets('completed within its booked time, says the booked fare', (
+      tester,
+    ) async {
+      final onTrip = startedAgo(const Duration(hours: 2));
+      repo.mine = [onTrip];
+      await pump(tester, onTrip);
+
+      await tester.tap(find.text('Complete trip'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Complete'));
+      await tester.pumpAndSettle();
+
+      check(
+        find
+            .text(
+              'Trip complete. The customer can now pay ₹340 by UPI in their '
+              'app.',
+            )
+            .evaluate(),
+      ).isNotEmpty();
+      check(find.textContaining('past the booked time').evaluate()).isEmpty();
+    });
+  });
+
   group('a trip the customer ends while its screen is open', () {
     final onTrip = ride(id: 'r', status: 'in_progress');
     final ended = ride(

@@ -93,4 +93,27 @@ void main() {
     await pump(tester, ride(status: 'completed'));
     check(find.textContaining('ended the trip early').evaluate()).isEmpty();
   });
+
+  testWidgets('a trip that ran past the booked time says what the time used '
+      'cost against the booked fare', (tester) async {
+    await pump(
+      tester,
+      ride(status: 'completed', farePaise: 51000, bookedFarePaise: 34000),
+    );
+
+    check(find.text('₹510').evaluate()).isNotEmpty();
+    check(
+      find
+          .text(
+            'Trip ran past the booked time · '
+            '₹510 for the time used (booked ₹340)',
+          )
+          .evaluate(),
+    ).isNotEmpty();
+    check(find.textContaining('ended the trip early').evaluate()).isEmpty();
+
+    // A trip that ran its course says nothing of the sort.
+    await pump(tester, ride(status: 'completed'));
+    check(find.textContaining('past the booked time').evaluate()).isEmpty();
+  });
 }

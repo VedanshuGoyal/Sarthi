@@ -195,6 +195,84 @@ void main() {
     });
   });
 
+  group('Ride — booked time', () {
+    Ride trip({
+      String tripType = 'oneWay',
+      String endsAt = '2026-10-26T12:00:00+05:30',
+      int? hours,
+      String status = 'in_progress',
+      String? startedAt = '2026-10-26T09:10:00+05:30',
+    }) => Ride.tryParse({
+      ...rideJson(tripType: tripType, status: status),
+      'endsAt': endsAt,
+      'hours': hours,
+      'startedAt': startedAt,
+    })!;
+
+    test('a round trip is booked for its hours', () {
+      check(trip(tripType: 'roundTrip', hours: 3).bookedHours).equals(3);
+      // The hours win over the span.
+      check(
+        trip(
+          tripType: 'roundTrip',
+          hours: 4,
+          endsAt: '2026-10-26T10:00:00+05:30',
+        ).bookedHours,
+      ).equals(4);
+      // No hours sent: the span, as for the other kinds.
+      check(trip(tripType: 'roundTrip').bookedHours).equals(3);
+    });
+
+    test('other trips are booked for their span rounded up to whole hours, '
+        'at least 1', () {
+      // 09:00 → 12:00.
+      check(trip().bookedHours).equals(3);
+      check(trip(endsAt: '2026-10-26T10:45:00+05:30').bookedHours).equals(2);
+      check(trip(endsAt: '2026-10-26T10:01:00+05:30').bookedHours).equals(2);
+      check(
+        trip(
+          tripType: 'multiStop',
+          endsAt: '2026-10-26T09:20:00+05:30',
+        ).bookedHours,
+      ).equals(1);
+      check(trip(endsAt: '2026-10-26T09:00:00+05:30').bookedHours).equals(1);
+      // A one-way trip's hours, if any, don't count.
+      check(trip(hours: 5).bookedHours).equals(3);
+    });
+
+    test('a trip underway is past its booked time once its start plus the '
+        'booked hours plus 15 minutes have gone by', () {
+      final onTrip = trip(tripType: 'roundTrip', hours: 3);
+      final from = DateTime.parse('2026-10-26T12:25:00+05:30');
+      check(onTrip.overtimeFrom).equals(from.toLocal());
+      check(
+        onTrip.isPastBookedTimeAt(DateTime.parse('2026-10-26T12:10:00+05:30')),
+      ).isFalse();
+      check(onTrip.isPastBookedTimeAt(from)).isFalse();
+      check(
+        onTrip.isPastBookedTimeAt(from.add(const Duration(seconds: 1))),
+      ).isTrue();
+
+      // One way, 09:00 → 10:45 booked as 2 h: from 11:25.
+      final oneWay = trip(endsAt: '2026-10-26T10:45:00+05:30');
+      check(
+        oneWay.isPastBookedTimeAt(DateTime.parse('2026-10-26T11:24:00+05:30')),
+      ).isFalse();
+      check(
+        oneWay.isPastBookedTimeAt(DateTime.parse('2026-10-26T11:26:00+05:30')),
+      ).isTrue();
+    });
+
+    test('only a trip underway, and started, can be past its booked time', () {
+      final nextDay = DateTime.parse('2026-10-27T09:00:00+05:30');
+      check(trip(status: 'completed').isPastBookedTimeAt(nextDay)).isFalse();
+      check(trip(status: 'arrived').isPastBookedTimeAt(nextDay)).isFalse();
+      final notStarted = trip(startedAt: null);
+      check(notStarted.overtimeFrom).isNull();
+      check(notStarted.isPastBookedTimeAt(nextDay)).isFalse();
+    });
+  });
+
   group('payments', () {
     test('a paid ride carries its status, time and the driver\'s share', () {
       final parsed = Ride.tryParse({
@@ -298,6 +376,46 @@ void main() {
       );
       check(ended.bookedFarePaise).equals(34000);
       check(ended.farePaise).equals(20000);
+    });
+
+    test('a trip that ran past its booked time is charged more than booked, '
+        'and is not an early end', () {
+      final parsed = Ride.tryParse(
+        rideJson(
+          status: 'completed',
+          farePaise: 51000,
+          bookedFarePaise: 34000,
+          paymentStatus: 'due',
+        ),
+      )!;
+      check(parsed.farePaise).equals(51000);
+      check(parsed.bookedFarePaise).equals(34000);
+      check(parsed.ranOverTime).isTrue();
+      check(parsed.endedEarly).isFalse();
+    });
+
+    test('a booked fare reads as an early end only when the charge is no '
+        'more than it', () {
+      Ride completed(int fare, int? booked) => Ride.tryParse(
+        rideJson(status: 'completed', farePaise: fare, bookedFarePaise: booked),
+      )!;
+      // Charged exactly the booked fare: ended early (the existing copy).
+      check(completed(34000, 34000).endedEarly).isTrue();
+      check(completed(34000, 34000).ranOverTime).isFalse();
+      check(completed(20000, 34000).ranOverTime).isFalse();
+      // No booked fare: the trip ran its course.
+      check(completed(34000, null).endedEarly).isFalse();
+      check(completed(34000, null).ranOverTime).isFalse();
+      // Not completed: neither, whatever the fares.
+      final onTrip = Ride.tryParse(
+        rideJson(
+          status: 'in_progress',
+          farePaise: 51000,
+          bookedFarePaise: 34000,
+        ),
+      )!;
+      check(onTrip.ranOverTime).isFalse();
+      check(onTrip.endedEarly).isFalse();
     });
 
     test('earnings read the money summary, or zeros without one', () {

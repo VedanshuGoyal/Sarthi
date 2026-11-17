@@ -25,6 +25,7 @@ Map<String, dynamic> rideJson({
   int? sharePaise,
   int? cancellationFeePaise,
   int? bookedFarePaise,
+  String? startedAt,
 }) => {
   'id': id,
   'tripType': tripType,
@@ -63,6 +64,7 @@ Map<String, dynamic> rideJson({
   if (cancellationFeePaise != null)
     'cancellationFeePaise': cancellationFeePaise,
   if (bookedFarePaise != null) 'bookedFarePaise': bookedFarePaise,
+  if (startedAt != null) 'startedAt': startedAt,
 };
 
 Ride ride({
@@ -80,6 +82,7 @@ Ride ride({
   int? sharePaise,
   int? cancellationFeePaise,
   int? bookedFarePaise,
+  String? startedAt,
 }) => Ride.tryParse(
   rideJson(
     id: id,
@@ -91,6 +94,7 @@ Ride ride({
     sharePaise: sharePaise,
     cancellationFeePaise: cancellationFeePaise,
     bookedFarePaise: bookedFarePaise,
+    startedAt: startedAt,
     scheduledAt: scheduledAt,
     cancelledAt: cancelledAt,
     cancelledBy: cancelledBy,
@@ -117,6 +121,10 @@ class FakeRidesRepository implements RidesRepository {
 
   /// When set, [act] throws this for the given action.
   Map<RideAction, RidesException> failures = {};
+
+  /// When set, [act] answers with this ride for the given action — e.g. a
+  /// completion whose fare the server changed.
+  Map<RideAction, Ride> replies = {};
 
   final List<(String, RideAction)> acted = [];
 
@@ -158,6 +166,8 @@ class FakeRidesRepository implements RidesRepository {
     if (action == RideAction.rate) lastRating = (stars ?? 0, note);
     final failure = failures[action];
     if (failure != null) throw failure;
+    final reply = replies[action];
+    if (reply != null) return reply;
     final status = switch (action) {
       RideAction.accept => 'accepted',
       RideAction.arrive => 'arrived',
