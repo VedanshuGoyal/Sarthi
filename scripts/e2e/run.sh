@@ -6,7 +6,7 @@
 # at prod.
 #
 #   ./scripts/e2e/run.sh            # build, start, run e2e.py, stop
-#   MIN_BUILD_USER_APP=100 ./scripts/e2e/run.sh extras.py   # 426 gate checks
+#   ./scripts/e2e/run.sh extras.py pre; MIN_BUILD_USER_APP=100 ./scripts/e2e/run.sh extras.py post
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -26,4 +26,4 @@ export PHONEPE_TOKEN_URL=http://127.0.0.1:8098/v1/oauth/token PHONEPE_BASE_URL=h
 (cd "$ROOT/server" && "$TMP/sarthi-server" >"$TMP/server.log" 2>&1) &
 for _ in $(seq 60); do curl -fsS localhost:8097/readyz >/dev/null 2>&1 && break; sleep 1; done
 
-python3 -I "$HERE/${1:-e2e.py}" || { echo "--- server log tail"; tail -30 "$TMP/server.log"; exit 1; }
+python3 -I "$HERE/${1:-e2e.py}" "${@:2}" || { echo "--- server log tail"; tail -30 "$TMP/server.log"; exit 1; }
