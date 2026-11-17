@@ -404,7 +404,8 @@ class MyBooking {
     if (started == null || ended == null || ended.isBefore(started)) {
       return null;
     }
-    return max(_startedHours(ended.difference(started)), 1);
+    // Whole minutes first, as the server prices it: 2 h 0 min 30 s is 2 h.
+    return max((ended.difference(started).inMinutes + 59) ~/ 60, 1);
   }
 
   /// Each started hour of [d] counted as a whole one.

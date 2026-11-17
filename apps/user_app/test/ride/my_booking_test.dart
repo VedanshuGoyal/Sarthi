@@ -364,7 +364,10 @@ void main() {
         bookingJson(status: 'completed', startedAt: start, completedAt: end),
       )!.hoursUsed;
       check(used('2030-10-26T05:00:00Z', '2030-10-26T08:00:00Z')).equals(3);
-      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:00:01Z')).equals(4);
+      // Whole minutes, as the server counts: seconds past the hour don't
+      // start another.
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:00:59Z')).equals(3);
+      check(used('2030-10-26T05:00:00Z', '2030-10-26T08:01:00Z')).equals(4);
       check(used('2030-10-26T05:00:00Z', '2030-10-26T05:10:00Z')).equals(1);
       check(
         MyBooking.tryParse(bookingJson(status: 'completed'))!.hoursUsed,
