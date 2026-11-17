@@ -1,0 +1,71 @@
+<!doctype html>
+<!-- Source of og-card.png, the link preview for apps.mojud.life (WhatsApp, X, etc.).
+     Regenerate after editing:
+       chromium --headless=new --hide-scrollbars --window-size=1200,630 --virtual-time-budget=6000 \
+         --screenshot=scripts/apps-page/og-card.png scripts/apps-page/og-card.html -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wdth,wght@75..100,400..700&display=block">
+<style>
+  :root { --navy: #0B2239; --signal: #2A93BE; --signal-ink: #1A6E93; --gold: #CE9A3C; --muted: #4A5D72; --line: #DCE7F1; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { position: relative; font-family: "Instrument Sans", sans-serif; color: var(--navy); -webkit-font-smoothing: antialiased;
+    background: radial-gradient(closest-side, rgba(42,147,190,.2), transparent 70%) 860px -200px / 760px 760px no-repeat, #F5F8FB; }
+  .copy { position: absolute; left: 80px; top: 64px; width: 640px; }
+  .brand { display: flex; align-items: center; gap: 14px; font: 600 26px/1 "Instrument Sans"; letter-spacing: .16em; }
+  .eyebrow { display: flex; align-items: center; gap: 12px; margin-top: 56px; font: 600 18px/1 "Instrument Sans"; letter-spacing: .16em; text-transform: uppercase; color: var(--signal-ink); }
+  .eyebrow::before { content: ""; width: 26px; height: 3px; border-radius: 2px; background: var(--gold); }
+  h1 { margin: 22px 0 0; font: 700 104px/.94 "Instrument Sans"; font-stretch: 84%; letter-spacing: -.035em; }
+  h1 span { display: block; color: var(--signal-ink); }
+  .sub { margin: 24px 0 0; font: 400 25px/1.4 "Instrument Sans"; color: var(--muted); }
+  .url { position: absolute; left: 80px; bottom: 48px; margin: 0; font: 500 22px/1 "Instrument Sans"; color: var(--muted); }
+  .phone { position: absolute; right: 120px; top: 64px; width: 300px; height: 617px; background: var(--navy); border-radius: 46px; padding: 11px;
+    box-shadow: 0 40px 80px -20px rgba(11,34,57,.45); transform: rotate(4deg); }
+  .screen { position: relative; height: 100%; border-radius: 36px; overflow: hidden; background: linear-gradient(180deg, #DCEBF5 0%, #EAF2F8 46%, #F5F8FB 46%); }
+  .map { position: absolute; inset: 0 0 54% 0; width: 100%; height: 46%; }
+  .notch { position: absolute; top: 8px; left: 50%; width: 92px; height: 24px; border-radius: 99px; background: var(--navy); transform: translateX(-50%); }
+  .sheet { position: absolute; left: 10px; right: 10px; top: 300px; display: grid; gap: 10px; }
+  .card { background: #fff; border-radius: 20px; padding: 14px; box-shadow: 0 6px 18px rgba(11,34,57,.08); }
+  .pill { display: inline-block; font: 600 11px/1 "Instrument Sans"; padding: 6px 9px; border-radius: 99px; background: #D6EAF4; color: var(--signal-ink); }
+  .t { font: 600 16px/1.2 "Instrument Sans"; margin: 8px 0 2px; }
+  .s { font-size: 13px; color: var(--muted); margin: 0; }
+  .drv { display: flex; align-items: center; gap: 10px; }
+  .av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: #fff; font: 600 13px/1 "Instrument Sans"; }
+  .code { display: flex; justify-content: space-between; align-items: center; background: var(--navy); color: #fff; border-radius: 16px; padding: 13px 14px; }
+  .code span { font-size: 12px; opacity: .75; }
+  .code b { font: 600 21px/1 "Instrument Sans"; letter-spacing: .32em; }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 144 144" aria-hidden="true"><g stroke="#0B2239" stroke-width="10" stroke-linecap="round" fill="none"><line x1="42" y1="22" x2="42" y2="122"/><line x1="102" y1="22" x2="102" y2="122"/><line x1="42" y1="22" x2="102" y2="72"/><line x1="102" y1="22" x2="42" y2="72"/><line x1="42" y1="72" x2="102" y2="122"/><line x1="102" y1="72" x2="42" y2="122"/></g><circle cx="72" cy="72" r="9" fill="#CE9A3C"/></svg>
+      MOJUD
+    </div>
+    <p class="eyebrow">Driver on hire · Delhi NCR</p>
+    <h1>Your car. <span>Our driver.</span></h1>
+    <p class="sub">Book a trained driver for your own car.<br>From ₹139 for the first hour.</p>
+  </div>
+  <p class="url">apps.mojud.life</p>
+
+  <div class="phone">
+    <div class="screen">
+      <span class="notch"></span>
+      <svg class="map" viewBox="0 0 280 260" preserveAspectRatio="xMidYMid slice">
+        <g stroke="#C9DCEA" stroke-width="10" fill="none" stroke-linecap="round"><path d="M-10 80 H300"/><path d="M-10 190 H300"/><path d="M70 -10 V280"/><path d="M200 -10 V280"/></g>
+        <g stroke="#B6D0E2" stroke-width="5" fill="none"><path d="M-10 135 L300 120"/><path d="M135 -10 L150 280"/></g>
+        <path d="M70 190 V135 H200 V80" fill="none" stroke="#2A93BE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="70" cy="190" r="9" fill="#0B2239"/><circle cx="70" cy="190" r="3.5" fill="#fff"/>
+        <g transform="translate(140 135)"><circle r="14" fill="#2A93BE" fill-opacity=".2"/><circle r="7" fill="#2A93BE"/><circle r="2.5" fill="#fff"/></g>
+      </svg>
+      <div class="sheet">
+        <div class="card"><span class="pill">Driver assigned</span><p class="t">Round Trip · 4 h</p><p class="s">Today, 6:30 PM · Your sedan</p></div>
+        <div class="card drv"><span class="av">AK</span><div><p class="t" style="margin:0;font-size:14px">Arjun</p><p class="s">2.3 km away</p></div></div>
+        <div class="code"><span>Start code</span><b>4821</b></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

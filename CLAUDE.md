@@ -8,12 +8,48 @@ reviewing code, and apply the section that matches the directory you're in.
 
 ```
 server/             Go backend — REST + WebSockets
-apps/user_app/      Flutter — customer-facing app
-apps/driver_app/    Flutter — driver-facing app
+server/deploy/      VPS setup + redeploy.sh (systemd + Caddy, no Docker on prod)
+server/migrations/  numbered SQL migrations (NNNN_name.up/down.sql)
+apps/user_app/      Flutter — customer app, ships as "MOJUD"
+apps/driver_app/    Flutter — driver app, ships as "MOJUD Driver"
 shared/             (optional) shared Dart models/utils via Melos
-agent/, .agents/    installed skill packs (golang-* and flutter-*)
+scripts/            run / build-APK / publish-apps scripts (see scripts/README.md)
+docs/features/      feature specs + rollout scripts (sarthi-feature skill)
+.agents/skills/     installed skill packs (golang-*, flutter-*, dart-*)
+.claude/skills/     symlinks to the above + sarthi-feature
 .mcp.json           project-scoped flutter-mcp-toolkit server
 ```
+
+## Product
+
+- Driver-on-demand: a customer books a trained driver for **their own car**
+  (round trip by the hour, one-way, multi-stop).
+- Brand is **MOJUD**: `user_app` = "MOJUD" (`com.sarthi.user_app`),
+  `driver_app` = "MOJUD Driver" (`com.sarthi.driver_app`). Package ids stay
+  `com.sarthi.*`.
+- Live integrations: UPI payments (PhonePe), driver KYC (Surepass /
+  DigiLocker), push (FCM), KYC file storage (S3-compatible), maps (Ola + Google),
+  OTP SMS (Fast2SMS).
+- Prod API `api.mojud.life`; APKs are side-loaded from `apps.mojud.life`
+  (no Play Store yet).
+
+## Working in this repo
+
+- **This repo is public.** Never commit server IPs, tokens, key paths,
+  merchant ids or `.env*` contents.
+- New feature / route / screen / admin tool → use the **`sarthi-feature`**
+  skill (spec → tests → implement → gates → rollout script).
+- Run `git status` first: other sessions may be editing. Never stage or revert
+  files you didn't change.
+- Flutter is pinned to **3.44.9** — never upgrade. Never run
+  `dart format lib test` repo-wide; format only files you touched.
+- Version bump in `apps/<app>/pubspec.yaml`: feature → minor, fix → patch,
+  `+N` always +1.
+- Prod is changed only by a rollout script the owner approves/runs
+  (`docs/features/<slug>-rollout.sh`). Prod migrations are applied with
+  `psql` as the `sarthi` user, not `setup-vps.sh migrations`.
+  `scripts/publish-apps.sh` also touches prod.
+- PAYMENTS or KYC code touched → flag "HUMAN REVIEW REQUIRED".
 
 ## Which skills to use where
 

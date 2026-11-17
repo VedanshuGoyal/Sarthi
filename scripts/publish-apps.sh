@@ -39,6 +39,7 @@ cp "$USER_APK_SRC" "$DIST/$USER_APK"
 cp "$DRIVER_APK_SRC" "$DIST/$DRIVER_APK"
 cp "$REPO_ROOT/apps/user_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-icon.png"
 cp "$REPO_ROOT/apps/driver_app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" "$DIST/mojud-driver-icon.png"
+cp "$SRC/og-card.png" "$DIST/og-card.png"   # link preview; source is og-card.html
 
 QR_SVG="$(qrencode -t SVG -m 1 --foreground=0B2239 -o - "$PAGE_URL" | sed '1{/^<?xml/d}')"
 
