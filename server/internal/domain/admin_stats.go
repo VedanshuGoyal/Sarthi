@@ -58,12 +58,17 @@ type StatsCompletedRides struct {
 }
 
 // StatsRideWindow is the rides completed since From, their summed fares, and
-// MOJUD's commission on those fares at the current rate.
+// MOJUD's commission on those fares at the current rate — leaving out rides
+// settled by hand (cash or waived), on which MOJUD takes nothing.
 type StatsRideWindow struct {
 	From            time.Time `json:"from"`
 	Rides           int       `json:"rides"`
 	GrossFarePaise  int64     `json:"grossFarePaise"`
 	CommissionPaise int64     `json:"commissionPaise"`
+
+	// SettledByHandPaise is the part of GrossFarePaise settled by hand; it
+	// is only the commission's input, not sent out.
+	SettledByHandPaise int64 `json:"-"`
 }
 
 // StatsPayoutsDue is what MOJUD owes drivers now — the total of the payouts

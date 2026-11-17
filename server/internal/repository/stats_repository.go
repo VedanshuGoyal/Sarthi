@@ -61,7 +61,14 @@ const statsSQL = `
 	           count(*) FILTER (WHERE status = 'completed' AND completed_at >= $3)  AS week_rides,
 	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $3), 0)::bigint AS week_fare,
 	           count(*) FILTER (WHERE status = 'completed' AND completed_at >= $4)  AS month_rides,
-	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $4), 0)::bigint AS month_fare
+	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $4), 0)::bigint AS month_fare,
+	           -- Settled by hand (cash or waived): no commission on these.
+	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $2
+	                                               AND paid_mode IS NOT NULL), 0)::bigint AS today_by_hand,
+	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $3
+	                                               AND paid_mode IS NOT NULL), 0)::bigint AS week_by_hand,
+	           coalesce(sum(fare_paise) FILTER (WHERE status = 'completed' AND completed_at >= $4
+	                                               AND paid_mode IS NOT NULL), 0)::bigint AS month_by_hand
 	    FROM bookings
 	), p AS (
 	    -- The same rides PaymentRepository.DuePayouts lists.
@@ -76,6 +83,7 @@ const statsSQL = `
 	       d.total, d.incomplete, d.submitted, d.verified, d.rejected,
 	       b.open, b.accepted, b.in_progress, b.completed, b.cancelled, b.expired, b.total,
 	       b.today_rides, b.today_fare, b.week_rides, b.week_fare, b.month_rides, b.month_fare,
+	       b.today_by_hand, b.week_by_hand, b.month_by_hand,
 	       p.drivers, p.rides, p.amount
 	FROM d, b, p`
 
@@ -96,6 +104,7 @@ func (r *StatsRepository) Stats(ctx context.Context, q StatsQuery) (domain.Admin
 		&rides.Today.Rides, &rides.Today.GrossFarePaise,
 		&rides.Last7Days.Rides, &rides.Last7Days.GrossFarePaise,
 		&rides.Last30Days.Rides, &rides.Last30Days.GrossFarePaise,
+		&rides.Today.SettledByHandPaise, &rides.Last7Days.SettledByHandPaise, &rides.Last30Days.SettledByHandPaise,
 		&payout.Drivers, &payout.Rides, &payout.AmountPaise,
 	)
 	if err != nil {

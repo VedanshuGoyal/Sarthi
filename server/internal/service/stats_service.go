@@ -62,7 +62,8 @@ func (s *StatsService) Stats(ctx context.Context) (domain.AdminStats, error) {
 		{&st.CompletedRides.Last30Days, q.Last30Days},
 	} {
 		w.win.From = w.from
-		w.win.CommissionPaise = commissionOn(w.win.GrossFarePaise, s.commissionBP)
+		// MOJUD takes nothing on a ride settled by hand.
+		w.win.CommissionPaise = commissionOn(w.win.GrossFarePaise-w.win.SettledByHandPaise, s.commissionBP)
 	}
 	if s.onDuty != nil {
 		// Like the ride alerts, only drivers whose app reported in lately.

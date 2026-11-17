@@ -138,6 +138,14 @@ func TestStatsRepository_Integration(t *testing.T) {
 	book(ride{status: "completed", driver: d1, scheduledAt: today, fare: 40000, // older than 30 days
 		completedAt: at(q.Last30Days.Add(-time.Second))})
 
+	// Settled by hand: in the gross fare, not in the commission's input.
+	byHand := book(ride{status: "completed", driver: d1, scheduledAt: today, fare: 7000, // today, cash
+		completedAt: at(now.Add(-2 * time.Hour))})
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET paid_at = $2, paid_paise = 0, commission_paise = 0,
+		paid_mode = 'cash' WHERE id = $1`, byHand, now.Add(-90*time.Minute)); err != nil {
+		t.Fatalf("settling by hand: %v", err)
+	}
+
 	payout := insert(`INSERT INTO driver_payouts (driver_id, amount_paise, rides, reference)
 		VALUES ($1, 26100, 1, 'UTR-STATS-TEST')`, d1)
 	if _, err := tx.Exec(ctx, `UPDATE bookings SET payout_id = $1 WHERE id = $2`, payout, paidOut); err != nil {
@@ -164,15 +172,18 @@ func TestStatsRepository_Integration(t *testing.T) {
 		{"bookings.expired", int64(before.BookingsByStatus.Expired), int64(after.BookingsByStatus.Expired), 1},
 		{"bookings.accepted", int64(before.BookingsByStatus.Accepted), int64(after.BookingsByStatus.Accepted), 2},
 		{"bookings.inProgress", int64(before.BookingsByStatus.InProgress), int64(after.BookingsByStatus.InProgress), 1},
-		{"bookings.completed", int64(before.BookingsByStatus.Completed), int64(after.BookingsByStatus.Completed), 6},
+		{"bookings.completed", int64(before.BookingsByStatus.Completed), int64(after.BookingsByStatus.Completed), 7},
 		{"bookings.cancelled", int64(before.BookingsByStatus.Cancelled), int64(after.BookingsByStatus.Cancelled), 1},
-		{"bookings.total", int64(before.BookingsByStatus.Total), int64(after.BookingsByStatus.Total), 13},
-		{"today.rides", int64(before.CompletedRides.Today.Rides), int64(after.CompletedRides.Today.Rides), 2},
-		{"today.gross", before.CompletedRides.Today.GrossFarePaise, after.CompletedRides.Today.GrossFarePaise, 11000},
-		{"last7.rides", int64(before.CompletedRides.Last7Days.Rides), int64(after.CompletedRides.Last7Days.Rides), 4},
-		{"last7.gross", before.CompletedRides.Last7Days.GrossFarePaise, after.CompletedRides.Last7Days.GrossFarePaise, 36000},
-		{"last30.rides", int64(before.CompletedRides.Last30Days.Rides), int64(after.CompletedRides.Last30Days.Rides), 5},
-		{"last30.gross", before.CompletedRides.Last30Days.GrossFarePaise, after.CompletedRides.Last30Days.GrossFarePaise, 66000},
+		{"bookings.total", int64(before.BookingsByStatus.Total), int64(after.BookingsByStatus.Total), 14},
+		{"today.rides", int64(before.CompletedRides.Today.Rides), int64(after.CompletedRides.Today.Rides), 3},
+		{"today.gross", before.CompletedRides.Today.GrossFarePaise, after.CompletedRides.Today.GrossFarePaise, 18000},
+		{"today.byHand", before.CompletedRides.Today.SettledByHandPaise, after.CompletedRides.Today.SettledByHandPaise, 7000},
+		{"last7.rides", int64(before.CompletedRides.Last7Days.Rides), int64(after.CompletedRides.Last7Days.Rides), 5},
+		{"last7.gross", before.CompletedRides.Last7Days.GrossFarePaise, after.CompletedRides.Last7Days.GrossFarePaise, 43000},
+		{"last7.byHand", before.CompletedRides.Last7Days.SettledByHandPaise, after.CompletedRides.Last7Days.SettledByHandPaise, 7000},
+		{"last30.rides", int64(before.CompletedRides.Last30Days.Rides), int64(after.CompletedRides.Last30Days.Rides), 6},
+		{"last30.gross", before.CompletedRides.Last30Days.GrossFarePaise, after.CompletedRides.Last30Days.GrossFarePaise, 73000},
+		{"last30.byHand", before.CompletedRides.Last30Days.SettledByHandPaise, after.CompletedRides.Last30Days.SettledByHandPaise, 7000},
 		{"payoutsDue.drivers", int64(before.PayoutsDue.Drivers), int64(after.PayoutsDue.Drivers), 2},
 		{"payoutsDue.rides", int64(before.PayoutsDue.Rides), int64(after.PayoutsDue.Rides), 2},
 		{"payoutsDue.amount", before.PayoutsDue.AmountPaise, after.PayoutsDue.AmountPaise, 13050},
@@ -201,6 +212,7 @@ func duePayoutsTotal(ctx context.Context, tx pgx.Tx, asOf time.Time) (domain.Sta
 		FROM bookings b
 		JOIN drivers d ON d.id = b.driver_id
 		WHERE b.paid_at IS NOT NULL AND b.payout_id IS NULL AND b.paid_at <= $1
+		  AND b.paid_mode IS NULL -- as DuePayouts: settled by hand, nothing owed
 		GROUP BY d.id`, asOf)
 	if err != nil {
 		return domain.StatsPayoutsDue{}, err
