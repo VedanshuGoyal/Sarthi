@@ -36,6 +36,10 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
   /// The push type the backend sends when a reviewer decides.
   static const String _kycDecided = 'kyc_decided';
 
+  /// The push type the backend sends when the payout account changes, which
+  /// reopens KYC.
+  static const String _bankAccountChanged = 'bank_account_changed';
+
   final List<StreamSubscription<void>> _push = [];
   late final AppLifecycleListener _lifecycle;
 
@@ -46,7 +50,9 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
     // newly verified driver on to Home (the gate watches the status).
     final push = ref.read(pushServiceProvider);
     void onPush(PushEvent event) {
-      if (event.type == _kycDecided) _reload();
+      if (event.type == _kycDecided || event.type == _bankAccountChanged) {
+        _reload();
+      }
     }
 
     _push

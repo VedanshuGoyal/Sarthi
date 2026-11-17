@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:checks/checks.dart';
 import 'package:driver_app/core/services/location_service.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
+import 'package:driver_app/features/rides/domain/payout.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/view/ride_format.dart';
 import 'package:driver_app/features/rides/view_model/duty_view_model.dart';
@@ -360,6 +361,68 @@ void main() {
       gate.complete();
 
       await loads;
+    });
+  });
+
+  group('EarningsViewModel', () {
+    Payout payout(String id, int paise) => Payout(
+      id: id,
+      amountPaise: paise,
+      rides: 1,
+      reference: 'UTR-$id',
+      createdAt: DateTime(2026, 11, 10),
+    );
+
+    test('loads the summary and the payouts together', () async {
+      final repo = FakeRidesRepository()
+        ..summary = const Earnings(
+          week: EarningsPeriod(farePaise: 58000, rides: 2, netPaise: 50460),
+        )
+        ..payoutList = [payout('p2', 13050), payout('p1', 29580)];
+      final vm = EarningsViewModel(repository: repo);
+      check(vm.payoutsLoaded).isFalse();
+
+      await vm.load();
+
+      check(vm.hasLoaded).isTrue();
+      check(vm.error).isNull();
+      check(vm.earnings.week.netRupees).equals(505);
+      check(vm.payoutsLoaded).isTrue();
+      check(vm.payouts.map((p) => p.id)).deepEquals(['p2', 'p1']);
+    });
+
+    test('a payouts failure keeps the earnings and the last list', () async {
+      final repo = FakeRidesRepository()
+        ..summary = const Earnings(
+          today: EarningsPeriod(farePaise: 34000, rides: 1),
+        )
+        ..payoutList = [payout('p1', 29580)];
+      final vm = EarningsViewModel(repository: repo);
+      await vm.load();
+
+      repo
+        ..summary = const Earnings(
+          today: EarningsPeriod(farePaise: 68000, rides: 2),
+        )
+        ..payoutsFailure = const RidesException('payouts down');
+      await vm.load();
+
+      check(vm.error).isNull();
+      check(vm.earnings.today.rupees).equals(680);
+      check(vm.payoutsLoaded).isTrue();
+      check(vm.payouts.map((p) => p.id)).deepEquals(['p1']);
+    });
+
+    test('payouts that never loaded leave the section unknown', () async {
+      final repo = FakeRidesRepository()
+        ..payoutsFailure = const RidesException('payouts down');
+      final vm = EarningsViewModel(repository: repo);
+      await vm.load();
+
+      check(vm.hasLoaded).isTrue();
+      check(vm.error).isNull();
+      check(vm.payoutsLoaded).isFalse();
+      check(vm.payouts).isEmpty();
     });
   });
 

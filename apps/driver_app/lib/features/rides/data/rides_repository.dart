@@ -3,13 +3,17 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../domain/payout.dart';
 import '../domain/ride.dart';
 
 /// Raised when a ride request fails. [message] is safe to show the driver.
 class RidesException implements Exception {
-  const RidesException(this.message, {this.code});
+  const RidesException(this.message, {this.code, this.statusCode});
 
   final String message;
+
+  /// The HTTP status, or null when the server couldn't be reached.
+  final int? statusCode;
 
   /// The backend's machine-readable tag — `ride_unavailable` (someone else
   /// took it, or the customer cancelled it), `ride_clash`,
@@ -26,9 +30,9 @@ class RidesException implements Exception {
 /// The single entry point for the driver's ride data — view models talk only
 /// to this, never to an HTTP client.
 ///
-/// Fronts the backend's `/driver/rides`, `/driver/earnings` and
-/// `/driver/duty` endpoints. Every route is scoped server-side to the
-/// session's driver, so nothing here sends a driver id.
+/// Fronts the backend's `/driver/rides`, `/driver/earnings`,
+/// `/driver/payouts` and `/driver/duty` endpoints. Every route is scoped
+/// server-side to the session's driver, so nothing here sends a driver id.
 class RidesRepository {
   RidesRepository({http.Client? client, String? baseUrl, this._tokenGetter})
     : _client = client ?? http.Client(),
@@ -90,6 +94,25 @@ class RidesRepository {
       body,
       (decoded) => Earnings.fromJson(decoded as Map<String, dynamic>),
     );
+  }
+
+  /// The bank transfers MOJUD has recorded to the driver, newest first. An
+  /// older server without the list answers 404, read as "none yet".
+  Future<List<Payout>> payouts() async {
+    final String body;
+    try {
+      body = await _send('GET', '/driver/payouts');
+    } on RidesException catch (e) {
+      if (e.statusCode == 404) return const [];
+      rethrow;
+    }
+    return _parse(body, (decoded) {
+      final list = decoded is Map<String, dynamic> ? decoded['payouts'] : null;
+      return [
+        for (final item in list as List<dynamic>? ?? const [])
+          ?Payout.tryParse(item),
+      ];
+    });
   }
 
   /// Tells the backend the driver is online (optionally where) or offline.
@@ -175,7 +198,11 @@ class RidesRepository {
       _ => 'Something went wrong. Please try again.',
     };
     final code = body['code'];
-    throw RidesException(message, code: code is String ? code : null);
+    throw RidesException(
+      message,
+      code: code is String ? code : null,
+      statusCode: response.statusCode,
+    );
   }
 
   /// The backend's errors are lower-case fragments; show them as sentences.

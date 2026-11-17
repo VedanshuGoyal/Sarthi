@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:driver_app/core/services/location_service.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
+import 'package:driver_app/features/rides/domain/payout.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 
 /// A ride as the backend sends it, with overridable fields.
@@ -77,6 +78,15 @@ class FakeRidesRepository implements RidesRepository {
   List<Ride> openRides = [];
   List<Ride> mine = [];
   Earnings summary = const Earnings();
+  List<Payout> payoutList = [];
+
+  /// When set, [payouts] throws it.
+  RidesException? payoutsFailure;
+
+  /// How many times each read was asked for.
+  int requestsCalls = 0;
+  int myRidesCalls = 0;
+  int earningsCalls = 0;
 
   /// When set, [act] throws this for the given action.
   Map<RideAction, RidesException> failures = {};
@@ -97,10 +107,16 @@ class FakeRidesRepository implements RidesRepository {
   bool failShareLocation = false;
 
   @override
-  Future<List<Ride>> requests({double? lat, double? lng}) async => openRides;
+  Future<List<Ride>> requests({double? lat, double? lng}) async {
+    requestsCalls++;
+    return openRides;
+  }
 
   @override
-  Future<List<Ride>> myRides() async => mine;
+  Future<List<Ride>> myRides() async {
+    myRidesCalls++;
+    return mine;
+  }
 
   @override
   Future<Ride?> act(
@@ -137,7 +153,17 @@ class FakeRidesRepository implements RidesRepository {
   }
 
   @override
-  Future<Earnings> earnings() async => summary;
+  Future<Earnings> earnings() async {
+    earningsCalls++;
+    return summary;
+  }
+
+  @override
+  Future<List<Payout>> payouts() async {
+    final failure = payoutsFailure;
+    if (failure != null) throw failure;
+    return payoutList;
+  }
 
   @override
   Future<void> setDuty({required bool online, double? lat, double? lng}) async {
