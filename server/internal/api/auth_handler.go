@@ -176,11 +176,18 @@ func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 // writeServiceError maps domain/service errors to HTTP status codes.
 func writeServiceError(w http.ResponseWriter, err error) {
-	var locked *service.OTPLockedError
+	var (
+		locked *service.OTPLockedError
+		budget *service.SMSBudgetError
+	)
 	switch {
 	case errors.As(err, &locked):
 		writeErrorCode(w, http.StatusTooManyRequests, "otp_resend_locked",
 			locked.Error(), int(locked.RetryAfter.Seconds()))
+	case errors.As(err, &budget):
+		// The day's SMS spend is used up for every caller: a plain 429, as
+		// the rate limiter answers.
+		writeRateLimited(w, budget.RetryAfter)
 	case errors.Is(err, service.ErrOTPInvalidated):
 		writeErrorCode(w, http.StatusTooManyRequests, "otp_invalidated", err.Error(), 0)
 	case errors.Is(err, service.ErrInvalidOTP):

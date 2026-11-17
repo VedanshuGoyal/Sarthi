@@ -80,14 +80,17 @@ func run() error {
 
 	// OTP abuse limits (resend cap, failed-verification cap, 30-min lockout) are
 	// Sarthi's own rules, enforced in memory regardless of the SMS provider.
+	// The day's SMS spend is one budget for both apps, counted only for texts
+	// actually sent.
+	smsBudget := memstore.NewSMSBudget(memstore.MaxDailySMS, memstore.SMSWindow)
 	authOpts := []service.Option{
 		service.WithTokenIssuer(sessions),
 		service.WithOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		authOpts = append(authOpts, service.WithOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		authOpts = append(authOpts, service.WithOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 		slog.Info("otp: Fast2SMS provider enabled")
 	} else {
 		slog.Warn("otp: no SMS provider configured; accepting dev OTP",
@@ -115,9 +118,9 @@ func run() error {
 		service.WithDriverOTPLimiter(memstore.NewOTPGuard()),
 	}
 	if cfg.Fast2SMS.Enabled() {
-		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(
-			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID),
-		))
+		driverAuthOpts = append(driverAuthOpts, service.WithDriverOTPSender(service.BudgetedOTPSender(
+			fast2sms.New(cfg.Fast2SMS.APIKey, cfg.Fast2SMS.OTPID), smsBudget,
+		)))
 	}
 	driverAuthService := service.NewDriverAuthService(repository.NewDriverRepository(pool), driverAuthOpts...)
 

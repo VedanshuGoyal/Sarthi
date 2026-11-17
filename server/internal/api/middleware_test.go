@@ -4,12 +4,27 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sarthi/server/internal/service"
 )
+
+// The day's SMS budget running out answers like the rate limiter did: a
+// 429 rate_limited with Retry-After.
+func TestWriteServiceError_SMSBudget(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, &service.SMSBudgetError{RetryAfter: 2 * time.Hour})
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"code":"rate_limited"`) ||
+		rec.Header().Get("Retry-After") != "7200" {
+		t.Errorf("got %d %s (Retry-After %q), want 429 rate_limited after 7200s",
+			rec.Code, rec.Body, rec.Header().Get("Retry-After"))
+	}
+}
 
 func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -83,16 +98,19 @@ func TestClientIPTrustsOnlyTheProxyEntry(t *testing.T) {
 	}
 }
 
-func TestRateLimitPerIPAndGlobal(t *testing.T) {
+// Each caller gets its own allowance — per address for IPv4, per /64 for
+// IPv6 — and there is no shared budget here: the day's SMS spend is counted
+// where a text is sent, so junk requests from many hosts can't lock
+// everyone out.
+func TestRateLimitPerIP(t *testing.T) {
 	rule := rateLimitRule{
-		match:  func(r *http.Request) bool { return r.URL.Path == "/auth/otp" },
-		perIP:  newWindowLimiter(2, time.Hour),
-		global: newWindowLimiter(3, time.Hour),
+		match: func(r *http.Request) bool { return r.URL.Path == "/auth/otp" },
+		perIP: newWindowLimiter(2, time.Hour),
 	}
 	h := rateLimit(okHandler(), []rateLimitRule{rule})
 	hit := func(ip, path string) int {
 		r := httptest.NewRequest(http.MethodPost, path, nil)
-		r.RemoteAddr = ip + ":1234"
+		r.RemoteAddr = net.JoinHostPort(ip, "1234")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r)
 		return rec.Code
@@ -106,15 +124,37 @@ func TestRateLimitPerIPAndGlobal(t *testing.T) {
 	if code := hit("1.1.1.1", "/auth/otp"); code != http.StatusTooManyRequests {
 		t.Fatalf("third hit from one IP: got %d, want 429", code)
 	}
-	if hit("2.2.2.2", "/auth/otp") != 200 {
-		t.Fatal("another IP has its own allowance")
+	for i, ip := range []string{"2.2.2.2", "3.3.3.3", "4.4.4.4", "5.5.5.5"} {
+		if code := hit(ip, "/auth/otp"); code != 200 {
+			t.Fatalf("caller %d (%s): got %d, want 200 — no shared budget", i+1, ip, code)
+		}
 	}
-	// Three passed globally; the fourth caller hits the shared budget.
-	if code := hit("3.3.3.3", "/auth/otp"); code != http.StatusTooManyRequests {
-		t.Fatalf("global budget: got %d, want 429", code)
+	// One IPv6 /64 is one caller, whatever addresses it rotates through.
+	hit("2001:db8:1:2::1", "/auth/otp")
+	hit("2001:db8:1:2:aaaa::9", "/auth/otp")
+	if code := hit("2001:db8:1:2:ffff:ffff:ffff:ffff", "/auth/otp"); code != http.StatusTooManyRequests {
+		t.Fatalf("third hit from one /64: got %d, want 429", code)
 	}
-	if hit("3.3.3.3", "/healthz") != 200 {
+	if code := hit("2001:db8:1:3::1", "/auth/otp"); code != 200 {
+		t.Fatalf("the next /64: got %d, want 200", code)
+	}
+	if hit("1.1.1.1", "/healthz") != 200 {
 		t.Fatal("unmatched routes are never limited")
+	}
+}
+
+func TestLimitKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"203.0.113.9":            "203.0.113.9",
+		"::ffff:203.0.113.9":     "203.0.113.9",
+		"2001:db8:1:2:3:4:5:6":   "2001:db8:1:2::/64",
+		"fe80::1%eth0":           "fe80::/64",
+		"not-an-ip":              "not-an-ip",
+		"2001:db8:abcd:12::dead": "2001:db8:abcd:12::/64",
+	} {
+		if got := limitKey(in); got != want {
+			t.Errorf("limitKey(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

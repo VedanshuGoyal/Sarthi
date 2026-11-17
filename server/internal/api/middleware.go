@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,18 +139,37 @@ func (l *windowLimiter) blocked(key string) (bool, time.Duration) {
 	return true, c.start.Add(l.window).Sub(l.now())
 }
 
-// rateLimitRule throttles one set of routes: per client IP, and optionally a
-// global budget shared by every caller (the daily SMS spend).
+// limitKey is the key a per-IP limit counts a caller under: the address
+// itself for IPv4, and its /64 for IPv6 — one subscriber or host is usually
+// handed a whole /64, so a per-address key would let it rotate freely.
+func limitKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	if addr = addr.Unmap(); addr.Is4() {
+		return addr.String()
+	}
+	prefix, err := addr.WithZone("").Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return prefix.String()
+}
+
+// rateLimitRule throttles one set of routes per client IP (per /64 for
+// IPv6).
 type rateLimitRule struct {
-	match  func(*http.Request) bool
-	perIP  *windowLimiter
-	global *windowLimiter
+	match func(*http.Request) bool
+	perIP *windowLimiter
 }
 
 // Login routes are public and each OTP send is a paid SMS. Per-number caps
-// live in the OTP guard; these bound one caller trying many numbers, and the
-// whole service's SMS spend. Mobile carriers in India put many users behind
-// one IP (CGNAT), so the per-IP limits are generous.
+// live in the OTP guard, and the whole service's daily SMS spend is counted
+// where a text is actually sent (service.BudgetedOTPSender), so requests that
+// send nothing can't use it up. These bound one caller trying many numbers.
+// Mobile carriers in India put many users behind one IP (CGNAT), so the
+// per-IP limits are generous.
 func authRateLimits() []rateLimitRule {
 	sends := map[string]bool{
 		"/auth/otp": true, "/auth/otp/resend": true,
@@ -161,9 +181,8 @@ func authRateLimits() []rateLimitRule {
 	}
 	return []rateLimitRule{
 		{
-			match:  func(r *http.Request) bool { return r.Method == http.MethodPost && sends[r.URL.Path] },
-			perIP:  newWindowLimiter(30, time.Hour),
-			global: newWindowLimiter(1500, 24*time.Hour),
+			match: func(r *http.Request) bool { return r.Method == http.MethodPost && sends[r.URL.Path] },
+			perIP: newWindowLimiter(30, time.Hour),
 		},
 		{
 			match: func(r *http.Request) bool { return r.Method == http.MethodPost && verifies[r.URL.Path] },
@@ -179,16 +198,9 @@ func rateLimit(next http.Handler, rules []rateLimitRule) http.Handler {
 			if !rule.match(r) {
 				continue
 			}
-			if ok, retry := rule.perIP.allow(clientIP(r)); !ok {
+			if ok, retry := rule.perIP.allow(limitKey(clientIP(r))); !ok {
 				writeRateLimited(w, retry)
 				return
-			}
-			if rule.global != nil {
-				if ok, retry := rule.global.allow("global"); !ok {
-					slog.Error("rate limit: global budget exhausted", "path", r.URL.Path)
-					writeRateLimited(w, retry)
-					return
-				}
 			}
 			break
 		}
@@ -220,7 +232,8 @@ func guardAdmin(next http.Handler, failures *windowLimiter) http.Handler {
 			return
 		}
 		ip := clientIP(r)
-		if blocked, retry := failures.blocked(ip); blocked {
+		key := limitKey(ip)
+		if blocked, retry := failures.blocked(key); blocked {
 			slog.Warn("admin: caller blocked after failed tokens", "ip", ip)
 			writeRateLimited(w, retry)
 			return
@@ -228,7 +241,7 @@ func guardAdmin(next http.Handler, failures *windowLimiter) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		if rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden {
-			failures.allow(ip)
+			failures.allow(key)
 			slog.Warn("admin: rejected token", "ip", ip, "path", r.URL.Path)
 			return
 		}
