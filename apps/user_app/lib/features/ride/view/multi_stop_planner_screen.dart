@@ -8,6 +8,8 @@ import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/multi_stop_planner_view_model.dart';
 import 'pickup_location_screen.dart';
+import 'widgets/add_car_sheet.dart';
+import 'widgets/car_selector_field.dart';
 import 'widgets/ride_format.dart';
 import 'widgets/ride_note.dart';
 import 'widgets/schedule_field.dart';
@@ -17,9 +19,12 @@ import 'widgets/time_slot_picker.dart';
 
 /// Step 3 of a Multi-Stop trip: write the driver's plan for the day.
 ///
-/// Given the confirmed [start], the customer sets a start time and builds an
-/// ordered list of stops — each with a location, a task in their own words,
-/// and a leave-by deadline. Money still owed on earlier rides doesn't stop the
+/// Given the confirmed [start], the customer sets a start time, picks which
+/// of their saved cars the driver drives (adding one inline when needed —
+/// as on the other trip types, its gearbox decides which drivers are
+/// offered the trip), and builds an ordered list of stops — each with a
+/// location, a task in their own words, and a leave-by deadline. Money
+/// still owed on earlier rides doesn't stop the
 /// booking: a note above the CTA says it will be added to this trip's
 /// payment. On confirm the assembled [MultiStopTrip] is handed back via
 /// [onConfirmed]. State lives in [multiStopPlannerViewModelProvider],
@@ -132,6 +137,13 @@ class _MultiStopPlannerScreenState
     if (location != null) vm.setStopLocation(stop.id, location);
   }
 
+  /// Opens the add-car sheet and selects whatever car it saved.
+  Future<void> _addCar(MultiStopPlannerViewModel vm) async {
+    final car = await showAddCarSheet(context);
+    if (car == null || !mounted) return;
+    vm.selectCar(car);
+  }
+
   void _confirm(MultiStopTrip trip) {
     final onConfirmed = widget.onConfirmed;
     if (onConfirmed != null) return onConfirmed(context, trip);
@@ -141,6 +153,7 @@ class _MultiStopPlannerScreenState
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(multiStopPlannerViewModelProvider(widget.start));
+    final savedCars = ref.watch(savedCarsViewModelProvider);
     final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
 
@@ -168,6 +181,20 @@ class _MultiStopPlannerScreenState
                             scheduledAt: vm.scheduledAt,
                             onTapDate: () => _pickStartDate(vm),
                             onTapTime: () => _pickStartTime(vm),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        _Section(
+                          title: 'Which car?',
+                          subtitle: 'The driver drives your car — pick one.',
+                          child: CarSelectorField(
+                            cars: savedCars.cars,
+                            selected: vm.car,
+                            isLoading: savedCars.isLoading,
+                            loadFailed: savedCars.loadFailed,
+                            onSelected: vm.selectCar,
+                            onRetry: savedCars.load,
+                            onAddCar: () => _addCar(vm),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -269,10 +296,12 @@ class _MultiStopPlannerScreenState
           '${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(endsAt))}';
     } else if (vm.isTooSoon) {
       text = tooSoonHint;
-    } else {
+    } else if (!vm.stopsReady) {
       text =
           'Give every stop a location, a task, and a leave-by time to '
           'continue.';
+    } else {
+      text = 'Choose your car to continue.';
     }
     return Text(
       text,

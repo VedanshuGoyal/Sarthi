@@ -161,7 +161,8 @@ class HomeScreen extends ConsumerWidget {
             trip: 'Multi-Stop trip',
             booked:
                 'Multi-Stop trip booked: $count '
-                '${count == 1 ? 'stop' : 'stops'} planned.',
+                '${count == 1 ? 'stop' : 'stops'} planned, '
+                'in your ${trip.car.registration}.',
             send: (repo) => repo.submitMultiStop(trip, idempotencyKey: key),
           );
         }

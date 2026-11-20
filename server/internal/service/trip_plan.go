@@ -208,6 +208,14 @@ func (p *tripPlan) checkBookable(tripType string) error {
 	return nil
 }
 
+// completeCar reports whether car names a plate, a car type and a gearbox
+// the server knows — what drivers are matched (gearbox) and the trip priced
+// (luxury or not) by.
+func completeCar(car *domain.RideCar) bool {
+	return car != nil && validRegistration(normalizeRegistration(car.Registration)) &&
+		validCarType(domain.CarType(car.CarType)) && validTransmission(domain.CarTransmission(car.Transmission))
+}
+
 // luxury reports whether the trip is priced on the luxury tariff.
 func (p tripPlan) luxury() bool {
 	return p.Car != nil && p.Car.CarType == string(domain.CarTypeLuxury)

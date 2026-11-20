@@ -772,7 +772,8 @@ func toDriverRide(rb domain.RideBooking, withCustomer bool) (domain.DriverRide, 
 }
 
 // canDrive reports whether a driver of gearbox d can drive car. A trip that
-// names no car (multi-stop) or no gearbox suits anyone.
+// names no car (a multi-stop booked from a user app before build 10) or no
+// gearbox suits anyone.
 func canDrive(d domain.DriverTransmission, car *domain.RideCar) bool {
 	if car == nil || car.Transmission == "" || d == "" || d == domain.DriverTransmissionBoth {
 		return true

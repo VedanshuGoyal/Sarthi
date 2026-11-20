@@ -35,7 +35,7 @@ func TestBookingService_unpaidRideIsCarriedNotBlocking(t *testing.T) {
 	svc := newTestBookingService(store)
 	ctx := context.Background()
 
-	if _, _, err := svc.Record(ctx, "u1", TripRoundTrip, roundTripDetails(), "k1"); err != nil || !store.insertHit {
+	if _, _, err := svc.Record(ctx, "u1", TripRoundTrip, roundTripDetails(), "k1", false); err != nil || !store.insertHit {
 		t.Fatalf("Record: %v (stored %v), want the booking stored", err, store.insertHit)
 	}
 	got, err := svc.ListMine(ctx, "u1")
@@ -71,7 +71,7 @@ func TestBookingService_Record_passesTheRepeatGuards(t *testing.T) {
 	store := &fakeBookingStore{}
 	svc := newTestBookingService(store)
 
-	if _, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "  key-1 "); err != nil || dup {
+	if _, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "  key-1 ", false); err != nil || dup {
 		t.Fatalf("Record: duplicate %v, err %v", dup, err)
 	}
 	if store.params.IdempotencyKey != "key-1" {
@@ -91,7 +91,7 @@ func TestBookingService_Record_repeatReturnsTheFirstBooking(t *testing.T) {
 	svc := NewBookingService(store, alerts, nil, nil)
 	svc.now = func() time.Time { return bookingTestNow }
 
-	got, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "")
+	got, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "", false)
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestBookingService_Record_repeatReturnsTheFirstBooking(t *testing.T) {
 
 	// A new booking does alert.
 	store.repeat = nil
-	if _, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), ""); err != nil || dup {
+	if _, dup, err := svc.Record(context.Background(), "u1", TripRoundTrip, roundTripDetails(), "", false); err != nil || dup {
 		t.Fatalf("Record: duplicate %v, err %v", dup, err)
 	}
 	if len(alerts.requested) != 1 {
@@ -115,7 +115,7 @@ func TestBookingService_Record_repeatReturnsTheFirstBooking(t *testing.T) {
 func TestBookingService_Record_refusesAnOverlongKey(t *testing.T) {
 	store := &fakeBookingStore{}
 	_, _, err := newTestBookingService(store).Record(context.Background(), "u1", TripRoundTrip,
-		roundTripDetails(), strings.Repeat("k", maxIdempotencyKey+1))
+		roundTripDetails(), strings.Repeat("k", maxIdempotencyKey+1), false)
 	if !errors.Is(err, ErrInvalidBooking) || store.insertHit {
 		t.Errorf("err = %v (stored %v), want ErrInvalidBooking and nothing stored", err, store.insertHit)
 	}

@@ -3,15 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/ride/data/booking_repository.dart';
+import 'package:user_app/features/ride/data/cars_repository.dart';
+import 'package:user_app/features/ride/domain/car.dart';
+import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/multi_stop_trip.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
+import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/multi_stop_planner_screen.dart';
+import 'package:user_app/features/ride/view/widgets/car_selector_field.dart';
 import 'package:user_app/features/ride/view/widgets/stop_card.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
+import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -32,14 +38,23 @@ const _office = PickupLocation(
 
 final _nineAm = DateTime(2026, 7, 18, 9);
 
+const _sedan = Car(
+  id: 'c1',
+  registration: 'DL01AB1234',
+  type: CarType.sedan,
+  transmission: Transmission.manual,
+);
+
 /// Pumps the planner with the view model seeded to [stops] (or the default
 /// single blank stop) on a surface tall enough to lay out every card at once.
-/// [rides] seeds the customer's rides list.
+/// [rides] seeds the customer's rides list. The sedan is the one saved car
+/// (no network), already picked unless [withCar] is false.
 Future<void> _pump(
   WidgetTester tester, {
   List<StopDraft>? stops,
   ValueChanged<MultiStopTrip>? onOk,
   List<Map<String, dynamic>> rides = const [],
+  bool withCar = true,
 }) {
   tester.view.physicalSize = const Size(1200, 3200);
   tester.view.devicePixelRatio = 1.0;
@@ -54,11 +69,18 @@ Future<void> _pump(
             initialBookings: [for (final b in rides) MyBooking.tryParse(b)!],
           ),
         ),
+        savedCarsViewModelProvider.overrideWith(
+          (ref) => SavedCarsViewModel(
+            repository: CarsRepository(),
+            initialCars: const [_sedan],
+          ),
+        ),
         multiStopPlannerViewModelProvider.overrideWith(
           (ref, start) => MultiStopPlannerViewModel(
             start: start,
             initialScheduledAt: _nineAm,
             initialStops: stops,
+            initialCar: withCar ? _sedan : null,
             // Early that morning, so the 9am start is bookable.
             clock: () => DateTime(2026, 7, 18, 7),
           ),
@@ -222,6 +244,43 @@ void main() {
     expect(received!.stops.length, 2);
     expect(received!.stops[0].task, 'Collect the refill');
     expect(received!.endsAt, DateTime(2026, 7, 18, 12, 15));
+    expect(received!.car, _sedan);
+  });
+
+  testWidgets('the car is asked for: confirm waits for it, and the trip '
+      'carries it', (tester) async {
+    MultiStopTrip? received;
+    await _pump(
+      tester,
+      stops: _readyStops(),
+      withCar: false,
+      onOk: (t) => received = t,
+    );
+
+    expect(find.text('Which car?'), findsOneWidget);
+    expect(find.text('Select your car'), findsOneWidget);
+    expect(find.text('Add a car'), findsOneWidget);
+    expect(find.text('Choose your car to continue.'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byType(CarSelectorField));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DL01AB1234 · Sedan · Manual').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Choose your car to continue.'), findsNothing);
+    expect(find.textContaining('2 stops · wraps up by'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(SarthiPrimaryButton, 'Confirm trip'));
+    await tester.pumpAndSettle();
+    expect(received, isNotNull);
+    expect(received!.car, _sedan);
+    expect(
+      (received!.toJson()['car'] as Map<String, dynamic>)['transmission'],
+      'manual',
+    );
   });
 
   testWidgets('money owed on an earlier ride is noted, and confirming still '

@@ -392,15 +392,17 @@ Widget bookingWithDuesPreview() => _booking(
 // The "write the driver's day" step. Each preview seeds the view model's stop
 // drafts directly via a family override, so states render in isolation.
 
-Widget _planner({DateTime? scheduledAt, List<StopDraft>? stops}) {
+Widget _planner({DateTime? scheduledAt, List<StopDraft>? stops, Car? car}) {
   return ProviderScope(
     overrides: [
       _rides(),
+      _savedCars(),
       multiStopPlannerViewModelProvider.overrideWith(
         (ref, start) => MultiStopPlannerViewModel(
           start: start,
           initialScheduledAt: scheduledAt ?? DateTime(2026, 7, 18, 9, 0),
           initialStops: stops,
+          initialCar: car,
         ),
       ),
     ],
@@ -454,6 +456,7 @@ Widget plannerHalfPlannedPreview() => _planner(
 
 @Preview(name: 'Ready', group: 'Multi-Stop planner', theme: ridePreviewTheme)
 Widget plannerReadyPreview() => _planner(
+  car: _carSedan,
   stops: [
     StopDraft(
       id: 0,

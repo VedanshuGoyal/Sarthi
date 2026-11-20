@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../domain/car.dart';
 import '../domain/multi_stop_trip.dart';
 import '../domain/pickup_location.dart';
 import '../domain/scheduling.dart' as scheduling;
@@ -40,26 +41,31 @@ class StopDraft {
   );
 }
 
-/// Drives the Multi-Stop trip planner: a start time plus an ordered task list
-/// of stops the customer writes for the driver.
+/// Drives the Multi-Stop trip planner: a start time, which of the customer's
+/// cars the driver drives, and an ordered task list of stops the customer
+/// writes for the driver.
 ///
 /// A [ChangeNotifier] per the MVVM guideline: it owns the transient plan for a
-/// single [start] location — the stop drafts and their ordering — and exposes
-/// command methods the view calls. It holds no business logic beyond form
-/// validation and never touches widgets, the network, or storage.
+/// single [start] location — the car picked, the stop drafts and their
+/// ordering — and exposes command methods the view calls. It holds no
+/// business logic beyond form validation and never touches widgets, the
+/// network, or storage. The saved-car *list* lives in the saved-cars view
+/// model; this one only holds which car was picked.
 class MultiStopPlannerViewModel extends ChangeNotifier {
   /// [start] is the confirmed starting point from the previous step. The
   /// `initial*` seams let previews and tests start in a given state without
-  /// tapping through the UI; production begins with one blank stop. [clock]
-  /// is the "now" the too-soon checks use (a seam for tests).
+  /// tapping through the UI; production begins with one blank stop and no
+  /// car. [clock] is the "now" the too-soon checks use (a seam for tests).
   MultiStopPlannerViewModel({
     required this.start,
     DateTime? initialScheduledAt,
     List<StopDraft>? initialStops,
+    Car? initialCar,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now,
        _scheduledAt =
            initialScheduledAt ?? scheduling.defaultScheduledAt(clock?.call()),
+       _car = initialCar,
        _stops = [...?initialStops] {
     if (_stops.isEmpty) _stops.add(const StopDraft(id: 0));
     _nextId = _stops.map((s) => s.id).reduce((a, b) => a > b ? a : b) + 1;
@@ -96,6 +102,17 @@ class MultiStopPlannerViewModel extends ChangeNotifier {
   void setScheduledAt(DateTime when) {
     if (_scheduledAt == when) return;
     _scheduledAt = when;
+    notifyListeners();
+  }
+
+  Car? _car;
+
+  /// The saved car picked for this trip; null until the customer picks one.
+  Car? get car => _car;
+
+  void selectCar(Car car) {
+    if (_car == car) return;
+    _car = car;
     notifyListeners();
   }
 
@@ -191,18 +208,20 @@ class MultiStopPlannerViewModel extends ChangeNotifier {
     return last;
   }
 
-  /// True once every stop is complete, the timeline runs forward and the start
-  /// isn't too soon — gates the CTA.
-  bool get canConfirm =>
-      !isTooSoon &&
-      _stops.every((stop) => stop.isComplete) &&
-      _timeErrors.isEmpty;
+  /// True once every stop is complete and the timeline runs forward.
+  bool get stopsReady =>
+      _stops.every((stop) => stop.isComplete) && _timeErrors.isEmpty;
+
+  /// True once the stops are ready, a car is picked and the start isn't too
+  /// soon — gates the CTA.
+  bool get canConfirm => !isTooSoon && stopsReady && _car != null;
 
   /// The assembled trip, or null until [canConfirm].
   MultiStopTrip? get trip => canConfirm
       ? MultiStopTrip(
           start: start,
           scheduledAt: _scheduledAt,
+          car: _car!,
           stops: [
             for (final stop in _stops)
               TripStop(

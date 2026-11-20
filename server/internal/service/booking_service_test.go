@@ -178,7 +178,7 @@ func TestBookingService_Record_persists(t *testing.T) {
 	svc := newTestBookingService(store)
 
 	// A leading/trailing space on the trip type is trimmed before storing.
-	got, _, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails(), "")
+	got, _, err := svc.Record(context.Background(), "u1", " roundTrip ", roundTripDetails(), "", false)
 	if err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -205,14 +205,14 @@ func TestBookingService_Record_rejectsInvalid(t *testing.T) {
 	svc := newTestBookingService(store)
 	details := map[string]any{"hours": 4}
 
-	if _, _, err := svc.Record(context.Background(), "u1", "  ", details, ""); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "  ", details, "", false); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("blank tripType: err = %v, want ErrInvalidBooking", err)
 	}
-	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", nil, ""); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", nil, "", false); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("nil details: err = %v, want ErrInvalidBooking", err)
 	}
 	// Details a driver couldn't read (no pickup coordinates) are refused.
-	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", details, ""); !errors.Is(err, ErrInvalidBooking) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", details, "", false); !errors.Is(err, ErrInvalidBooking) {
 		t.Errorf("unreadable details: err = %v, want ErrInvalidBooking", err)
 	}
 	if store.insertHit {
@@ -232,7 +232,7 @@ func TestBookingService_Record_acceptsTheAppsFare(t *testing.T) {
 	d["car"] = map[string]any{"registration": "DL01AB1234", "carType": "luxury", "transmission": "automatic"}
 	d["fare"] = 538.0 // RoundTripTariff.luxury.fareFor(3) = 440, + 50 + 24×2
 
-	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); err != nil {
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, "", false); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 	if store.params.FarePaise != 53800 || store.params.FareEstimated {
@@ -247,7 +247,7 @@ func TestBookingService_Record_rejectsTamperedFare(t *testing.T) {
 	d["hours"] = 10.0
 	d["fare"] = 300.0 // the tariff is 1040
 
-	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, ""); !errors.Is(err, ErrFareMismatch) {
+	if _, _, err := svc.Record(context.Background(), "u1", TripRoundTrip, d, "", false); !errors.Is(err, ErrFareMismatch) {
 		t.Fatalf("err = %v, want ErrFareMismatch", err)
 	}
 	if store.insertHit {
@@ -259,7 +259,7 @@ func TestBookingService_Record_propagatesStoreError(t *testing.T) {
 	wantErr := errors.New("db down")
 	svc := newTestBookingService(&fakeBookingStore{err: wantErr})
 
-	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, wantErr) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), "", false); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
@@ -308,7 +308,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// 30 minutes ahead: it would close to drivers the moment it's booked.
 	svc.now = func() time.Time { return start.Add(-30 * time.Minute) }
-	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); !errors.Is(err, ErrBookingTooSoon) {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), "", false); !errors.Is(err, ErrBookingTooSoon) {
 		t.Errorf("30 min ahead: err = %v, want ErrBookingTooSoon", err)
 	}
 	if store.insertHit {
@@ -317,7 +317,7 @@ func TestBookingService_Record_rejectsTooSoon(t *testing.T) {
 
 	// The earliest slot, submitted a couple of minutes later: still accepted.
 	svc.now = func() time.Time { return start.Add(-43 * time.Minute) }
-	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), ""); err != nil {
+	if _, _, err := svc.Record(context.Background(), "u1", "roundTrip", roundTripDetails(), "", false); err != nil {
 		t.Errorf("43 min ahead: err = %v, want nil", err)
 	}
 }

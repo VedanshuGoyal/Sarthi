@@ -94,7 +94,9 @@ func (h *BookingHandler) List(w http.ResponseWriter, r *http.Request) {
 // Submit handles POST /me/bookings. An Idempotency-Key header (the app's,
 // per booking attempt) makes a retry return the booking the first try made:
 // 202 for a new booking, 200 with "duplicate": true for a repeat. What the
-// customer still owes is collected with their next payment, not here.
+// customer still owes is collected with their next payment, not here. A
+// user app build that asks for the car on every trip type gets 400
+// car_required for a booking without one.
 func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	var req bookingRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -103,7 +105,11 @@ func (h *BookingHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	booking, duplicate, err := h.svc.Record(r.Context(), userIDFrom(r.Context()), req.TripType, req.Details,
-		r.Header.Get("Idempotency-Key"))
+		r.Header.Get("Idempotency-Key"), asksCarOnEveryTrip(r))
+	if errors.Is(err, service.ErrCarRequired) {
+		writeErrorCode(w, http.StatusBadRequest, "car_required", err.Error(), 0)
+		return
+	}
 	if errors.Is(err, service.ErrFareMismatch) {
 		writeErrorCode(w, http.StatusBadRequest, "fare_mismatch", err.Error(), 0)
 		return
