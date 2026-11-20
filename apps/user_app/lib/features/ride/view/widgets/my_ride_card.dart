@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
+import '../../ride_labels.dart';
 import 'booking_status_pill.dart';
 import 'driver_row.dart';
 import 'ride_format.dart';
@@ -50,6 +52,7 @@ class MyRideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final b = booking;
     final destination = b.destinationAddress;
     final waitingForDriver = b.status == BookingStatus.requested;
@@ -67,36 +70,48 @@ class MyRideCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: t.primarySoft,
-                  borderRadius: BorderRadius.circular(Skyline.radiusSm),
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: t.primarySoft,
+                    borderRadius: BorderRadius.circular(Skyline.radiusSm),
+                  ),
+                  child: Icon(
+                    RideFormat.tripIcon(b.tripType),
+                    color: t.primaryText,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  RideFormat.tripIcon(b.tripType),
-                  color: t.primaryText,
-                  size: 20,
+                const SizedBox(width: Skyline.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        RideFormat.tripLabel(b.tripType),
+                        style: t.title(15),
+                      ),
+                      Text(
+                        RideFormat.when(context, b.scheduledAt),
+                        style: t.body(size: 13),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: Skyline.s12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(RideFormat.tripLabel(b.tripType), style: t.title(15)),
-                    Text(
-                      RideFormat.when(context, b.scheduledAt),
-                      style: t.body(size: 13),
-                    ),
-                  ],
+                // A long status (Hindi runs long) wraps instead of pushing
+                // the trip and its time off a narrow phone.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * 0.42,
+                  ),
+                  child: BookingStatusPill(status: b.status),
                 ),
-              ),
-              BookingStatusPill(status: b.status),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: Skyline.s12),
           Text(
@@ -108,21 +123,19 @@ class MyRideCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           if (b.stopCount > 0)
-            Text(
-              '${b.stopCount} ${b.stopCount == 1 ? 'stop' : 'stops'}',
-              style: t.body(size: 13),
-            ),
+            Text(l10n.rideCardStopCount(b.stopCount), style: t.body(size: 13)),
           const SizedBox(height: Skyline.s12),
           if (b.status == BookingStatus.completed) ...[
             _ChargeRow(
-              label: b.driverName == null
-                  ? 'Trip completed'
-                  : 'Driven by ${b.driverName}',
+              label: switch (b.driverName) {
+                null => l10n.rideCardTripCompleted,
+                final name => l10n.rideCardDrivenBy(name),
+              },
               amount: RideFormat.fare(b),
               paid: b.paymentStatus == RidePaymentStatus.paid,
             ),
             if (RideFormat.endedEarly(b) case final early?)
-              Text('Ended early. $early', style: t.body(size: 13)),
+              Text(l10n.rideCardEndedEarly(early), style: t.body(size: 13)),
             if (RideFormat.ranOver(b) case final over?)
               Text(over, style: t.body(size: 13)),
             const SizedBox(height: Skyline.s8),
@@ -133,7 +146,7 @@ class MyRideCard extends StatelessWidget {
             if (b.myRating case final rating?)
               Row(
                 children: [
-                  Text('You rated ', style: t.body(size: 13)),
+                  Text('${l10n.rideCardYouRated} ', style: t.body(size: 13)),
                   StarRow(stars: rating.stars, size: 16),
                 ],
               )
@@ -147,12 +160,12 @@ class MyRideCard extends StatelessWidget {
                     minimumSize: const Size(0, 36),
                   ),
                   icon: const Icon(Icons.star_outline_rounded, size: 18),
-                  label: const Text('Rate your trip'),
+                  label: Text(l10n.rideCardRateTrip),
                 ),
               ),
           ] else if (b.status == BookingStatus.cancelled) ...[
             Text(
-              b.cancellationSummary ?? 'This ride was cancelled.',
+              b.cancellationSummaryIn(l10n) ?? l10n.rideCardCancelled,
               style: t.body(size: 13),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -160,7 +173,7 @@ class MyRideCard extends StatelessWidget {
             if (b.hasCancellationFee) ...[
               const SizedBox(height: Skyline.s8),
               _ChargeRow(
-                label: 'Cancellation fee',
+                label: l10n.rideCardCancellationFee,
                 amount: RideFormat.rupees(b.cancellationFeePaise),
                 paid: b.paymentStatus == RidePaymentStatus.paid,
               ),
@@ -170,10 +183,7 @@ class MyRideCard extends StatelessWidget {
               ],
             ],
           ] else if (b.status == BookingStatus.expired)
-            Text(
-              'No driver accepted in time. Please book again.',
-              style: t.body(size: 13),
-            )
+            Text(l10n.rideCardNoDriver, style: t.body(size: 13))
           else if (waitingForDriver)
             Row(
               children: [
@@ -187,7 +197,7 @@ class MyRideCard extends StatelessWidget {
                 const SizedBox(width: Skyline.s8),
                 Expanded(
                   child: Text(
-                    "We'll show your driver here as soon as one accepts.",
+                    l10n.rideCardWaitingForDriver,
                     style: t.body(size: 13),
                   ),
                 ),
@@ -231,7 +241,9 @@ class _PayButton extends StatelessWidget {
         FilledButton.tonalIcon(
           onPressed: onPressed,
           icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-          label: Text('Pay ${RideFormat.rupees(amountPaise)} by UPI'),
+          label: Text(
+            context.l10n.rideCardPayByUpi(RideFormat.rupees(amountPaise)),
+          ),
         ),
         if (includes case final line?) ...[
           const SizedBox(height: Skyline.s4),
@@ -258,25 +270,35 @@ class _ChargeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: t.body(size: 13),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: t.body(size: 13),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-        const SizedBox(width: Skyline.s12),
-        if (paid) ...[
-          Icon(Icons.check_circle_rounded, size: 16, color: t.success),
-          const SizedBox(width: 4),
-          Text('Paid', style: t.label(color: t.success)),
-          const SizedBox(width: Skyline.s8),
+          const SizedBox(width: Skyline.s12),
+          if (paid) ...[
+            Icon(Icons.check_circle_rounded, size: 16, color: t.success),
+            const SizedBox(width: 4),
+            // A long word for "Paid" (Hindi) wraps rather than pushing the
+            // amount off a narrow phone.
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.3),
+              child: Text(
+                context.l10n.rideCardPaid,
+                style: t.label(color: t.success),
+              ),
+            ),
+            const SizedBox(width: Skyline.s8),
+          ],
+          Text(amount, style: t.title(15)),
         ],
-        Text(amount, style: t.title(15)),
-      ],
+      ),
     );
   }
 }

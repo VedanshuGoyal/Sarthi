@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// The card docked over the map that reports what the centre pin currently
 /// points at and lets the customer confirm it.
 ///
@@ -10,7 +12,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 class MapPinCard extends StatelessWidget {
   const MapPinCard({
     super.key,
-    this.caption = 'Pickup here',
+    this.caption,
     required this.label,
     required this.isMoving,
     required this.isResolving,
@@ -19,8 +21,9 @@ class MapPinCard extends StatelessWidget {
     this.onConfirm,
   });
 
-  /// What the pinned place is for ("Pickup here", "Destination"…).
-  final String caption;
+  /// What the pinned place is for ("Destination"…); null reads "Pickup
+  /// here" in the app's language.
+  final String? caption;
 
   /// Address (or raw coordinates) under the pin.
   final String label;
@@ -40,6 +43,7 @@ class MapPinCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return Container(
       decoration: BoxDecoration(
         color: t.surface,
@@ -91,9 +95,12 @@ class MapPinCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(caption, style: t.label(size: 12)),
+                      Text(
+                        caption ?? l10n.mapPickerCaption,
+                        style: t.label(size: 12),
+                      ),
                       const SizedBox(height: 2),
-                      _detail(t),
+                      _detail(t, l10n),
                     ],
                   ),
                 ),
@@ -114,7 +121,7 @@ class MapPinCard extends StatelessWidget {
           ],
           const SizedBox(height: Skyline.s16),
           SarthiPrimaryButton(
-            label: 'Confirm this location',
+            label: l10n.mapPickerConfirm,
             onPressed: canConfirm ? onConfirm : null,
           ),
         ],
@@ -122,9 +129,9 @@ class MapPinCard extends StatelessWidget {
     );
   }
 
-  Widget _detail(SkylineTokens t) {
+  Widget _detail(SkylineTokens t, AppLocalizations l10n) {
     if (isMoving) {
-      return Text('Move the map to place the pin', style: t.body(size: 14));
+      return Text(l10n.mapPickerMoveHint, style: t.body(size: 14));
     }
     return Text(
       label,

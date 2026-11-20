@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
+import '../../ride_labels.dart';
 import 'ride_format.dart';
 
 /// The receipt of a paid ride: the fare (with its base and night parts when
@@ -26,6 +28,7 @@ class ReceiptCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final b = booking;
     final payment = b.payment;
     // The parts only explain the fare they add up to — not a cancellation
@@ -44,37 +47,47 @@ class ReceiptCard extends StatelessWidget {
     final rows = <(String, String, TextStyle?)>[
       if (b.hasCancellationFee)
         (
-          'Cancellation fee',
+          l10n.rideCancellationFee,
           RideFormat.rupees(b.cancellationFeePaise),
           t.title(16),
         )
       else ...[
         (
-          b.chargedByTime ? 'Fare for the time used' : 'Fare',
+          b.chargedByTime ? l10n.receiptFareForTimeUsed : l10n.rideFare,
           '₹${b.fareRupees}',
           t.title(16),
         ),
         if (b.bookedFarePaise case final booked? when b.chargedByTime)
-          ('Booked fare', RideFormat.rupees(booked), null),
+          (l10n.rideBookedFare, RideFormat.rupees(booked), null),
       ],
       if (breakdown != null) ...[
-        ('Base fare', '₹${breakdown.baseRupees}', null),
+        (l10n.receiptBaseFare, '₹${breakdown.baseRupees}', null),
         if (breakdown.nightPaise > 0)
-          ('Night surcharge', '₹${breakdown.nightRupees}', null),
+          (l10n.receiptNightSurcharge, '₹${breakdown.nightRupees}', null),
       ],
       if (together != null && payment != null) ...[
         for (final line in b.paidTogetherWith)
-          (line.label, RideFormat.rupees(line.amountPaise), null),
-        ('Total paid', RideFormat.rupees(payment.paidPaise), t.title(16)),
+          (line.labelIn(l10n), RideFormat.rupees(line.amountPaise), null),
+        (
+          l10n.receiptTotalPaid,
+          RideFormat.rupees(payment.paidPaise),
+          t.title(16),
+        ),
       ],
-      ('Paid via', payment?.modeLabel ?? 'UPI', null),
+      (
+        l10n.receiptPaidVia,
+        payment?.modeLabelIn(l10n) ?? l10n.paymentModeUpi,
+        null,
+      ),
       if (payment?.reference case final reference?)
-        ('Reference', reference, mono),
-      if (payment?.merchantOrderId case final order?) ('Order', order, mono),
-      if (paidAt != null) ('Paid', RideFormat.when(context, paidAt), null),
+        (l10n.receiptReference, reference, mono),
+      if (payment?.merchantOrderId case final order?)
+        (l10n.receiptOrder, order, mono),
+      if (paidAt != null)
+        (l10n.receiptPaidAt, RideFormat.when(context, paidAt), null),
     ];
     return SkylineSection(
-      title: 'Receipt',
+      title: l10n.receiptTitle,
       child: Column(
         children: [
           Row(
@@ -83,7 +96,7 @@ class ReceiptCard extends StatelessWidget {
               const SizedBox(width: Skyline.s8),
               Expanded(
                 child: Text(
-                  'Paid. Thank you!',
+                  l10n.receiptPaidThanks,
                   style: t.title(14, color: t.success),
                 ),
               ),

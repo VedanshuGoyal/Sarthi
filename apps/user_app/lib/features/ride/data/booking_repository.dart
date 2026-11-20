@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/driver_location.dart';
 import '../domain/multi_stop_trip.dart';
 import '../domain/my_booking.dart';
@@ -24,8 +25,8 @@ class BookingSubmitException implements Exception {
 
   /// The server's `payment_due` refusal: the customer has a completed ride,
   /// [bookingId], still to pay for.
-  const BookingSubmitException.paymentDue(String this.bookingId)
-    : message = 'Pay for your last ride before booking another.',
+  BookingSubmitException.paymentDue(String this.bookingId)
+    : message = L10n.current.bookingErrorPayLastRide,
       code = paymentDueCode;
 
   /// The error tag of a booking refused while a ride is unpaid.
@@ -181,11 +182,11 @@ class BookingRepository {
         headers: _headers(),
       );
     } catch (_) {
-      throw const BookingSubmitException("Can't reach the server.");
+      throw BookingSubmitException(L10n.current.errorNoConnectionShort);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw BookingSubmitException(
-        'Loading your rides failed (${response.statusCode}).',
+        L10n.current.bookingErrorLoadFailed(response.statusCode),
       );
     }
     // Not a list of bookings (a proxy's page, say): a load failure the
@@ -193,9 +194,7 @@ class BookingRepository {
     final decoded = _decode(response.body);
     final list = decoded?['bookings'];
     if (decoded == null || list is! List<dynamic>?) {
-      throw const BookingSubmitException(
-        'The server sent an unexpected reply.',
-      );
+      throw BookingSubmitException(L10n.current.errorUnexpectedReply);
     }
     return [for (final item in list ?? const []) ?MyBooking.tryParse(item)];
   }
@@ -284,9 +283,7 @@ class BookingRepository {
   Future<PaymentCheckout> startPayment(String id) async {
     final reply = await _act('POST', id, 'payment');
     return PaymentCheckout.tryParse(reply['checkout']) ??
-        (throw const BookingActionException(
-          'The server sent an unexpected reply.',
-        ));
+        (throw BookingActionException(L10n.current.errorUnexpectedReply));
   }
 
   /// Asks the server to re-check the ride's payment with the gateway, after
@@ -316,7 +313,7 @@ class BookingRepository {
               body: jsonEncode(body ?? const {}),
             );
     } catch (_) {
-      throw const BookingActionException("Can't reach the server.");
+      throw BookingActionException(L10n.current.errorNoConnectionShort);
     }
     final decoded = _decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -326,7 +323,7 @@ class BookingRepository {
       throw BookingActionException(
         error is String && error.isNotEmpty
             ? _sentence(error)
-            : 'Something went wrong (${response.statusCode}).',
+            : L10n.current.errorGenericStatus(response.statusCode),
         code: BookingErrorCode.fromWire(decoded?['code']),
         statusCode: response.statusCode,
         feePaise: fee is num && fee > 0 ? fee.toInt() : null,
@@ -347,9 +344,7 @@ class BookingRepository {
   /// The `booking` of a cancel/end/rate/sync reply.
   static MyBooking _bookingIn(Map<String, dynamic> reply) =>
       MyBooking.tryParse(reply['booking']) ??
-      (throw const BookingActionException(
-        'The server sent an unexpected reply.',
-      ));
+      (throw BookingActionException(L10n.current.errorUnexpectedReply));
 
   /// The header naming one booking attempt; the server answers a repeat of
   /// it (200, `duplicate`) with the booking it already made.
@@ -372,7 +367,7 @@ class BookingRepository {
         body: body,
       );
     } catch (_) {
-      throw const BookingSubmitException("Can't reach the server.");
+      throw BookingSubmitException(L10n.current.errorNoConnectionShort);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final decoded = _decode(response.body);
@@ -389,7 +384,7 @@ class BookingRepository {
       throw BookingSubmitException(
         error is String && error.isNotEmpty
             ? _sentence(error)
-            : 'Booking request failed (${response.statusCode}).',
+            : L10n.current.bookingErrorRequestFailed(response.statusCode),
         code: code is String && code.isNotEmpty ? code : null,
       );
     }

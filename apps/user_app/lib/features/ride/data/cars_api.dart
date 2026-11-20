@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/car.dart';
 import '../domain/car_type.dart';
 import '../domain/transmission.dart';
@@ -76,7 +77,7 @@ class CarsApi {
         ? _carFrom(decoded['car'])
         : null;
     if (car == null) {
-      throw const CarsRequestException('Unexpected response from the server.');
+      throw CarsRequestException(L10n.current.carsUnexpectedResponse);
     }
     return (
       car: car,
@@ -112,12 +113,12 @@ class CarsApi {
     try {
       response = await run();
     } catch (_) {
-      throw const CarsRequestException("Can't reach the server.");
+      throw CarsRequestException(L10n.current.errorNoConnectionShort);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw CarsRequestException(
         _serverMessage(response) ??
-            'Saved-cars request failed (${response.statusCode}).',
+            L10n.current.carsRequestFailed(response.statusCode),
       );
     }
     return response;

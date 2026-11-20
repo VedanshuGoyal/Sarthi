@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
-import 'package:user_app/features/ride/domain/service_area.dart';
 import 'package:user_app/features/ride/view_model/map_pickup_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_location_repository.dart';
 
@@ -121,7 +121,7 @@ void main() {
 
         check(vm.resolved).isNull();
         check(vm.canConfirm).isFalse();
-        check(vm.error).equals(ServiceArea.outsideMessage);
+        check(vm.error).equals(L10n.current.serviceAreaOutside);
         // The address still shows under the pin, not raw coordinates.
         check(vm.pinLabel).equals('MG Road, Bengaluru');
 

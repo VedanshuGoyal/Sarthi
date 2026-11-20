@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../data/location_repository.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
@@ -151,7 +152,7 @@ class MapPickupViewModel extends ChangeNotifier {
         // keep panning back into the served area.
         _resolved = null;
         _outsideAddress = pickup.address;
-        _error = ServiceArea.outsideMessage;
+        _error = L10n.current.serviceAreaOutside;
       } else {
         _resolved = pickup;
         _outsideAddress = null;

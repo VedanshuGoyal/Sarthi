@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// Picks how many hours to hire a driver for: a −/＋ stepper plus quick-pick
 /// chips for the common durations.
 ///
@@ -31,6 +33,7 @@ class HoursSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -46,7 +49,7 @@ class HoursSelector extends StatelessWidget {
             children: [
               _StepButton(
                 icon: Icons.remove,
-                tooltip: 'Fewer hours',
+                tooltip: l10n.hoursFewer,
                 onPressed: canDecrement ? onDecrement : null,
               ),
               Expanded(
@@ -59,7 +62,7 @@ class HoursSelector extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      hours == 1 ? 'hour' : 'hours',
+                      l10n.hoursUnit(hours),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -69,7 +72,7 @@ class HoursSelector extends StatelessWidget {
               ),
               _StepButton(
                 icon: Icons.add,
-                tooltip: 'More hours',
+                tooltip: l10n.hoursMore,
                 onPressed: canIncrement ? onIncrement : null,
               ),
             ],
@@ -83,7 +86,7 @@ class HoursSelector extends StatelessWidget {
               for (final value in quickHours) ...[
                 if (value != quickHours.first) const SizedBox(width: 8),
                 ChoiceChip(
-                  label: Text('${value}h'),
+                  label: Text(l10n.hoursChip(value)),
                   selected: hours == value,
                   onSelected: (_) => onQuickPick(value),
                   showCheckmark: false,

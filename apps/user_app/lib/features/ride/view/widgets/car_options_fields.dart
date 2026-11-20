@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/car_type.dart';
 import '../../domain/transmission.dart';
+import '../../ride_labels.dart';
 import 'option_dropdown.dart';
 
 /// The car-type and transmission dropdowns of the add-car form:
@@ -30,40 +32,40 @@ class CarOptionsFields extends StatelessWidget {
   /// The breakpoint above which the two dropdowns sit side-by-side.
   static const double _wideBreakpoint = 560;
 
-  /// Names for each [CarType], in the enum's cheapest-to-premium order.
-  static const _carTypes = <(CarType, String)>[
-    (CarType.hatchback, 'Hatchback'),
-    (CarType.sedan, 'Sedan'),
-    (CarType.suv, 'SUV'),
-    (CarType.luxury, 'Luxury'),
+  /// The car types in the enum's cheapest-to-premium order, and the
+  /// gearboxes, as the dropdowns list them.
+  static const _carTypes = [
+    CarType.hatchback,
+    CarType.sedan,
+    CarType.suv,
+    CarType.luxury,
   ];
 
-  static const _transmissions = <(Transmission, String)>[
-    (Transmission.automatic, 'Automatic'),
-    (Transmission.manual, 'Manual'),
-  ];
+  static const _transmissions = [Transmission.automatic, Transmission.manual];
 
-  /// The display name for [type], for screens that echo the pick read-only.
-  /// Here so the label always matches what the dropdown showed.
-  static String carTypeLabel(CarType type) =>
-      _carTypes.firstWhere((option) => option.$1 == type).$2;
+  /// The display name for [type], for screens that echo the pick read-only,
+  /// in the app's language. The same words the dropdown shows.
+  static String carTypeLabel(CarType type) => type.labelIn(L10n.current);
 
   static String transmissionLabel(Transmission value) =>
-      _transmissions.firstWhere((option) => option.$1 == value).$2;
+      value.labelIn(L10n.current);
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final carTypeField = OptionDropdown<CarType>(
-      label: 'Car type',
+      label: l10n.carOptionsCarType,
       value: carType,
-      hintText: 'Select car type',
-      options: _carTypes,
+      hintText: l10n.carOptionsSelectCarType,
+      options: [for (final type in _carTypes) (type, type.labelIn(l10n))],
       onChanged: onCarTypeChanged,
     );
     final transmissionField = OptionDropdown<Transmission>(
-      label: 'Transmission',
+      label: l10n.carOptionsTransmission,
       value: transmission,
-      options: _transmissions,
+      options: [
+        for (final gearbox in _transmissions) (gearbox, gearbox.labelIn(l10n)),
+      ],
       onChanged: onTransmissionChanged,
     );
 

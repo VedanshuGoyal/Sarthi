@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/upi_checkout.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/payment_checkout.dart';
+import 'package:user_app/features/ride/ride_labels.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 import 'package:user_app/features/ride/view_model/ride_details_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -92,7 +94,7 @@ void main() {
       check(vm.isCancelling).isFalse();
       check(vm.booking!.status).equals(BookingStatus.cancelled);
       check(
-        vm.booking!.cancellationSummary,
+        vm.booking!.cancellationSummaryIn(L10n.current),
       ).equals('Cancelled by you · Plans changed');
       check(bookings.active).isEmpty();
       check(bookings.past.single.id).equals('b1');

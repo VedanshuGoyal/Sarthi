@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/trip_type.dart';
 import '../ride_providers.dart';
 import 'widgets/trip_option_card.dart';
@@ -24,25 +25,28 @@ class TripTypeSelector extends ConsumerWidget {
   /// The breakpoint above which the cards sit side-by-side.
   static const double _wideBreakpoint = 560;
 
-  /// Presentation for each [TripType], in display order.
-  static const _options = <(TripType, IconData, String, String)>[
+  /// Presentation for each [TripType], in display order: its icon, title and
+  /// one-line pitch, in the app's language.
+  static List<(TripType, IconData, String, String)> _options(
+    AppLocalizations l10n,
+  ) => [
     (
       TripType.oneWay,
       Icons.arrow_forward_rounded,
-      'One-Way Trip',
-      'Drop at a destination.',
+      l10n.tripPickerOneWayTitle,
+      l10n.tripPickerOneWaySubtitle,
     ),
     (
       TripType.roundTrip,
       Icons.schedule_rounded,
-      'Round Trip',
-      'Hire a driver by the hour, out and back.',
+      l10n.tripPickerRoundTripTitle,
+      l10n.tripPickerRoundTripSubtitle,
     ),
     (
       TripType.multiStop,
       Icons.alt_route_rounded,
-      'Multi-Stop Trip',
-      'Several stops, one driver.',
+      l10n.tripPickerMultiStopTitle,
+      l10n.tripPickerMultiStopSubtitle,
     ),
   ];
 
@@ -51,15 +55,17 @@ class TripTypeSelector extends ConsumerWidget {
     if (onSelected != null) return onSelected!(type);
     // Placeholder until the booking flow exists: confirm the choice so the
     // wiring is verifiable end-to-end.
-    final summary = _options.firstWhere((option) => option.$1 == type).$3;
+    final l10n = context.l10n;
+    final summary = _options(l10n).firstWhere((option) => option.$1 == type).$3;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('Selected: $summary')));
+      ..showSnackBar(SnackBar(content: Text(l10n.tripPickerSelected(summary))));
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(tripSelectionViewModelProvider);
+    final options = _options(context.l10n);
 
     TripOptionCard card(
       (TripType, IconData, String, String) option, {
@@ -79,9 +85,9 @@ class TripTypeSelector extends ConsumerWidget {
     // Round Trip — hiring by the hour, the core service — leads as the wide
     // featured card; the other two sit side by side beneath it (or all three
     // in one row on wide windows).
-    final featured = _options.firstWhere((o) => o.$1 == TripType.roundTrip);
+    final featured = options.firstWhere((o) => o.$1 == TripType.roundTrip);
     final others = [
-      for (final option in _options)
+      for (final option in options)
         if (option.$1 != TripType.roundTrip) option,
     ];
 

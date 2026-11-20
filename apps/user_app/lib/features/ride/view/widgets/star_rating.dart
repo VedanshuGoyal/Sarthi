@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
 
 /// Five stars, the first [stars] filled. Tappable when [onChanged] is given
@@ -20,10 +21,11 @@ class StarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final onChanged = this.onChanged;
     if (onChanged == null) {
       return Semantics(
-        label: '$stars out of 5 stars',
+        label: l10n.starsOutOfFive(stars),
         excludeSemantics: true,
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -43,7 +45,7 @@ class StarRow extends StatelessWidget {
       children: [
         for (var n = 1; n <= 5; n++)
           IconButton(
-            tooltip: '$n ${n == 1 ? 'star' : 'stars'}',
+            tooltip: l10n.starsCount(n),
             onPressed: () => onChanged(n),
             isSelected: n <= stars,
             iconSize: size,
@@ -80,23 +82,37 @@ class RatingForm extends StatelessWidget {
   final bool isSubmitting;
   final String? error;
 
-  static const _words = ['', 'Poor', 'Not great', 'Okay', 'Good', 'Excellent'];
+  /// The word under the stars for each count, none for 0.
+  static String _word(AppLocalizations l10n, int stars) => switch (stars) {
+    1 => l10n.starsWordPoor,
+    2 => l10n.starsWordNotGreat,
+    3 => l10n.starsWordOkay,
+    4 => l10n.starsWordGood,
+    5 => l10n.starsWordExcellent,
+    _ => '',
+  };
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final error = this.error;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Center(
-          child: StarRow(stars: stars, onChanged: onStars, size: 36),
+          // Five 36-px star buttons are wider than a 320-dp phone's card:
+          // shrink them to fit there, full size anywhere wider.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: StarRow(stars: stars, onChanged: onStars, size: 36),
+          ),
         ),
         SizedBox(
           height: 20,
           child: Center(
             child: Text(
-              _words[stars.clamp(0, 5)],
+              _word(l10n, stars.clamp(0, 5)),
               style: t.label(color: t.primaryText),
             ),
           ),
@@ -109,8 +125,8 @@ class RatingForm extends StatelessWidget {
           minLines: 2,
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Add a note for your driver (optional)',
+          decoration: InputDecoration(
+            hintText: l10n.starsNoteHint,
             counterText: '',
           ),
         ),
@@ -120,7 +136,7 @@ class RatingForm extends StatelessWidget {
         ],
         const SizedBox(height: Skyline.s12),
         SarthiPrimaryButton(
-          label: 'Submit rating',
+          label: l10n.starsSubmit,
           isLoading: isSubmitting,
           onPressed: onSubmit,
         ),

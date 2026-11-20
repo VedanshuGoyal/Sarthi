@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/data/location_repository.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
-import 'package:user_app/features/ride/domain/service_area.dart';
 import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_location_repository.dart';
 
@@ -75,7 +75,7 @@ void main() {
 
       check(await vm.locate()).isNull();
       check(vm.start).isNull();
-      check(vm.error).equals(ServiceArea.outsideMessage);
+      check(vm.error).equals(L10n.current.serviceAreaOutside);
     });
 
     test('a manual pick wins over a GPS fix that lands later', () async {

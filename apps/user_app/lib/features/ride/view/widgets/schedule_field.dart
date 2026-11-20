@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
+import 'ride_format.dart';
+
 /// Two tappable fields — date and time — for choosing when a trip starts.
 ///
 /// State-free per the reusable-widget guideline: it renders the current
 /// [scheduledAt] (or a "Select" placeholder) and emits [onTapDate]/[onTapTime];
 /// the parent owns the pickers and the resulting value. Dates/times are
-/// formatted through [MaterialLocalizations] so they follow the device locale
-/// without pulling in `intl`.
+/// formatted through [RideFormat] — "Mon, Oct 26" in the app's language and
+/// "9:30 AM" — like the rest of the app.
 class ScheduleField extends StatelessWidget {
   const ScheduleField({
     super.key,
@@ -37,15 +40,15 @@ class ScheduleField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = MaterialLocalizations.of(context);
+    final l10n = context.l10n;
     final when = scheduledAt;
 
     final dateLabel = when == null
-        ? 'Select date'
-        : l10n.formatMediumDate(when);
+        ? l10n.scheduleSelectDate
+        : RideFormat.date(l10n, when);
     final timeLabel = when == null
-        ? 'Select time'
-        : l10n.formatTimeOfDay(TimeOfDay.fromDateTime(when));
+        ? l10n.scheduleSelectTime
+        : RideFormat.time(context, when);
 
     return Row(
       children: [

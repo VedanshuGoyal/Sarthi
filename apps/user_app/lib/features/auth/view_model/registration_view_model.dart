@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/config/legal.dart';
+import '../../../l10n/l10n.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_session.dart';
 import '../domain/auth_user.dart';
@@ -10,6 +11,10 @@ import '../domain/auth_validators.dart';
 
 /// The steps a new customer moves through, in order.
 enum RegistrationStep { phone, otp, profile, done }
+
+/// The profile step's inputs, so a validation error shows under its own
+/// field in any language.
+enum ProfileField { name, email, dateOfBirth, consent }
 
 /// Drives the phone → OTP → profile registration flow.
 ///
@@ -62,6 +67,11 @@ class RegistrationViewModel extends ChangeNotifier {
   /// Field-level validation/server error for the *current* step, or null.
   String? _errorText;
   String? get errorText => _errorText;
+
+  /// The profile-step field [errorText] is about, when the app's own
+  /// validation raised it; null for a server message (or no error).
+  ProfileField? _errorField;
+  ProfileField? get errorField => _errorText == null ? null : _errorField;
 
   String _phoneNational;
   String get phoneNational => _phoneNational;
@@ -266,8 +276,7 @@ class RegistrationViewModel extends ChangeNotifier {
 
   /// Shown when the customer tries to create an account without agreeing to
   /// the Terms and Privacy Policy.
-  static const String consentRequired =
-      'Please agree to the Terms and Privacy Policy to continue.';
+  static String get consentRequired => L10n.current.authConsentRequired;
 
   bool _consented = false;
 
@@ -289,12 +298,15 @@ class RegistrationViewModel extends ChangeNotifier {
     required String name,
     required String email,
   }) async {
-    final error =
-        AuthValidators.name(name) ??
-        AuthValidators.email(email) ??
-        AuthValidators.dateOfBirth(_dateOfBirth) ??
-        (_consented ? null : consentRequired);
-    if (error != null) return _fail(error);
+    final checks = [
+      (AuthValidators.name(name), ProfileField.name),
+      (AuthValidators.email(email), ProfileField.email),
+      (AuthValidators.dateOfBirth(_dateOfBirth), ProfileField.dateOfBirth),
+      (_consented ? null : consentRequired, ProfileField.consent),
+    ];
+    for (final (error, field) in checks) {
+      if (error != null) return _fail(error, field: field);
+    }
 
     await _run(() async {
       final session = await _repository.register(
@@ -361,21 +373,23 @@ class RegistrationViewModel extends ChangeNotifier {
     if (_isLoading) return;
     _isLoading = true;
     _errorText = null;
+    _errorField = null;
     notifyListeners();
     try {
       await action();
     } on AuthException catch (e) {
       _errorText = e.message;
     } catch (_) {
-      _errorText = 'Something went wrong. Please try again.';
+      _errorText = L10n.current.errorGeneric;
     } finally {
       _isLoading = false;
       _notify();
     }
   }
 
-  void _fail(String message) {
+  void _fail(String message, {ProfileField? field}) {
     _errorText = message;
+    _errorField = field;
     notifyListeners();
   }
 

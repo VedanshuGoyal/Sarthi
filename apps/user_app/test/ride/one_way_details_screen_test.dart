@@ -13,6 +13,7 @@ import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/one_way_details_screen.dart';
 import 'package:user_app/features/ride/view_model/one_way_review_view_model.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 const _start = PickupLocation(
   address: 'Connaught Place, New Delhi',
@@ -61,6 +62,9 @@ Future<void> _pump(
         ),
       ],
       child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: OneWayDetailsScreen(
           start: _start,
           destination: _destination,

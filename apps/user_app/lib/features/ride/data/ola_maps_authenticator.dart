@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import 'location_repository.dart';
 
 /// Fetches and caches Ola Maps bearer tokens from the Sarthi backend
@@ -72,33 +73,27 @@ class OlaMapsAuthenticator {
         headers: {if (session != null) 'Authorization': 'Bearer $session'},
       );
     } catch (_) {
-      throw const LocationException(
-        "Can't reach the maps service. Check your connection and try again.",
-      );
+      throw LocationException(L10n.current.locationNoConnection);
     }
 
     switch (response.statusCode) {
       case >= 200 && < 300:
         break;
       case 401:
-        throw const LocationException(
-          'Your session has expired. Sign in again to search for places.',
-        );
+        throw LocationException(L10n.current.placesSessionExpired);
       case 503:
-        throw const LocationException("Map search isn't set up yet.");
+        throw LocationException(L10n.current.placesNotSetUp);
       default:
-        throw const LocationException(
-          'Map search authorization failed. Please try again.',
-        );
+        throw LocationException(L10n.current.placesAuthFailed);
     }
 
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
-      throw const LocationException('Unexpected authorization response.');
+      throw LocationException(L10n.current.placesAuthUnexpected);
     }
     final token = decoded['accessToken'];
     if (token is! String || token.isEmpty) {
-      throw const LocationException('Authorization response carried no token.');
+      throw LocationException(L10n.current.placesAuthNoToken);
     }
 
     final expiresIn = decoded['expiresIn'];

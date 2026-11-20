@@ -12,6 +12,7 @@ import 'package:user_app/features/auth/data/auth_repository.dart';
 import 'package:user_app/features/auth/view/consent_checkbox.dart';
 import 'package:user_app/features/auth/view/profile_step.dart';
 import 'package:user_app/features/auth/view_model/registration_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 /// A backend that creates every account it's asked to, recording each
 /// register request's body.
@@ -98,6 +99,9 @@ void main() {
       final opened = <Uri>[];
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: ConsentCheckbox(
               value: false,
@@ -131,7 +135,12 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [registrationViewModelProvider.overrideWith((ref) => vm)],
-          child: const MaterialApp(home: ProfileStep()),
+          child: const MaterialApp(
+            locale: Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: ProfileStep(),
+          ),
         ),
       );
       check(

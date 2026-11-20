@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import 'schedule_field.dart';
 
 /// One stop in the Multi-Stop planner: where to go, the driver's task there,
@@ -58,6 +59,7 @@ class StopCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = context.l10n;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -85,7 +87,7 @@ class StopCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Stop $index',
+                  l10n.stopTitle(index),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -93,19 +95,19 @@ class StopCard extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.arrow_upward),
-                tooltip: 'Move stop $index earlier',
+                tooltip: l10n.stopMoveEarlier(index),
                 iconSize: 20,
                 onPressed: canMoveUp ? onMoveUp : null,
               ),
               IconButton(
                 icon: const Icon(Icons.arrow_downward),
-                tooltip: 'Move stop $index later',
+                tooltip: l10n.stopMoveLater(index),
                 iconSize: 20,
                 onPressed: canMoveDown ? onMoveDown : null,
               ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
-                tooltip: 'Remove stop $index',
+                tooltip: l10n.stopRemove(index),
                 iconSize: 20,
                 onPressed: canRemove ? onRemove : null,
               ),
@@ -115,9 +117,9 @@ class StopCard extends StatelessWidget {
           _LocationField(address: address, onTap: onPickLocation),
           const SizedBox(height: 16),
           SarthiTextField(
-            label: 'What should the driver do here?',
+            label: l10n.stopTaskLabel,
             controller: taskController,
-            hintText: 'e.g. Pick up the parcel from reception',
+            hintText: l10n.stopTaskHint,
             textCapitalization: TextCapitalization.sentences,
             maxLines: 3,
             minLines: 1,
@@ -125,7 +127,7 @@ class StopCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Leave by',
+            l10n.stopLeaveBy,
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -181,7 +183,7 @@ class _LocationField extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  address ?? 'Choose location',
+                  address ?? context.l10n.stopChooseLocation,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyLarge?.copyWith(

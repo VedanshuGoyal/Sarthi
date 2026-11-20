@@ -1,8 +1,11 @@
+import '../../../l10n/l10n.dart';
+
 /// Pure validation helpers for the registration flow.
 ///
-/// These return a human-readable error string, or `null` when the value is
-/// valid — the shape the view models and text fields expect. Kept free of any
-/// Flutter or IO dependency so they're trivially unit-testable.
+/// These return a human-readable error string in the app's language (via
+/// [L10n.current]), or `null` when the value is valid — the shape the view
+/// models and text fields expect. Free of IO, so they're trivially
+/// unit-testable.
 abstract final class AuthValidators {
   /// Indian mobile numbers are 10 digits and start with 6–9.
   static final RegExp _indianMobile = RegExp(r'^[6-9]\d{9}$');
@@ -14,24 +17,24 @@ abstract final class AuthValidators {
   /// Validates the 10-digit national part of an Indian mobile number (no `+91`).
   static String? phoneNational(String value) {
     final digits = value.trim();
-    if (digits.isEmpty) return 'Enter your mobile number';
+    if (digits.isEmpty) return L10n.current.authPhoneRequired;
     if (!_indianMobile.hasMatch(digits)) {
-      return 'Enter a valid 10-digit mobile number';
+      return L10n.current.authPhoneInvalid;
     }
     return null;
   }
 
   static String? name(String value) {
     final trimmed = value.trim();
-    if (trimmed.isEmpty) return 'Enter your name';
-    if (trimmed.length < 2) return 'Name is too short';
+    if (trimmed.isEmpty) return L10n.current.authNameRequired;
+    if (trimmed.length < 2) return L10n.current.authNameTooShort;
     return null;
   }
 
   static String? email(String value) {
     final trimmed = value.trim();
-    if (trimmed.isEmpty) return 'Enter your email';
-    if (!_email.hasMatch(trimmed)) return 'Enter a valid email address';
+    if (trimmed.isEmpty) return L10n.current.authEmailRequired;
+    if (!_email.hasMatch(trimmed)) return L10n.current.authEmailInvalid;
     return null;
   }
 
@@ -41,12 +44,12 @@ abstract final class AuthValidators {
   /// Validates the date of birth: it must be set, in the past, and at least
   /// [minAge] years ago.
   static String? dateOfBirth(DateTime? value) {
-    if (value == null) return 'Select your date of birth';
+    if (value == null) return L10n.current.authDobSelect;
     final now = DateTime.now();
-    if (!value.isBefore(now)) return "Date of birth can't be in the future";
+    if (!value.isBefore(now)) return L10n.current.authDobInFuture;
     final minBirthday = DateTime(value.year + minAge, value.month, value.day);
     if (minBirthday.isAfter(now)) {
-      return 'You must be at least $minAge years old';
+      return L10n.current.authDobTooYoung(minAge);
     }
     return null;
   }
@@ -55,8 +58,10 @@ abstract final class AuthValidators {
   /// decided by the backend (here, the stubbed repository).
   static String? otp(String value, {required int length}) {
     final digits = value.trim();
-    if (digits.length != length) return 'Enter the $length-digit code';
-    if (!RegExp(r'^\d+$').hasMatch(digits)) return 'Code must be digits only';
+    if (digits.length != length) return L10n.current.otpWrongLength(length);
+    if (!RegExp(r'^\d+$').hasMatch(digits)) {
+      return L10n.current.otpDigitsOnly;
+    }
     return null;
   }
 }

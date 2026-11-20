@@ -42,10 +42,6 @@ DateTime earliestStart([DateTime? now]) {
       : snapped;
 }
 
-/// What the booking forms say when the chosen start is too soon.
-const String tooSoonHint =
-    'Pick a start at least 45 minutes from now, so a driver can accept it.';
-
 /// Minutes forgiven for time spent on the form after picking the earliest
 /// slot. Mirrors the server's `bookingLeadSlack`.
 const Duration bookingLeadSlack = Duration(minutes: 5);

@@ -8,6 +8,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../../core/config/google_maps_config.dart';
 import '../../../../core/maps/web_maps_loader.dart';
+import '../../../../l10n/l10n.dart';
 import '../../domain/geo_point.dart';
 
 /// A read-only overview map framing both ends of a route.
@@ -315,7 +316,7 @@ class _RouteMapState extends State<RouteMap> {
                 ),
                 const SizedBox(height: Skyline.s8),
                 Text(
-                  'Map preview unavailable',
+                  context.l10n.routeMapUnavailable,
                   style: SkylineTokens.of(context).label(),
                 ),
               ],

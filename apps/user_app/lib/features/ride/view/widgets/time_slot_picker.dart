@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/scheduling.dart' as scheduling;
+import 'ride_format.dart';
 
 /// Opens the quarter-hour slot picker in a modal bottom sheet and resolves with
 /// the chosen slot, or null if the sheet is dismissed. The booking screens use
@@ -30,8 +32,8 @@ Future<TimeOfDay?> showTimeSlotPicker(
 /// State-free per the reusable-widget guideline: it renders the slots with
 /// [selected] highlighted (snapped onto the grid if it drifted off it) and
 /// emits the tapped slot via [onSelected]; the parent owns the sheet and the
-/// resulting value. Times are formatted through [MaterialLocalizations] so they
-/// follow the device locale.
+/// resulting value. Times read "9:30 AM" like the rest of the app, or in the
+/// phone's 24-hour format when it's set to one.
 class TimeSlotPicker extends StatefulWidget {
   const TimeSlotPicker({
     super.key,
@@ -98,7 +100,8 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final l10n = MaterialLocalizations.of(context);
+    final l10n = context.l10n;
+    final use24Hour = MediaQuery.alwaysUse24HourFormatOf(context);
     final selectedIndex = TimeSlotPicker.nearestSlotIndex(widget.selected);
 
     return Column(
@@ -111,14 +114,14 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Pick a start time',
+                l10n.timeSlotTitle,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
-                'Trips start every 15 minutes.',
+                l10n.timeSlotSubtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -139,12 +142,13 @@ class _TimeSlotPickerState extends State<TimeSlotPicker> {
                 final slot = TimeSlotPicker.slotAt(index);
                 final available = widget.isAvailable?.call(slot) ?? true;
                 return _SlotTile(
-                  label: l10n.formatTimeOfDay(
-                    slot,
-                    alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(
-                      context,
-                    ),
-                  ),
+                  label: use24Hour
+                      ? MaterialLocalizations.of(
+                          context,
+                        ).formatTimeOfDay(slot, alwaysUse24HourFormat: true)
+                      : RideFormat.clock(
+                          DateTime(2000, 1, 1, slot.hour, slot.minute),
+                        ),
                   isSelected: index == selectedIndex,
                   onTap: available ? () => widget.onSelected(slot) : null,
                 );

@@ -3,16 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mcp_toolkit/mcp_toolkit.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
-import 'core/brand/mojud_brand.dart';
 import 'core/config/api_config.dart';
 import 'core/services/crash_reporting.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/view/registration_screen.dart';
 import 'features/home/view/user_home_shell.dart';
+import 'features/language/language_providers.dart';
 import 'features/ride/view/widgets/vast_quiet/vast_quiet_theme.dart'
     show RideSurfaces;
 import 'features/splash/view/splash_screen.dart';
 import 'features/update/view/update_gate.dart';
+import 'l10n/l10n.dart';
 
 /// Entry point for the MOJUD customer app.
 ///
@@ -41,23 +42,28 @@ Future<void> main() async {
   );
 }
 
-class MojudUserApp extends StatelessWidget {
+class MojudUserApp extends ConsumerWidget {
   const MojudUserApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // The Skyline design language (Deep Signal's blues, rounded and friendly),
     // light only — the app does not follow the OS dark setting or offer a
     // theme switch.
     return MaterialApp(
-      title: MojudBrand.name,
+      onGenerateTitle: (context) => context.l10n.appTitle,
       theme: SkylineTheme.light(
         extensions: [RideSurfaces(wash: SkylineTokens.light.primarySoft)],
       ),
       themeMode: ThemeMode.light,
+      // English or Hindi: the customer's pick, else the phone's language.
+      locale: ref.watch(languageViewModelProvider.select((vm) => vm.locale)),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       // Above the navigator, so a build the backend no longer serves is
       // stopped whichever screen is open.
-      builder: (context, child) => UpdateGate(child: child!),
+      builder: (context, child) =>
+          L10nBinding(child: UpdateGate(child: child!)),
       home: const _AppRoot(),
     );
   }

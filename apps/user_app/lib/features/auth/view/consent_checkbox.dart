@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/legal.dart';
+import '../../../l10n/l10n.dart';
 
 /// Opens a legal document; returns whether it could.
 typedef LinkOpener = Future<bool> Function(Uri url);
@@ -51,6 +52,7 @@ class _ConsentCheckboxState extends State<ConsentCheckbox> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     final link = TextStyle(
       color: theme.colorScheme.primary,
       fontWeight: FontWeight.w600,
@@ -75,14 +77,24 @@ class _ConsentCheckboxState extends State<ConsentCheckbox> {
                 TextSpan(
                   style: theme.textTheme.bodyMedium,
                   children: [
-                    const TextSpan(text: 'I agree to the '),
-                    TextSpan(text: 'Terms', style: link, recognizer: _terms),
-                    const TextSpan(text: ' and '),
-                    TextSpan(
-                      text: 'Privacy Policy',
-                      style: link,
-                      recognizer: _privacy,
-                    ),
+                    // The sentence's word order is the language's: split it
+                    // at the two links rather than gluing pieces together.
+                    for (final part in _consentParts(
+                      l10n.consentAgree(_termsMark, _privacyMark),
+                    ))
+                      switch (part) {
+                        _termsMark => TextSpan(
+                          text: l10n.consentTerms,
+                          style: link,
+                          recognizer: _terms,
+                        ),
+                        _privacyMark => TextSpan(
+                          text: l10n.consentPrivacy,
+                          style: link,
+                          recognizer: _privacy,
+                        ),
+                        _ => TextSpan(text: part),
+                      },
                   ],
                 ),
               ),
@@ -103,3 +115,16 @@ class _ConsentCheckboxState extends State<ConsentCheckbox> {
     );
   }
 }
+
+/// Stand-ins for the two links while splitting the consent sentence.
+const String _termsMark = '\u0001';
+const String _privacyMark = '\u0002';
+
+/// The consent sentence cut into plain runs and the [_termsMark] /
+/// [_privacyMark] markers, in order, without empty runs.
+List<String> _consentParts(String sentence) => [
+  for (final part in sentence.split(
+    RegExp('(?=[\u0001\u0002])|(?<=[\u0001\u0002])'),
+  ))
+    if (part.isNotEmpty) part,
+];

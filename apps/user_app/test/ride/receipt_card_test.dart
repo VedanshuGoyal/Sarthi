@@ -5,6 +5,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/view/widgets/receipt_card.dart';
 import 'package:user_app/features/ride/view/widgets/ride_format.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -42,6 +43,9 @@ Map<String, dynamic> _line(String id, String kind, String label, int paise) => {
 Future<void> _pumpCard(WidgetTester tester, MyBooking booking) =>
     tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: SkylineTheme.light(),
         home: Scaffold(
           body: ListView(

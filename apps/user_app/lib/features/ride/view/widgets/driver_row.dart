@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// The assigned driver: their [photo] (their initial until it loads, or when
 /// they have none), a [title] ("Ravi is your driver"), an optional
 /// [subtitle] (their rating) and, when there's a [phone], a call button that
@@ -11,15 +13,17 @@ class DriverRow extends StatelessWidget {
     super.key,
     required this.name,
     required this.phone,
-    String? title,
+    this.title,
     this.subtitle,
     this.photo,
     this.avatarRadius = 18,
-  }) : title = title ?? '$name is your driver';
+  });
 
   final String name;
   final String? phone;
-  final String title;
+
+  /// The heading; "[name] is your driver" when null.
+  final String? title;
   final String? subtitle;
   final ImageProvider? photo;
   final double avatarRadius;
@@ -27,6 +31,8 @@ class DriverRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    final title = this.title ?? l10n.rideIsYourDriver(name);
     final phone = this.phone;
     final subtitle = this.subtitle;
     return Row(
@@ -50,7 +56,7 @@ class DriverRow extends StatelessWidget {
         ),
         if (phone != null)
           IconButton.filled(
-            tooltip: 'Call driver',
+            tooltip: l10n.driverRowCall,
             style: IconButton.styleFrom(
               backgroundColor: t.primarySoft,
               foregroundColor: t.primaryText,
@@ -91,7 +97,7 @@ class DriverAvatar extends StatelessWidget {
     final photo = this.photo;
     if (photo == null) return initial;
     return Semantics(
-      label: 'Photo of $name',
+      label: context.l10n.driverRowPhotoOf(name),
       image: true,
       child: ClipOval(
         child: Image(

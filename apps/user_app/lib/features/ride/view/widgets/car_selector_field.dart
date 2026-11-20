@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/car.dart';
 import 'car_options_fields.dart';
 import 'option_dropdown.dart';
@@ -52,6 +53,7 @@ class CarSelectorField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     if (isLoading) {
       return Row(
@@ -62,7 +64,9 @@ class CarSelectorField extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
-          Text('Loading your cars…', style: theme.textTheme.bodyMedium),
+          Flexible(
+            child: Text(l10n.carsLoading, style: theme.textTheme.bodyMedium),
+          ),
         ],
       );
     }
@@ -72,14 +76,14 @@ class CarSelectorField extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              "Couldn't load your cars.",
+              l10n.carsLoadFailed,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.error,
               ),
             ),
           ),
           if (onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('Retry')),
+            TextButton(onPressed: onRetry, child: Text(l10n.carsRetry)),
         ],
       );
     }
@@ -93,16 +97,16 @@ class CarSelectorField extends StatelessWidget {
       children: [
         if (cars.isEmpty)
           Text(
-            'No saved cars yet — add yours once and pick it on every trip.',
+            l10n.carsNoneYet,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           )
         else
           OptionDropdown<Car>(
-            label: 'Your car',
+            label: l10n.carsYourCar,
             value: value,
-            hintText: 'Select your car',
+            hintText: l10n.carsSelectYourCar,
             options: [for (final car in cars) (car, carLabel(car))],
             onChanged: onSelected,
           ),
@@ -112,7 +116,7 @@ class CarSelectorField extends StatelessWidget {
           child: TextButton.icon(
             onPressed: onAddCar,
             icon: const Icon(Icons.add),
-            label: const Text('Add a car'),
+            label: Text(l10n.carsAdd),
           ),
         ),
       ],

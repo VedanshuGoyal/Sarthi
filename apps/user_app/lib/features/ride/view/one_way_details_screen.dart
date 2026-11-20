@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/one_way_trip.dart';
 import '../domain/pickup_location.dart';
-import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/one_way_details_view_model.dart';
 import 'one_way_review_screen.dart';
@@ -103,6 +103,7 @@ class OneWayDetailsScreen extends ConsumerWidget {
     );
     final savedCars = ref.watch(savedCarsViewModelProvider);
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return Theme(
       data: rideSurfaceTheme(context),
@@ -196,8 +197,8 @@ class OneWayDetailsScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 16),
                                 _Section(
-                                  title: 'When?',
-                                  subtitle: 'Pick a start date and time.',
+                                  title: l10n.oneWayDetailsWhenTitle,
+                                  subtitle: l10n.oneWayDetailsWhenSubtitle,
                                   child: ScheduleField(
                                     scheduledAt: vm.scheduledAt,
                                     onTapDate: () => _pickDate(context, vm),
@@ -206,9 +207,8 @@ class OneWayDetailsScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 24),
                                 _Section(
-                                  title: 'Which car?',
-                                  subtitle:
-                                      'The driver drives your car — pick one.',
+                                  title: l10n.oneWayDetailsCarTitle,
+                                  subtitle: l10n.oneWayDetailsCarSubtitle,
                                   child: CarSelectorField(
                                     cars: savedCars.cars,
                                     selected: vm.car,
@@ -259,8 +259,8 @@ class OneWayDetailsScreen extends ConsumerWidget {
                               padding: const EdgeInsets.only(bottom: 10),
                               child: Text(
                                 vm.car == null
-                                    ? 'Choose your car to continue.'
-                                    : tooSoonHint,
+                                    ? l10n.oneWayDetailsChooseCar
+                                    : l10n.scheduleTooSoon,
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -268,7 +268,7 @@ class OneWayDetailsScreen extends ConsumerWidget {
                               ),
                             ),
                           SarthiPrimaryButton(
-                            label: 'Continue',
+                            label: l10n.commonContinue,
                             onPressed: vm.canContinue
                                 ? () => _continue(context, vm.draft!)
                                 : null,

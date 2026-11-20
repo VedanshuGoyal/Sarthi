@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/services/push_service.dart';
+import '../../../l10n/l10n.dart';
 import '../../auth/auth_controller.dart';
 import '../../auth/auth_providers.dart';
 import '../../auth/domain/auth_user.dart';
@@ -42,11 +43,21 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
   static const int _activityTab = 1;
   static const int _accountTab = 2;
 
-  static const _destinations = <(IconData, IconData, String)>[
-    (Icons.home_outlined, Icons.home_rounded, 'Home'),
-    (Icons.receipt_long_outlined, Icons.receipt_long_rounded, 'Activity'),
-    (Icons.person_outline_rounded, Icons.person_rounded, 'Account'),
-  ];
+  /// Each tab's icons and its label, in the app's language.
+  static final _destinations =
+      <(IconData, IconData, String Function(AppLocalizations))>[
+        (Icons.home_outlined, Icons.home_rounded, (l) => l.homeNavHome),
+        (
+          Icons.receipt_long_outlined,
+          Icons.receipt_long_rounded,
+          (l) => l.homeNavActivity,
+        ),
+        (
+          Icons.person_outline_rounded,
+          Icons.person_rounded,
+          (l) => l.homeNavAccount,
+        ),
+      ];
 
   late final MyBookingsViewModel _bookings;
   final List<StreamSubscription<void>> _push = [];
@@ -105,7 +116,7 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
     _askingForRating = false;
     if (rated == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Thanks for rating your trip.')),
+        SnackBar(content: Text(context.l10n.shellThanksForRating)),
       );
     }
   }
@@ -139,6 +150,7 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final upcoming = ref.watch(
       myBookingsViewModelProvider.select((vm) => vm.active.length),
     );
@@ -183,7 +195,7 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
                       NavigationRailDestination(
                         icon: icon(i, selected: false),
                         selectedIcon: icon(i, selected: true),
-                        label: Text(label),
+                        label: Text(label(l10n)),
                       ),
                   ],
                 ),
@@ -206,7 +218,7 @@ class _UserHomeShellState extends ConsumerState<UserHomeShell> {
                 NavigationDestination(
                   icon: icon(i, selected: false),
                   selectedIcon: icon(i, selected: true),
-                  label: label,
+                  label: label(l10n),
                 ),
             ],
           ),

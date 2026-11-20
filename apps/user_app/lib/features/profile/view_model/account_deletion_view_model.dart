@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../auth/data/auth_repository.dart';
 
 /// Deleting the customer's account from the profile page.
@@ -37,7 +38,7 @@ class AccountDeletionViewModel extends ChangeNotifier {
     } on AuthException catch (e) {
       return _fail(e.message);
     } catch (_) {
-      return _fail("Couldn't delete your account. Please try again.");
+      return _fail(L10n.current.accountDeleteFailed);
     }
     // The server has erased it and revoked the session; a failure signing
     // out here must not report the deletion as failed.

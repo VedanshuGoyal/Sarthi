@@ -14,6 +14,7 @@ import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/activity_panel.dart';
 import 'package:user_app/features/ride/view/widgets/my_ride_card.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 Map<String, dynamic> _booking({
   required String id,
@@ -121,6 +122,9 @@ void main() {
   Future<void> pumpCard(WidgetTester tester, MyBooking booking) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: SkylineTheme.light(),
         home: Scaffold(body: MyRideCard(booking: booking)),
       ),
@@ -228,6 +232,9 @@ void main() {
       ProviderScope(
         overrides: [myBookingsViewModelProvider.overrideWith((ref) => vm)],
         child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: SkylineTheme.light(),
           home: const ActivityPanel(),
         ),

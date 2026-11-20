@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/one_way_trip.dart';
 import '../ride_providers.dart';
 import '../view_model/one_way_review_view_model.dart';
@@ -38,17 +39,10 @@ class OneWayReviewScreen extends ConsumerWidget {
   }
 
   /// The CTA hint while the booking can't be confirmed yet: what's missing.
-  String? _ctaHint(OneWayReviewViewModel vm) {
+  String? _ctaHint(AppLocalizations l10n, OneWayReviewViewModel vm) {
     if (vm.canConfirm) return null;
-    if (vm.isEstimatingTravelTime) return 'Checking the trip time…';
-    return 'The trip time is needed to book — retry the estimate above.';
-  }
-
-  static String _formatEta(Duration eta) {
-    final hours = eta.inHours;
-    final minutes = eta.inMinutes % Duration.minutesPerHour;
-    if (hours == 0) return '$minutes min';
-    return minutes == 0 ? '$hours h' : '$hours h $minutes min';
+    if (vm.isEstimatingTravelTime) return l10n.oneWayReviewCheckingTripTime;
+    return l10n.oneWayReviewTripTimeNeeded;
   }
 
   @override
@@ -56,12 +50,12 @@ class OneWayReviewScreen extends ConsumerWidget {
     final vm = ref.watch(oneWayReviewViewModelProvider(draft));
     final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
-    final l10n = MaterialLocalizations.of(context);
+    final l10n = context.l10n;
 
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Review trip')),
+        appBar: AppBar(title: Text(l10n.oneWayReviewTitle)),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -78,22 +72,23 @@ class OneWayReviewScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'Your plan',
-                          subtitle: 'Go back to change any of these.',
+                          title: l10n.oneWayReviewPlanTitle,
+                          subtitle: l10n.oneWayReviewPlanSubtitle,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               _PlanLine(
                                 icon: Icons.calendar_today_outlined,
-                                label: 'Starts',
-                                value:
-                                    '${l10n.formatMediumDate(draft.scheduledAt)}'
-                                    ', ${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(draft.scheduledAt))}',
+                                label: l10n.oneWayReviewStarts,
+                                value: l10n.fmtDayAndTime(
+                                  RideFormat.date(l10n, draft.scheduledAt),
+                                  RideFormat.clock(draft.scheduledAt),
+                                ),
                               ),
                               const SizedBox(height: 10),
                               _PlanLine(
                                 icon: Icons.directions_car_outlined,
-                                label: 'Car',
+                                label: l10n.oneWayReviewCar,
                                 value: CarSelectorField.carLabel(draft.car),
                               ),
                             ],
@@ -101,8 +96,8 @@ class OneWayReviewScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'Trip time',
-                          subtitle: 'Estimated for your chosen start time.',
+                          title: l10n.oneWayReviewTripTimeTitle,
+                          subtitle: l10n.oneWayReviewTripTimeSubtitle,
                           child: _TravelTimeEstimate(
                             isLoading: vm.isEstimatingTravelTime,
                             eta: vm.travelTime,
@@ -119,7 +114,7 @@ class OneWayReviewScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (_ctaHint(vm) case final hint?)
+                        if (_ctaHint(l10n, vm) case final hint?)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Text(
@@ -136,7 +131,7 @@ class OneWayReviewScreen extends ConsumerWidget {
                             child: RideNote(text: RideFormat.carriedNote(owed)),
                           ),
                         SarthiPrimaryButton(
-                          label: 'Confirm booking',
+                          label: l10n.oneWayReviewConfirm,
                           onPressed: vm.canConfirm
                               ? () => _confirm(context, vm.trip!)
                               : null,
@@ -174,6 +169,7 @@ class _TravelTimeEstimate extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = context.l10n;
 
     final Widget content;
     if (isLoading) {
@@ -185,7 +181,12 @@ class _TravelTimeEstimate extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
-          Text('Checking the drive time…', style: theme.textTheme.bodyMedium),
+          Expanded(
+            child: Text(
+              l10n.oneWayReviewCheckingDriveTime,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
         ],
       );
     } else if (eta != null) {
@@ -193,10 +194,12 @@ class _TravelTimeEstimate extends StatelessWidget {
         children: [
           Icon(Icons.schedule, size: 18, color: scheme.primary),
           const SizedBox(width: 10),
-          Text(
-            'About ${OneWayReviewScreen._formatEta(eta!)}',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+          Expanded(
+            child: Text(
+              l10n.oneWayReviewAbout(RideFormat.duration(eta!)),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -208,11 +211,11 @@ class _TravelTimeEstimate extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              "Couldn't get the trip time.",
+              l10n.oneWayReviewTripTimeFailed,
               style: theme.textTheme.bodyMedium,
             ),
           ),
-          TextButton(onPressed: onRetry, child: const Text('Retry')),
+          TextButton(onPressed: onRetry, child: Text(l10n.oneWayReviewRetry)),
         ],
       );
     }

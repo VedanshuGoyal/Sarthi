@@ -10,6 +10,7 @@ import 'package:user_app/core/config/app_config_repository.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/trip_type.dart';
 import 'package:user_app/features/ride/view/widgets/help_safety_row.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 MyBooking _booking({
   BookingStatus status = BookingStatus.accepted,
@@ -137,6 +138,9 @@ void main() {
       List<String>? copied,
     }) => tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: SkylineTheme.light(),
         home: Scaffold(
           body: HelpSafetyRow(

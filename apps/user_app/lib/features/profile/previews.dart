@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../l10n/l10n.dart';
 import '../auth/domain/auth_user.dart';
 import '../ride/data/cars_repository.dart';
 import '../ride/domain/car.dart';
@@ -57,20 +58,36 @@ Widget _profile({List<Car> cars = _sampleCars, VoidCallback? onLogout}) {
   );
 }
 
-@Preview(name: 'Profile', group: 'Profile', theme: profilePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Profile',
+  group: 'Profile',
+  theme: profilePreviewTheme,
+)
 Widget profilePreview() => _profile(onLogout: () {});
 
-@Preview(name: 'No saved cars', group: 'Profile', theme: profilePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'No saved cars',
+  group: 'Profile',
+  theme: profilePreviewTheme,
+)
 Widget profileNoCarsPreview() => _profile(cars: const [], onLogout: () {});
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'No logout (read-only)',
   group: 'Profile',
   theme: profilePreviewTheme,
 )
 Widget profileReadOnlyPreview() => _profile();
 
-@Preview(name: 'Avatar sizes', group: 'Profile', theme: profilePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Avatar sizes',
+  group: 'Profile',
+  theme: profilePreviewTheme,
+)
 Widget avatarPreview() => const Center(
   child: Row(
     mainAxisSize: MainAxisSize.min,

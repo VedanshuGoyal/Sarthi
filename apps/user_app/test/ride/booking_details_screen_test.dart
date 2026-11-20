@@ -14,6 +14,7 @@ import 'package:user_app/features/ride/view/booking_details_screen.dart';
 import 'package:user_app/features/ride/view_model/booking_details_view_model.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
 import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_location_repository.dart';
 
@@ -66,6 +67,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [_savedCars(), _gpsPickup()],
       child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: BookingDetailsScreen(
           onConfirmed: onOk == null ? null : (_, booking) => onOk(booking),
         ),
@@ -106,7 +110,12 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [_savedCars(cars: const [])],
-        child: const MaterialApp(home: BookingDetailsScreen()),
+        child: const MaterialApp(
+          locale: Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookingDetailsScreen(),
+        ),
       ),
     );
 
@@ -143,7 +152,12 @@ void main() {
             ),
           ),
         ],
-        child: const MaterialApp(home: BookingDetailsScreen()),
+        child: const MaterialApp(
+          locale: Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookingDetailsScreen(),
+        ),
       ),
     );
 
@@ -218,7 +232,12 @@ void main() {
             ),
           ),
         ],
-        child: const MaterialApp(home: BookingDetailsScreen()),
+        child: const MaterialApp(
+          locale: Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookingDetailsScreen(),
+        ),
       ),
     );
 
@@ -279,7 +298,12 @@ void main() {
             (ref) => BookingDetailsViewModel(initialCar: _sedan),
           ),
         ],
-        child: const MaterialApp(home: BookingDetailsScreen()),
+        child: const MaterialApp(
+          locale: Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: BookingDetailsScreen(),
+        ),
       ),
     );
 

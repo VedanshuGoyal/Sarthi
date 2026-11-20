@@ -3,7 +3,8 @@ import 'geo_point.dart';
 /// The geographic area Sarthi currently serves: Delhi NCR — Delhi itself and
 /// the adjoining cities of Gurugram, Faridabad, Noida, Greater Noida and
 /// Ghaziabad, plus nearby areas. Every pickup, drop and stop must fall inside
-/// it; anything outside is refused with [outsideMessage] until we expand.
+/// it; anything outside is refused (the app's `serviceAreaOutside` message)
+/// until we expand.
 ///
 /// Modelled as a lat/lng bounding box — coarser than the real NCR outline but
 /// trivial to reason about and to widen. When the served area grows, stretch
@@ -23,12 +24,6 @@ abstract final class ServiceArea {
     latitude: 28.6139,
     longitude: 77.2090,
   );
-
-  /// User-facing copy shown when a chosen place lies outside the served area.
-  /// Safe to surface directly in the UI.
-  static const String outsideMessage =
-      "We're only serving Delhi NCR (Delhi, Gurugram, Faridabad, Noida and "
-      'nearby areas) right now — pick a location within this area.';
 
   /// Whether [point] falls inside the served area.
   static bool contains(GeoPoint point) =>

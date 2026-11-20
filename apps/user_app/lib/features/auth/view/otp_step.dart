@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
+import '../../language/view/language_switch.dart';
 import '../auth_providers.dart';
 import '../view_model/registration_view_model.dart';
 
@@ -36,13 +38,15 @@ class _OtpStepState extends ConsumerState<OtpStep> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(registrationViewModelProvider);
+    final l10n = context.l10n;
     return SarthiFormScaffold(
       leading: BackButton(onPressed: vm.isLoading ? null : vm.back),
-      title: 'Verify your number',
-      subtitle: 'Enter the ${vm.otpLength}-digit code sent to ${vm.phoneE164}.',
+      actions: const [LanguageMenuButton()],
+      title: l10n.otpTitle,
+      subtitle: l10n.otpSubtitle(vm.otpLength, vm.phoneE164),
       fields: [
         SarthiTextField(
-          label: 'Verification code',
+          label: l10n.otpFieldLabel,
           controller: _controller,
           autofocus: true,
           hintText: '••••••',
@@ -60,7 +64,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         _resendSection(context, vm),
       ],
       footer: SarthiPrimaryButton(
-        label: 'Verify',
+        label: l10n.otpVerify,
         isLoading: vm.isLoading,
         // A dead OTP can't be verified — the user must start over.
         onPressed: vm.isOtpInvalidated ? null : _submit,
@@ -72,12 +76,13 @@ class _OtpStepState extends ConsumerState<OtpStep> {
   /// the current OTP-session state.
   Widget _resendSection(BuildContext context, RegistrationViewModel vm) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     // Terminal state: too many wrong codes — offer a fresh start.
     if (vm.isOtpInvalidated) {
       return _Notice(
-        message: 'That code is no longer valid. Request a new one to continue.',
-        actionLabel: 'Start over',
+        message: l10n.otpInvalidated,
+        actionLabel: l10n.otpStartOver,
         onAction: vm.isLoading ? null : vm.back,
       );
     }
@@ -85,10 +90,8 @@ class _OtpStepState extends ConsumerState<OtpStep> {
     // Resend cap hit: locked until the countdown clears, or restart now.
     if (vm.isResendLocked) {
       return _Notice(
-        message:
-            'Too many code requests. Try again in '
-            '${_formatCountdown(vm.resendCountdown)}, or start over.',
-        actionLabel: 'Start over',
+        message: l10n.otpResendLocked(_formatCountdown(vm.resendCountdown)),
+        actionLabel: l10n.otpStartOver,
         onAction: vm.isLoading ? null : vm.back,
       );
     }
@@ -100,7 +103,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
-          "Didn't get it?",
+          l10n.otpDidntGetIt,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -108,13 +111,13 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         if (vm.canResend)
           TextButton(
             onPressed: vm.isLoading ? null : vm.resendOtp,
-            child: const Text('Resend code'),
+            child: Text(l10n.otpResend),
           )
         else
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Text(
-              'Resend code in ${_formatCountdown(vm.resendCountdown)}',
+              l10n.otpResendIn(_formatCountdown(vm.resendCountdown)),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

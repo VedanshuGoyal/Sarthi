@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/brand/mojud_logo.dart';
+import '../../../l10n/l10n.dart';
 import '../../auth/domain/auth_user.dart';
 import '../../profile/view/widgets/user_avatar.dart';
 import '../../ride/data/booking_repository.dart';
@@ -49,10 +50,12 @@ class HomeScreen extends ConsumerWidget {
   /// booking — the server adds what's owed to the next payment — but a
   /// refusal for one (`payment_due`, from servers before that) still offers
   /// to open that ride, where its Pay button is.
+  ///
+  /// [notBooked] words the failure for this trip type around the reason.
   Future<void> _book(
     BuildContext context,
     WidgetRef ref, {
-    required String trip,
+    required String Function(String reason) notBooked,
     required String booked,
     required Future<void> Function(BookingRepository repo) send,
   }) async {
@@ -65,6 +68,7 @@ class HomeScreen extends ConsumerWidget {
       failure = e;
     }
     if (!context.mounted) return;
+    final l10n = context.l10n;
     final String message;
     final SnackBarAction? action;
     if (failure == null) {
@@ -73,20 +77,21 @@ class HomeScreen extends ConsumerWidget {
       final unpaid = failure.bookingId!;
       final owed = ref.read(myBookingsViewModelProvider).byId(unpaid);
       message = owed != null && owed.hasCancellationFee
-          ? 'Pay the ${RideFormat.rupees(owed.cancellationFeePaise)} '
-                'cancellation fee for your last ride before booking another.'
+          ? l10n.homePayFeeBeforeBooking(
+              RideFormat.rupees(owed.cancellationFeePaise),
+            )
           : failure.message;
       action = SnackBarAction(
-        label: 'Pay now',
+        label: l10n.homePayNow,
         onPressed: () => _openUnpaidRide(context, ref, unpaid),
       );
     } else {
-      message = "Your $trip wasn't booked. ${failure.message}";
+      message = notBooked(failure.message);
       action = SnackBarAction(
-        label: 'Retry',
+        label: l10n.homeRetry,
         onPressed: () {
           if (!context.mounted) return;
-          _book(context, ref, trip: trip, booked: booked, send: send);
+          _book(context, ref, notBooked: notBooked, booked: booked, send: send);
         },
       );
     }
@@ -116,6 +121,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     TripType type,
   ) async {
+    final l10n = context.l10n;
     switch (type) {
       case TripType.roundTrip:
         // Straight to the booking page: the pickup is pre-filled from GPS
@@ -130,19 +136,17 @@ class HomeScreen extends ConsumerWidget {
           await _book(
             context,
             ref,
-            trip: 'Round Trip',
-            booked:
-                'Round Trip booked: $hours ${hours == 1 ? 'hour' : 'hours'}, '
-                'in your ${booking.car.registration}.',
+            notBooked: l10n.homeNotBookedRoundTrip,
+            booked: l10n.homeBookedRoundTrip(hours, booking.car.registration),
             send: (repo) => repo.submitRoundTrip(booking, idempotencyKey: key),
           );
         }
       case TripType.multiStop:
         final start = await Navigator.of(context).push<PickupLocation>(
           MaterialPageRoute(
-            builder: (_) => const PickupLocationScreen(
-              title: 'Set starting point',
-              fieldLabel: 'Starting point',
+            builder: (_) => PickupLocationScreen(
+              title: l10n.tripStartSetStartingPoint,
+              fieldLabel: l10n.tripStartStartingPoint,
             ),
           ),
         );
@@ -158,11 +162,8 @@ class HomeScreen extends ConsumerWidget {
           await _book(
             context,
             ref,
-            trip: 'Multi-Stop trip',
-            booked:
-                'Multi-Stop trip booked: $count '
-                '${count == 1 ? 'stop' : 'stops'} planned, '
-                'in your ${trip.car.registration}.',
+            notBooked: l10n.homeNotBookedMultiStop,
+            booked: l10n.homeBookedMultiStop(count, trip.car.registration),
             send: (repo) => repo.submitMultiStop(trip, idempotencyKey: key),
           );
         }
@@ -186,11 +187,12 @@ class HomeScreen extends ConsumerWidget {
           await _book(
             context,
             ref,
-            trip: 'One-Way Trip',
-            booked:
-                'One-Way Trip booked: ~${trip.estimatedTravelTime.inMinutes}'
-                ' min, in your ${trip.car.registration} '
-                'to ${trip.destination.address}.',
+            notBooked: l10n.homeNotBookedOneWay,
+            booked: l10n.homeBookedOneWay(
+              trip.estimatedTravelTime.inMinutes,
+              trip.car.registration,
+              trip.destination.address,
+            ),
             send: (repo) => repo.submitOneWay(trip, idempotencyKey: key),
           );
         }
@@ -202,6 +204,7 @@ class HomeScreen extends ConsumerWidget {
     final firstName = user.name.split(' ').first;
     final t = SkylineTokens.of(context);
     final text = Theme.of(context).textTheme;
+    final l10n = context.l10n;
 
     return Theme(
       // The ride wash (selected tints, info panels) comes from the app theme.
@@ -215,7 +218,7 @@ class HomeScreen extends ConsumerWidget {
               padding: const EdgeInsets.only(right: Skyline.s12),
               child: IconButton(
                 icon: UserAvatar(name: user.name, radius: 17),
-                tooltip: 'Your profile',
+                tooltip: l10n.homeYourProfile,
                 onPressed: onOpenAccount,
               ),
             ),
@@ -234,14 +237,11 @@ class HomeScreen extends ConsumerWidget {
                   Skyline.s32,
                 ),
                 children: [
-                  Text('Hello, $firstName', style: t.body(size: 15)),
+                  Text(l10n.homeHello(firstName), style: t.body(size: 15)),
                   const SizedBox(height: Skyline.s4),
-                  Text(
-                    'Where should we drive you today?',
-                    style: text.headlineMedium,
-                  ),
+                  Text(l10n.homeWhereTo, style: text.headlineMedium),
                   const SizedBox(height: Skyline.s24),
-                  Text('Book a driver', style: t.title(16)),
+                  Text(l10n.homeBookADriver, style: t.title(16)),
                   const SizedBox(height: Skyline.s12),
                   TripTypeSelector(
                     onSelected: (type) => _onTripSelected(context, ref, type),
@@ -263,15 +263,15 @@ class HomeScreen extends ConsumerWidget {
 class _HowItWorks extends StatelessWidget {
   const _HowItWorks();
 
-  static const _steps = <(IconData, String)>[
-    (Icons.touch_app_rounded, 'Pick a trip'),
-    (Icons.place_rounded, 'Set pickup & time'),
-    (Icons.directions_car_rounded, 'Driver drives your car'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    final steps = <(IconData, String)>[
+      (Icons.touch_app_rounded, l10n.homeHowStepPick),
+      (Icons.place_rounded, l10n.homeHowStepSet),
+      (Icons.directions_car_rounded, l10n.homeHowStepDrive),
+    ];
     return Container(
       padding: const EdgeInsets.all(Skyline.s20),
       decoration: BoxDecoration(
@@ -282,17 +282,14 @@ class _HowItWorks extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Your car, our driver', style: t.title(16)),
+          Text(l10n.homeHowTitle, style: t.title(16)),
           const SizedBox(height: Skyline.s4),
-          Text(
-            'A driver comes to your pickup and drives your own car.',
-            style: t.body(size: 13),
-          ),
+          Text(l10n.homeHowBody, style: t.body(size: 13)),
           const SizedBox(height: Skyline.s16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final (i, (icon, label)) in _steps.indexed) ...[
+              for (final (i, (icon, label)) in steps.indexed) ...[
                 if (i > 0) const SizedBox(width: Skyline.s8),
                 Expanded(
                   child: Column(

@@ -1,0 +1,2442 @@
+{
+  "@@locale": "en",
+  "appTitle": "MOJUD",
+  "@appTitle": {
+    "description": "App name in the OS task switcher. Brand name: never translated."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button that dismisses a dialog or sheet without doing anything."
+  },
+  "commonOk": "OK",
+  "@commonOk": {
+    "description": "Button that acknowledges a dialog."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button or tooltip that closes a sheet or screen."
+  },
+  "commonContinue": "Continue",
+  "@commonContinue": {
+    "description": "Button that moves on to the next step."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Button that retries a failed load or action."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Button that saves a form."
+  },
+  "commonBack": "Back",
+  "@commonBack": {
+    "description": "Button or tooltip that goes back a step."
+  },
+  "errorNoConnection": "Can't reach the server. Check your connection and try again.",
+  "@errorNoConnection": {
+    "description": "Shown when the phone can't reach the backend (no internet, timeout)."
+  },
+  "errorNoConnectionShort": "Can't reach the server.",
+  "@errorNoConnectionShort": {
+    "description": "Shorter form of errorNoConnection, for a booking or ride action that couldn't reach the backend."
+  },
+  "errorUnexpectedReply": "The server sent an unexpected reply.",
+  "@errorUnexpectedReply": {
+    "description": "Shown when the backend's reply can't be read."
+  },
+  "errorGeneric": "Something went wrong. Please try again.",
+  "@errorGeneric": {
+    "description": "Fallback error when the backend gives no reason."
+  },
+  "errorGenericStatus": "Something went wrong ({status}).",
+  "@errorGenericStatus": {
+    "description": "Fallback error for a ride action the backend refused without a reason; status is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "languageTitle": "Language · भाषा",
+  "@languageTitle": {
+    "description": "Heading of the app-language setting. Bilingual on purpose, so a customer can find it in either language: put the current language first."
+  },
+  "languageFollowsPhone": "Same as your phone. Pick one to change it.",
+  "@languageFollowsPhone": {
+    "description": "Under the language switch while the app follows the phone language."
+  },
+  "languageEnglish": "English",
+  "@languageEnglish": {
+    "description": "Language option. Always shown in English, whatever the app language."
+  },
+  "languageHindi": "हिंदी",
+  "@languageHindi": {
+    "description": "Language option. Always shown in Hindi script, whatever the app language."
+  },
+  "fmtToday": "Today",
+  "@fmtToday": {
+    "description": "A date that is today."
+  },
+  "fmtTomorrow": "Tomorrow",
+  "@fmtTomorrow": {
+    "description": "A date that is tomorrow."
+  },
+  "fmtYesterday": "Yesterday",
+  "@fmtYesterday": {
+    "description": "A date that was yesterday."
+  },
+  "fmtWeekdayShort": "{weekday, select, mon{Mon} tue{Tue} wed{Wed} thu{Thu} fri{Fri} sat{Sat} sun{Sun} other{}}",
+  "@fmtWeekdayShort": {
+    "description": "Short weekday name, used inside dates.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtMonthShort": "{month, select, jan{Jan} feb{Feb} mar{Mar} apr{Apr} may{May} jun{Jun} jul{Jul} aug{Aug} sep{Sep} oct{Oct} nov{Nov} dec{Dec} other{}}",
+  "@fmtMonthShort": {
+    "description": "Short month name, used inside dates.",
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtDate": "{weekday}, {month} {day}",
+  "@fmtDate": {
+    "description": "A date further than a day away, e.g. Mon, Oct 26. weekday and month come from fmtWeekdayShort / fmtMonthShort.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtDateWithYear": "{day} {month} {year}",
+  "@fmtDateWithYear": {
+    "description": "A date with its year, e.g. a date of birth: 12 Jan 2000. month comes from fmtMonthShort.",
+    "placeholders": {
+      "day": {
+        "type": "int"
+      },
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtDayAndTime": "{day}, {time}",
+  "@fmtDayAndTime": {
+    "description": "A day and a time, e.g. Today, 9:30 AM. day is fmtToday/fmtTomorrow/fmtYesterday/fmtDate; time stays like 9:30 AM in every language.",
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtMinutes": "{minutes} min",
+  "@fmtMinutes": {
+    "description": "A duration under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtHours": "{hours} h",
+  "@fmtHours": {
+    "description": "A duration of whole hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtHoursMinutes": "{hours} h {minutes} min",
+  "@fmtHoursMinutes": {
+    "description": "A duration of hours and minutes.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtEndedEarly": "Charged {fare} for the time used (booked {booked}).",
+  "@fmtEndedEarly": {
+    "description": "On a trip the customer ended early: what they were charged and what they had booked. Amounts are like ₹320.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtRanOverHours": "Ran past the booked time. Charged {fare} for {hours} h (booked {booked}).",
+  "@fmtRanOverHours": {
+    "description": "On a trip that ran past its booked hours: what it was charged, for how many hours, and what was booked.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "hours": {
+        "type": "int"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtRanOver": "Ran past the booked time. Charged {fare} (booked {booked}).",
+  "@fmtRanOver": {
+    "description": "As fmtRanOverHours, when the hours used aren't known.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtPastBookedTime": "You're past your booked time. Extra time is charged by the hour.",
+  "@fmtPastBookedTime": {
+    "description": "Note on the ride screen while a trip is past its booked time."
+  },
+  "fmtCarriedNote": "{amount} unpaid from {rides, select, one{an earlier ride} other{earlier rides}} will be added when you pay for this trip.",
+  "@fmtCarriedNote": {
+    "description": "On an upcoming ride while the customer still owes for earlier rides. rides is 'one' when it's all one earlier ride, else 'other'.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "rides": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtCarriedIncluded": "Includes {amount} from {rides, select, one{another ride} other{other rides}}.",
+  "@fmtCarriedIncluded": {
+    "description": "By the Pay button, when the payment also clears what is owed on other rides. rides is 'one' or 'other'.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "rides": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtPaidTogether": "Paid {amount} together with {others}.",
+  "@fmtPaidTogether": {
+    "description": "On a receipt whose payment also paid other bookings. others is built from fmtOtherRides / fmtRideCount / fmtOtherCancellationFees / fmtCancellationFeeCount, joined with fmtListAnd.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "others": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtOtherRides": "{count, plural, =1{1 other ride} other{{count} other rides}}",
+  "@fmtOtherRides": {
+    "description": "Part of fmtPaidTogether: other rides paid together with this ride.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtRideCount": "{count, plural, =1{1 ride} other{{count} rides}}",
+  "@fmtRideCount": {
+    "description": "Part of fmtPaidTogether: rides paid together with this cancellation fee.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtOtherCancellationFees": "{count, plural, =1{1 other cancellation fee} other{{count} other cancellation fees}}",
+  "@fmtOtherCancellationFees": {
+    "description": "Part of fmtPaidTogether: other cancellation fees paid together with this cancellation fee.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtCancellationFeeCount": "{count, plural, =1{1 cancellation fee} other{{count} cancellation fees}}",
+  "@fmtCancellationFeeCount": {
+    "description": "Part of fmtPaidTogether: cancellation fees paid together with this ride.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtListAnd": "{first} and {second}",
+  "@fmtListAnd": {
+    "description": "Two items of a list joined by 'and'.",
+    "placeholders": {
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtNewDriver": "New driver",
+  "@fmtNewDriver": {
+    "description": "In place of a driver's rating before anyone has rated them."
+  },
+  "fmtDriverRating": "★ {rating} · {count, plural, =1{1 rating} other{{count} ratings}}",
+  "@fmtDriverRating": {
+    "description": "A driver's average rating and how many ratings it's from. rating is like 4.7.",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tripTypeRoundTrip": "Round Trip",
+  "@tripTypeRoundTrip": {
+    "description": "Trip type: a driver hired by the hour, ending back at the pickup. Same words as the driver app."
+  },
+  "tripTypeOneWay": "One-Way",
+  "@tripTypeOneWay": {
+    "description": "Trip type: pickup to one destination."
+  },
+  "tripTypeMultiStop": "Multi-Stop",
+  "@tripTypeMultiStop": {
+    "description": "Trip type: a trip with several stops/errands."
+  },
+  "bookingStatusRequested": "Finding a driver",
+  "@bookingStatusRequested": {
+    "description": "Ride status pill: booked, no driver has taken it yet."
+  },
+  "bookingStatusAccepted": "Driver assigned",
+  "@bookingStatusAccepted": {
+    "description": "Ride status pill: a driver has taken the ride."
+  },
+  "bookingStatusArrived": "Driver at pickup",
+  "@bookingStatusArrived": {
+    "description": "Ride status pill: the driver is waiting at the pickup."
+  },
+  "bookingStatusInProgress": "On trip",
+  "@bookingStatusInProgress": {
+    "description": "Ride status pill: the trip is underway."
+  },
+  "bookingStatusCompleted": "Completed",
+  "@bookingStatusCompleted": {
+    "description": "Ride status pill: the trip is done."
+  },
+  "bookingStatusCancelled": "Cancelled",
+  "@bookingStatusCancelled": {
+    "description": "Ride status pill: the ride was cancelled."
+  },
+  "bookingStatusExpired": "No driver found",
+  "@bookingStatusExpired": {
+    "description": "Ride status pill: no driver took the ride before it closed."
+  },
+  "bookingCancelledByYou": "Cancelled by you",
+  "@bookingCancelledByYou": {
+    "description": "Who cancelled: the customer."
+  },
+  "bookingCancelledByDriver": "Cancelled by your driver",
+  "@bookingCancelledByDriver": {
+    "description": "Who cancelled: the driver."
+  },
+  "bookingCancelledNoShow": "Closed as a no-show",
+  "@bookingCancelledNoShow": {
+    "description": "The driver waited at the pickup and the customer never came, so the driver closed the ride."
+  },
+  "bookingCancelledSummary": "{who} · {reason}",
+  "@bookingCancelledSummary": {
+    "description": "Who cancelled and why, on one line. who is bookingCancelledBy…; reason is the reason given (a cancelReason… label, or the customer's own words as typed).",
+    "placeholders": {
+      "who": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelReasonPlansChanged": "Plans changed",
+  "@cancelReasonPlansChanged": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonBookedByMistake": "Booked by mistake",
+  "@cancelReasonBookedByMistake": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonDriverAsked": "Driver asked me to cancel",
+  "@cancelReasonDriverAsked": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonDriverNotResponding": "Driver is not responding",
+  "@cancelReasonDriverNotResponding": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonFoundAnotherOption": "Found another option",
+  "@cancelReasonFoundAnotherOption": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonOther": "Other",
+  "@cancelReasonOther": {
+    "description": "Cancel reason that lets the customer type their own."
+  },
+  "carTypeHatchback": "Hatchback",
+  "@carTypeHatchback": {
+    "description": "Car type."
+  },
+  "carTypeSedan": "Sedan",
+  "@carTypeSedan": {
+    "description": "Car type."
+  },
+  "carTypeSuv": "SUV",
+  "@carTypeSuv": {
+    "description": "Car type."
+  },
+  "carTypeLuxury": "Luxury",
+  "@carTypeLuxury": {
+    "description": "Car type: premium/executive car."
+  },
+  "transmissionAutomatic": "Automatic",
+  "@transmissionAutomatic": {
+    "description": "Gearbox: automatic."
+  },
+  "transmissionManual": "Manual",
+  "@transmissionManual": {
+    "description": "Gearbox: manual (stick shift)."
+  },
+  "carOptionsCarType": "Car type",
+  "@carOptionsCarType": {
+    "description": "Label of the car-type dropdown when adding a car."
+  },
+  "carOptionsSelectCarType": "Select car type",
+  "@carOptionsSelectCarType": {
+    "description": "Hint in the car-type dropdown before one is picked."
+  },
+  "carOptionsTransmission": "Transmission",
+  "@carOptionsTransmission": {
+    "description": "Label of the gearbox dropdown when adding a car."
+  },
+  "paymentModeUpi": "UPI",
+  "@paymentModeUpi": {
+    "description": "How a ride was paid: UPI. Keep 'UPI'."
+  },
+  "paymentModeCash": "Cash",
+  "@paymentModeCash": {
+    "description": "How a ride was paid: cash, settled by MOJUD by hand."
+  },
+  "paymentModeWaived": "Waived by MOJUD",
+  "@paymentModeWaived": {
+    "description": "How a ride was paid: MOJUD waived the charge."
+  },
+  "paymentLineRide": "Ride",
+  "@paymentLineRide": {
+    "description": "Receipt line for another ride paid in the same payment, when the server sent no label."
+  },
+  "paymentLineCancellationFee": "Cancellation fee",
+  "@paymentLineCancellationFee": {
+    "description": "Receipt line for a cancellation fee paid in the same payment, when the server sent no label."
+  },
+  "authPhoneTitle": "Enter your mobile number",
+  "@authPhoneTitle": {
+    "description": "Sign-in step 1 title."
+  },
+  "authPhoneSubtitle": "We'll text you a one-time code to verify it's you.",
+  "@authPhoneSubtitle": {
+    "description": "Sign-in step 1 subtitle: an OTP will be sent by SMS."
+  },
+  "authMobileNumberLabel": "Mobile number",
+  "@authMobileNumberLabel": {
+    "description": "Label of the mobile-number field, and of the number on the Account tab."
+  },
+  "authBrandTagline": "Your car, our driver.",
+  "@authBrandTagline": {
+    "description": "Headline of the welcome band on the first sign-in screen: MOJUD sends a driver for the customer's own car."
+  },
+  "authBrandBody": "Book a driver for your own car, whenever you need one.",
+  "@authBrandBody": {
+    "description": "Line under authBrandTagline."
+  },
+  "authServiceByTheHour": "By the hour",
+  "@authServiceByTheHour": {
+    "description": "Chip on the welcome band: a driver hired by the hour (round trip)."
+  },
+  "authServiceOneWay": "One-way",
+  "@authServiceOneWay": {
+    "description": "Chip on the welcome band: a one-way trip."
+  },
+  "authServiceMultiStop": "Multi-stop",
+  "@authServiceMultiStop": {
+    "description": "Chip on the welcome band: a trip with several stops."
+  },
+  "authPhoneRequired": "Enter your mobile number",
+  "@authPhoneRequired": {
+    "description": "Validation: the mobile number is empty."
+  },
+  "authPhoneInvalid": "Enter a valid 10-digit mobile number",
+  "@authPhoneInvalid": {
+    "description": "Validation: not a 10-digit Indian mobile number."
+  },
+  "authNameRequired": "Enter your name",
+  "@authNameRequired": {
+    "description": "Validation: the name is empty."
+  },
+  "authNameTooShort": "Name is too short",
+  "@authNameTooShort": {
+    "description": "Validation: the name is one letter."
+  },
+  "authEmailRequired": "Enter your email",
+  "@authEmailRequired": {
+    "description": "Validation: the email is empty."
+  },
+  "authEmailInvalid": "Enter a valid email address",
+  "@authEmailInvalid": {
+    "description": "Validation: the email isn't a well-formed address."
+  },
+  "authDobSelect": "Select your date of birth",
+  "@authDobSelect": {
+    "description": "Title of the date-of-birth calendar, and the validation message when no date is picked."
+  },
+  "authDobInFuture": "Date of birth can't be in the future",
+  "@authDobInFuture": {
+    "description": "Validation: the date of birth is today or later."
+  },
+  "authDobTooYoung": "You must be at least {age} years old",
+  "@authDobTooYoung": {
+    "description": "Validation: the customer is younger than the minimum age.",
+    "placeholders": {
+      "age": {
+        "type": "int",
+        "example": "18"
+      }
+    }
+  },
+  "authConsentRequired": "Please agree to the Terms and Privacy Policy to continue.",
+  "@authConsentRequired": {
+    "description": "Shown when the customer tries to create an account without ticking the consent box."
+  },
+  "authSessionExpired": "Your session has expired. Please sign in again.",
+  "@authSessionExpired": {
+    "description": "The server no longer accepts the customer's session; they are signed out."
+  },
+  "authProfileTitle": "Complete your profile",
+  "@authProfileTitle": {
+    "description": "Sign-in step 3 title, for a new customer."
+  },
+  "authProfileSubtitle": "Just a couple of details to finish setting up your account.",
+  "@authProfileSubtitle": {
+    "description": "Sign-in step 3 subtitle."
+  },
+  "authFullName": "Full name",
+  "@authFullName": {
+    "description": "Label and hint of the name field."
+  },
+  "authEmail": "Email",
+  "@authEmail": {
+    "description": "Label and hint of the email field, and of the email on the Account tab."
+  },
+  "authDateOfBirth": "Date of birth",
+  "@authDateOfBirth": {
+    "description": "Label and hint of the date-of-birth field, and of the date on the Account tab."
+  },
+  "authCreateAccount": "Create account",
+  "@authCreateAccount": {
+    "description": "Button that finishes sign-up."
+  },
+  "consentAgree": "I agree to the {terms} and {privacy}",
+  "@consentAgree": {
+    "description": "Consent line beside the sign-up checkbox. {terms} and {privacy} become links (consentTerms, consentPrivacy).",
+    "placeholders": {
+      "terms": {
+        "type": "String",
+        "example": "Terms"
+      },
+      "privacy": {
+        "type": "String",
+        "example": "Privacy Policy"
+      }
+    }
+  },
+  "consentTerms": "Terms",
+  "@consentTerms": {
+    "description": "Link to the Terms of Service inside consentAgree."
+  },
+  "consentPrivacy": "Privacy Policy",
+  "@consentPrivacy": {
+    "description": "Link to the Privacy Policy inside consentAgree."
+  },
+  "otpTitle": "Verify your number",
+  "@otpTitle": {
+    "description": "Sign-in step 2 title."
+  },
+  "otpSubtitle": "Enter the {length}-digit code sent to {phone}.",
+  "@otpSubtitle": {
+    "description": "Sign-in step 2: where the OTP was sent.",
+    "placeholders": {
+      "length": {
+        "type": "int",
+        "example": "6"
+      },
+      "phone": {
+        "type": "String",
+        "example": "+919876543210"
+      }
+    }
+  },
+  "otpFieldLabel": "Verification code",
+  "@otpFieldLabel": {
+    "description": "Label of the OTP field."
+  },
+  "otpVerify": "Verify",
+  "@otpVerify": {
+    "description": "Button that checks the OTP."
+  },
+  "otpInvalidated": "That code is no longer valid. Request a new one to continue.",
+  "@otpInvalidated": {
+    "description": "Too many wrong codes: the OTP is dead."
+  },
+  "otpStartOver": "Start over",
+  "@otpStartOver": {
+    "description": "Button back to the phone step for a fresh code."
+  },
+  "otpResendLocked": "Too many code requests. Try again in {time}, or start over.",
+  "@otpResendLocked": {
+    "description": "Resend cap reached; {time} is a m:ss countdown.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "29:59"
+      }
+    }
+  },
+  "otpDidntGetIt": "Didn't get it?",
+  "@otpDidntGetIt": {
+    "description": "Before the resend button/countdown."
+  },
+  "otpResend": "Resend code",
+  "@otpResend": {
+    "description": "Button that sends the OTP again."
+  },
+  "otpResendIn": "Resend code in {time}",
+  "@otpResendIn": {
+    "description": "Resend cooldown; {time} is a m:ss countdown.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "0:42"
+      }
+    }
+  },
+  "otpWrongLength": "Enter the {length}-digit code",
+  "@otpWrongLength": {
+    "description": "Validation: the OTP has the wrong number of digits.",
+    "placeholders": {
+      "length": {
+        "type": "int",
+        "example": "6"
+      }
+    }
+  },
+  "otpDigitsOnly": "Code must be digits only",
+  "@otpDigitsOnly": {
+    "description": "Validation: the OTP has a non-digit."
+  },
+  "homeNavHome": "Home",
+  "@homeNavHome": {
+    "description": "Bottom tab: book a driver."
+  },
+  "homeNavActivity": "Activity",
+  "@homeNavActivity": {
+    "description": "Bottom tab: the customer's upcoming and past rides."
+  },
+  "homeNavAccount": "Account",
+  "@homeNavAccount": {
+    "description": "Bottom tab: profile, saved cars, language, log out."
+  },
+  "shellThanksForRating": "Thanks for rating your trip.",
+  "@shellThanksForRating": {
+    "description": "Snack bar after the customer rates a finished trip."
+  },
+  "accountYourProfile": "Your profile",
+  "@accountYourProfile": {
+    "description": "Title of the Account tab."
+  },
+  "accountLogOut": "Log out",
+  "@accountLogOut": {
+    "description": "Button that signs out on this phone."
+  },
+  "accountDelete": "Delete account",
+  "@accountDelete": {
+    "description": "Button (and the dialog's confirm button) that deletes the customer's account."
+  },
+  "accountDeleting": "Deleting your account…",
+  "@accountDeleting": {
+    "description": "The delete button while the request runs."
+  },
+  "accountDeleteConfirmTitle": "Delete your account?",
+  "@accountDeleteConfirmTitle": {
+    "description": "Title of the delete-account confirmation."
+  },
+  "accountDeleteExplanation": "We'll remove your name, email, phone number, saved cars and recent pickups, and sign you out on every device. Records of past rides and payments are kept, without your details, because the law requires us to keep them. This can't be undone.",
+  "@accountDeleteExplanation": {
+    "description": "Body of the delete-account confirmation: what is deleted and what MOJUD must keep."
+  },
+  "accountDeleteFailed": "Couldn't delete your account. Please try again.",
+  "@accountDeleteFailed": {
+    "description": "Deleting the account failed without a reason from the server."
+  },
+  "carsMyCars": "My cars",
+  "@carsMyCars": {
+    "description": "Heading of the saved-cars block on the Account tab."
+  },
+  "carsLoading": "Loading your cars…",
+  "@carsLoading": {
+    "description": "While the saved cars load in a booking step."
+  },
+  "carsLoadFailed": "Couldn't load your cars.",
+  "@carsLoadFailed": {
+    "description": "The saved cars failed to load."
+  },
+  "carsRetry": "Retry",
+  "@carsRetry": {
+    "description": "Button that loads the saved cars again."
+  },
+  "carsNoneYet": "No saved cars yet — add yours once and pick it on every trip.",
+  "@carsNoneYet": {
+    "description": "In place of the saved cars when there are none."
+  },
+  "carsRemove": "Remove car",
+  "@carsRemove": {
+    "description": "Tooltip of the delete button on a saved car."
+  },
+  "carsAdd": "Add a car",
+  "@carsAdd": {
+    "description": "Button that opens the add-car sheet, and the sheet's title."
+  },
+  "carsYourCar": "Your car",
+  "@carsYourCar": {
+    "description": "Label of the saved-car dropdown in a booking step."
+  },
+  "carsSelectYourCar": "Select your car",
+  "@carsSelectYourCar": {
+    "description": "Hint in the saved-car dropdown before one is picked."
+  },
+  "carsAddSubtitle": "Saved once, offered on every booking.",
+  "@carsAddSubtitle": {
+    "description": "Under the add-car sheet's title."
+  },
+  "carsRegistrationLabel": "Registration number",
+  "@carsRegistrationLabel": {
+    "description": "Label of the car's number-plate field."
+  },
+  "carsRegistrationHint": "e.g. KA 01 AB 1234",
+  "@carsRegistrationHint": {
+    "description": "Example number plate in the field; keep the plate itself as is."
+  },
+  "carsRegistrationIncomplete": "Enter the full registration number.",
+  "@carsRegistrationIncomplete": {
+    "description": "Validation: the number plate is too short or too long."
+  },
+  "carsSaving": "Saving…",
+  "@carsSaving": {
+    "description": "The save button while the car is being saved."
+  },
+  "carsSave": "Save car",
+  "@carsSave": {
+    "description": "Button that saves the new car."
+  },
+  "carsSaveFailed": "Couldn't save the car. Try again.",
+  "@carsSaveFailed": {
+    "description": "Saving the car failed without a reason from the server."
+  },
+  "carsUnexpectedResponse": "Unexpected response from the server.",
+  "@carsUnexpectedResponse": {
+    "description": "The server's reply to saving a car couldn't be read."
+  },
+  "carsRequestFailed": "Saved-cars request failed ({status}).",
+  "@carsRequestFailed": {
+    "description": "A saved-cars request failed without a reason from the server; status is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "type": "int",
+        "example": "500"
+      }
+    }
+  },
+  "updateTitle": "Update MOJUD",
+  "@updateTitle": {
+    "description": "Title of the screen shown when this app version is no longer served."
+  },
+  "updateBody": "This version of the app is out of date. Install the latest one to keep booking drivers. Your account and rides are safe.",
+  "@updateBody": {
+    "description": "Body of the update-required screen."
+  },
+  "updateGetLatest": "Get the latest version",
+  "@updateGetLatest": {
+    "description": "Button that opens the download page."
+  },
+  "updateDownloadFrom": "Download it from {site}",
+  "@updateDownloadFrom": {
+    "description": "Under the button: where the app is downloaded from.",
+    "placeholders": {
+      "site": {
+        "type": "String",
+        "example": "apps.mojud.life"
+      }
+    }
+  },
+  "updateOpenFailed": "Couldn't open a browser. Copy the link and open it in one: {site}",
+  "@updateOpenFailed": {
+    "description": "Shown when no browser opened the download page.",
+    "placeholders": {
+      "site": {
+        "type": "String",
+        "example": "apps.mojud.life"
+      }
+    }
+  },
+  "updateCopyLink": "Copy link",
+  "@updateCopyLink": {
+    "description": "Copies the download link."
+  },
+  "updateLinkCopied": "Link copied",
+  "@updateLinkCopied": {
+    "description": "The download link was copied."
+  },
+  "notifChannelName": "Ride updates",
+  "@notifChannelName": {
+    "description": "Name of the notification channel, shown in the phone's notification settings."
+  },
+  "notifChannelDescription": "Your driver is assigned, and other changes to your rides.",
+  "@notifChannelDescription": {
+    "description": "Description of the notification channel, shown in the phone's notification settings."
+  },
+  "homeYourProfile": "Your profile",
+  "@homeYourProfile": {
+    "description": "Tooltip of the avatar button on Home that opens the Account tab."
+  },
+  "homeHello": "Hello, {name}",
+  "@homeHello": {
+    "description": "Greeting on Home. name is the customer's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "homeWhereTo": "Where should we drive you today?",
+  "@homeWhereTo": {
+    "description": "Big heading on Home, under the greeting."
+  },
+  "homeBookADriver": "Book a driver",
+  "@homeBookADriver": {
+    "description": "Heading above the trip type cards on Home."
+  },
+  "homeHowTitle": "Your car, our driver",
+  "@homeHowTitle": {
+    "description": "Title of the 'how it works' card on Home: the service promise."
+  },
+  "homeHowBody": "A driver comes to your pickup and drives your own car.",
+  "@homeHowBody": {
+    "description": "Body of the 'how it works' card on Home."
+  },
+  "homeHowStepPick": "Pick a trip",
+  "@homeHowStepPick": {
+    "description": "Step 1 of 3 in the 'how it works' card, under an icon. Keep short."
+  },
+  "homeHowStepSet": "Set pickup & time",
+  "@homeHowStepSet": {
+    "description": "Step 2 of 3 in the 'how it works' card, under an icon. Keep short."
+  },
+  "homeHowStepDrive": "Driver drives your car",
+  "@homeHowStepDrive": {
+    "description": "Step 3 of 3 in the 'how it works' card, under an icon. Keep short."
+  },
+  "homePayFeeBeforeBooking": "Pay the {fee} cancellation fee for your last ride before booking another.",
+  "@homePayFeeBeforeBooking": {
+    "description": "Snackbar when the server refuses a booking because a cancellation fee is unpaid. fee is like ₹50.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "homePayNow": "Pay now",
+  "@homePayNow": {
+    "description": "Snackbar action that opens the unpaid ride, where its Pay button is."
+  },
+  "homeRetry": "Retry",
+  "@homeRetry": {
+    "description": "Snackbar action that sends a booking that failed again."
+  },
+  "homeNotBookedRoundTrip": "Your Round Trip wasn't booked. {reason}",
+  "@homeNotBookedRoundTrip": {
+    "description": "Snackbar when a Round Trip booking failed. reason is the server's or the app's explanation, as sent.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "homeNotBookedMultiStop": "Your Multi-Stop trip wasn't booked. {reason}",
+  "@homeNotBookedMultiStop": {
+    "description": "Snackbar when a Multi-Stop booking failed. reason is the server's or the app's explanation, as sent.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "homeNotBookedOneWay": "Your One-Way Trip wasn't booked. {reason}",
+  "@homeNotBookedOneWay": {
+    "description": "Snackbar when a One-Way booking failed. reason is the server's or the app's explanation, as sent.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "homeBookedRoundTrip": "Round Trip booked: {hours, plural, =1{1 hour} other{{hours} hours}}, in your {car}.",
+  "@homeBookedRoundTrip": {
+    "description": "Snackbar once a Round Trip is booked. car is the car's registration number, e.g. DL01AB1234.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "car": {
+        "type": "String"
+      }
+    }
+  },
+  "homeBookedMultiStop": "Multi-Stop trip booked: {count, plural, =1{1 stop} other{{count} stops}} planned, in your {car}.",
+  "@homeBookedMultiStop": {
+    "description": "Snackbar once a Multi-Stop trip is booked. car is the car's registration number.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "car": {
+        "type": "String"
+      }
+    }
+  },
+  "homeBookedOneWay": "One-Way Trip booked: ~{minutes} min, in your {car} to {destination}.",
+  "@homeBookedOneWay": {
+    "description": "Snackbar once a One-Way trip is booked: estimated drive time, the car's registration number, and the destination address as the customer picked it.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "car": {
+        "type": "String"
+      },
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "tripPickerOneWayTitle": "One-Way Trip",
+  "@tripPickerOneWayTitle": {
+    "description": "Trip type card on Home: pickup to one destination."
+  },
+  "tripPickerOneWaySubtitle": "Drop at a destination.",
+  "@tripPickerOneWaySubtitle": {
+    "description": "Under the One-Way Trip card title. Keep short (narrow card)."
+  },
+  "tripPickerRoundTripTitle": "Round Trip",
+  "@tripPickerRoundTripTitle": {
+    "description": "Trip type card on Home: a driver hired by the hour, out and back."
+  },
+  "tripPickerRoundTripSubtitle": "Hire a driver by the hour, out and back.",
+  "@tripPickerRoundTripSubtitle": {
+    "description": "Under the Round Trip card title."
+  },
+  "tripPickerMultiStopTitle": "Multi-Stop Trip",
+  "@tripPickerMultiStopTitle": {
+    "description": "Trip type card on Home: one driver for several stops/errands."
+  },
+  "tripPickerMultiStopSubtitle": "Several stops, one driver.",
+  "@tripPickerMultiStopSubtitle": {
+    "description": "Under the Multi-Stop Trip card title. Keep short (narrow card)."
+  },
+  "tripPickerSelected": "Selected: {trip}",
+  "@tripPickerSelected": {
+    "description": "Placeholder confirmation when the trip chooser is shown without a booking flow (previews). trip is a tripPicker…Title.",
+    "placeholders": {
+      "trip": {
+        "type": "String"
+      }
+    }
+  },
+  "tripStartStartingPoint": "Starting point",
+  "@tripStartStartingPoint": {
+    "description": "Where a One-Way or Multi-Stop trip starts (where the driver meets the customer). Label of the start row and search field."
+  },
+  "tripStartSetStartingPoint": "Set starting point",
+  "@tripStartSetStartingPoint": {
+    "description": "Title of the screen where the customer picks where a Multi-Stop trip starts."
+  },
+  "tripStartStartingPointTapToChange": "Starting point · tap to change",
+  "@tripStartStartingPointTapToChange": {
+    "description": "Under the chosen starting point address: what it is, and that tapping changes it."
+  },
+  "tripStartPickupTapToChange": "Pickup · tap to change",
+  "@tripStartPickupTapToChange": {
+    "description": "Under the chosen pickup address (Round Trip): what it is, and that tapping changes it."
+  },
+  "tripStartFromCurrentLocation": "From your current location · tap to change",
+  "@tripStartFromCurrentLocation": {
+    "description": "Under a start/pickup address filled in from the phone's GPS."
+  },
+  "tripStartFindingLocation": "Finding your location…",
+  "@tripStartFindingLocation": {
+    "description": "While the phone's GPS position is being found."
+  },
+  "tripStartPickup": "Pickup",
+  "@tripStartPickup": {
+    "description": "Label of the Round Trip pickup row while the location is being found."
+  },
+  "tripStartChooseStartingPoint": "Choose a starting point",
+  "@tripStartChooseStartingPoint": {
+    "description": "Start row when GPS couldn't fill it: asks the customer to pick one."
+  },
+  "tripStartChoosePickup": "Choose a pickup",
+  "@tripStartChoosePickup": {
+    "description": "Round Trip pickup row when GPS couldn't fill it: asks the customer to pick one."
+  },
+  "tripStartNoCurrentLocation": "Couldn't use your current location",
+  "@tripStartNoCurrentLocation": {
+    "description": "Under tripStartChoose…: the phone's location couldn't be used (no permission, outside the area…)."
+  },
+  "serviceAreaOutside": "We're only serving Delhi NCR (Delhi, Gurugram, Faridabad, Noida and nearby areas) right now — pick a location within this area.",
+  "@serviceAreaOutside": {
+    "description": "Shown when a picked place (or the phone's location) is outside the area MOJUD serves."
+  },
+  "scheduleSelectDate": "Select date",
+  "@scheduleSelectDate": {
+    "description": "Date field placeholder before a date is picked."
+  },
+  "scheduleSelectTime": "Select time",
+  "@scheduleSelectTime": {
+    "description": "Time field placeholder before a time is picked."
+  },
+  "scheduleTooSoon": "Pick a start at least 45 minutes from now, so a driver can accept it.",
+  "@scheduleTooSoon": {
+    "description": "Booking forms, when the chosen start time is too soon for a driver to accept the trip."
+  },
+  "timeSlotTitle": "Pick a start time",
+  "@timeSlotTitle": {
+    "description": "Title of the start-time picker sheet."
+  },
+  "timeSlotSubtitle": "Trips start every 15 minutes.",
+  "@timeSlotSubtitle": {
+    "description": "Under timeSlotTitle: start times are offered on quarter hours only (9:00, 9:15, …)."
+  },
+  "hoursFewer": "Fewer hours",
+  "@hoursFewer": {
+    "description": "Tooltip of the − button of the Round Trip hours stepper."
+  },
+  "hoursMore": "More hours",
+  "@hoursMore": {
+    "description": "Tooltip of the + button of the Round Trip hours stepper."
+  },
+  "hoursUnit": "{hours, plural, =1{hour} other{hours}}",
+  "@hoursUnit": {
+    "description": "The word under the big hours number in the Round Trip stepper.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursChip": "{hours}h",
+  "@hoursChip": {
+    "description": "Quick-pick chip for a Round Trip duration, e.g. 4h.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "fareSummaryEstimatedFrom": "Estimated fare from",
+  "@fareSummaryEstimatedFrom": {
+    "description": "Above the Round Trip fare before a car is chosen: the fare shown is the lowest it can be."
+  },
+  "fareSummaryEstimated": "Estimated fare",
+  "@fareSummaryEstimated": {
+    "description": "Above the Round Trip fare once a car is chosen."
+  },
+  "fareSummaryForHours": "for {hours, plural, =1{1 hour} other{{hours} hours}}",
+  "@fareSummaryForHours": {
+    "description": "Under fareSummaryEstimated: how many hours the fare covers.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "roundTripTitle": "Trip details",
+  "@roundTripTitle": {
+    "description": "App bar title of the Round Trip booking page."
+  },
+  "roundTripHowLong": "How long?",
+  "@roundTripHowLong": {
+    "description": "Round Trip section heading: how many hours to hire the driver."
+  },
+  "roundTripHowLongSubtitle": "Hire a driver by the hour.",
+  "@roundTripHowLongSubtitle": {
+    "description": "Under roundTripHowLong."
+  },
+  "roundTripWhen": "When?",
+  "@roundTripWhen": {
+    "description": "Round Trip section heading: start date and time."
+  },
+  "roundTripWhenSubtitle": "Pick a start date and time.",
+  "@roundTripWhenSubtitle": {
+    "description": "Under roundTripWhen."
+  },
+  "roundTripChoosePickupToContinue": "Choose your pickup to continue.",
+  "@roundTripChoosePickupToContinue": {
+    "description": "Above the Confirm button while no pickup is chosen."
+  },
+  "roundTripConfirm": "Confirm booking",
+  "@roundTripConfirm": {
+    "description": "Round Trip's main button: book it."
+  },
+  "roundTripFareNoteTitle": "Estimated fare",
+  "@roundTripFareNoteTitle": {
+    "description": "Title of the dialog explaining why the fare is an estimate (opened from the fare's * marker)."
+  },
+  "roundTripFareNoteBody": "Prices may vary based on the final pickup or drop location and the time taken. Time past your booked hours is charged by the hour.",
+  "@roundTripFareNoteBody": {
+    "description": "Body of the estimated-fare dialog."
+  },
+  "roundTripFareNoteOk": "Got it",
+  "@roundTripFareNoteOk": {
+    "description": "Button that closes the estimated-fare dialog."
+  },
+  "bookingDetailsWhichCar": "Which car?",
+  "@bookingDetailsWhichCar": {
+    "description": "Section heading on the Round Trip and Multi-Stop forms: which of the customer's saved cars the driver drives."
+  },
+  "bookingDetailsWhichCarSubtitle": "The driver drives your car — pick one.",
+  "@bookingDetailsWhichCarSubtitle": {
+    "description": "Under bookingDetailsWhichCar."
+  },
+  "bookingDetailsChooseCarToContinue": "Choose your car to continue.",
+  "@bookingDetailsChooseCarToContinue": {
+    "description": "Above the Confirm button while no car is chosen."
+  },
+  "multiStopTitle": "Plan your trip",
+  "@multiStopTitle": {
+    "description": "App bar title of the Multi-Stop planner."
+  },
+  "multiStopWhenStart": "When do we start?",
+  "@multiStopWhenStart": {
+    "description": "Multi-Stop section heading: when the driver should be at the starting point."
+  },
+  "multiStopWhenStartSubtitle": "The driver meets you at the starting point.",
+  "@multiStopWhenStartSubtitle": {
+    "description": "Under multiStopWhenStart."
+  },
+  "multiStopStops": "Stops",
+  "@multiStopStops": {
+    "description": "Multi-Stop section heading: the list of stops/errands."
+  },
+  "multiStopStopsSubtitle": "List each errand in order — where to go, what to do there, and when to move on.",
+  "@multiStopStopsSubtitle": {
+    "description": "Under multiStopStops."
+  },
+  "multiStopAddStop": "Add stop",
+  "@multiStopAddStop": {
+    "description": "Button that adds another stop to the plan."
+  },
+  "multiStopMaxStops": "Up to {max} stops",
+  "@multiStopMaxStops": {
+    "description": "In place of multiStopAddStop (disabled) once the plan has the most stops allowed.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "multiStopConfirm": "Confirm trip",
+  "@multiStopConfirm": {
+    "description": "Multi-Stop's main button: book it."
+  },
+  "multiStopSummary": "{count, plural, =1{1 stop} other{{count} stops}} · wraps up by {date}, {time}",
+  "@multiStopSummary": {
+    "description": "Above the Confirm button once the plan is complete: how many stops, and when the last one is left. date is like Mon, Oct 26; time like 6:30 PM.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "multiStopStopsIncomplete": "Give every stop a location, a task, and a leave-by time to continue.",
+  "@multiStopStopsIncomplete": {
+    "description": "Above the Confirm button while a stop is missing something."
+  },
+  "multiStopSetStopLocation": "Set stop location",
+  "@multiStopSetStopLocation": {
+    "description": "Title of the screen where the customer picks where a stop is."
+  },
+  "multiStopStopLocation": "Stop location",
+  "@multiStopStopLocation": {
+    "description": "Search field label on the stop-location screen."
+  },
+  "multiStopLeaveByAfterStart": "Leave-by must be after the start time.",
+  "@multiStopLeaveByAfterStart": {
+    "description": "Error under the first timed stop when its leave-by time isn't after the trip's start."
+  },
+  "multiStopLeaveByAfterStop": "Leave-by must be after stop {stop}.",
+  "@multiStopLeaveByAfterStop": {
+    "description": "Error under a stop whose leave-by time isn't after the previous timed stop's. stop is that stop's number.",
+    "placeholders": {
+      "stop": {
+        "type": "int"
+      }
+    }
+  },
+  "stopTitle": "Stop {index}",
+  "@stopTitle": {
+    "description": "Heading of one stop card in the Multi-Stop planner.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "stopMoveEarlier": "Move stop {index} earlier",
+  "@stopMoveEarlier": {
+    "description": "Tooltip of the up-arrow button on a stop card.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "stopMoveLater": "Move stop {index} later",
+  "@stopMoveLater": {
+    "description": "Tooltip of the down-arrow button on a stop card.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "stopRemove": "Remove stop {index}",
+  "@stopRemove": {
+    "description": "Tooltip of the delete button on a stop card.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "stopChooseLocation": "Choose location",
+  "@stopChooseLocation": {
+    "description": "Placeholder of a stop's location row before a place is picked."
+  },
+  "stopTaskLabel": "What should the driver do here?",
+  "@stopTaskLabel": {
+    "description": "Label of a stop's task field: the errand, in the customer's words."
+  },
+  "stopTaskHint": "e.g. Pick up the parcel from reception",
+  "@stopTaskHint": {
+    "description": "Example inside the empty task field."
+  },
+  "stopLeaveBy": "Leave by",
+  "@stopLeaveBy": {
+    "description": "Label above a stop's date/time: when the driver should leave that stop."
+  },
+  "oneWayRouteTitle": "Where to?",
+  "@oneWayRouteTitle": {
+    "description": "Title of the One-Way step where the customer picks the destination."
+  },
+  "oneWayRouteField": "Destination",
+  "@oneWayRouteField": {
+    "description": "Label of the destination search field on the One-Way route step."
+  },
+  "oneWayDetailsWhenTitle": "When?",
+  "@oneWayDetailsWhenTitle": {
+    "description": "One-Way trip details: heading of the start date/time section."
+  },
+  "oneWayDetailsWhenSubtitle": "Pick a start date and time.",
+  "@oneWayDetailsWhenSubtitle": {
+    "description": "One-Way trip details: under 'When?'."
+  },
+  "oneWayDetailsCarTitle": "Which car?",
+  "@oneWayDetailsCarTitle": {
+    "description": "One-Way trip details: heading of the car section (the customer's own car)."
+  },
+  "oneWayDetailsCarSubtitle": "The driver drives your car — pick one.",
+  "@oneWayDetailsCarSubtitle": {
+    "description": "One-Way trip details: under 'Which car?'. MOJUD drivers drive the customer's own car."
+  },
+  "oneWayDetailsChooseCar": "Choose your car to continue.",
+  "@oneWayDetailsChooseCar": {
+    "description": "Hint above the disabled Continue button until a car is picked."
+  },
+  "oneWayReviewTitle": "Review trip",
+  "@oneWayReviewTitle": {
+    "description": "Title of the last One-Way step, before booking."
+  },
+  "oneWayReviewPlanTitle": "Your plan",
+  "@oneWayReviewPlanTitle": {
+    "description": "Review step: heading over the chosen start time and car."
+  },
+  "oneWayReviewPlanSubtitle": "Go back to change any of these.",
+  "@oneWayReviewPlanSubtitle": {
+    "description": "Review step: under 'Your plan'."
+  },
+  "oneWayReviewStarts": "Starts",
+  "@oneWayReviewStarts": {
+    "description": "Review step: label of the start date and time line."
+  },
+  "oneWayReviewCar": "Car",
+  "@oneWayReviewCar": {
+    "description": "Review step: label of the chosen car line."
+  },
+  "oneWayReviewTripTimeTitle": "Trip time",
+  "@oneWayReviewTripTimeTitle": {
+    "description": "Review step: heading of the estimated drive time."
+  },
+  "oneWayReviewTripTimeSubtitle": "Estimated for your chosen start time.",
+  "@oneWayReviewTripTimeSubtitle": {
+    "description": "Review step: under 'Trip time'."
+  },
+  "oneWayReviewCheckingTripTime": "Checking the trip time…",
+  "@oneWayReviewCheckingTripTime": {
+    "description": "Hint above the disabled Confirm button while the drive time loads."
+  },
+  "oneWayReviewTripTimeNeeded": "The trip time is needed to book — retry the estimate above.",
+  "@oneWayReviewTripTimeNeeded": {
+    "description": "Hint above the disabled Confirm button when the drive time couldn't be loaded."
+  },
+  "oneWayReviewCheckingDriveTime": "Checking the drive time…",
+  "@oneWayReviewCheckingDriveTime": {
+    "description": "Shown in the trip-time box while the drive time loads."
+  },
+  "oneWayReviewAbout": "About {duration}",
+  "@oneWayReviewAbout": {
+    "description": "The estimated drive time, e.g. About 1 h 30 min. duration comes from fmtMinutes/fmtHours/fmtHoursMinutes.",
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "oneWayReviewTripTimeFailed": "Couldn't get the trip time.",
+  "@oneWayReviewTripTimeFailed": {
+    "description": "Shown in the trip-time box when the drive time couldn't be loaded."
+  },
+  "oneWayReviewRetry": "Retry",
+  "@oneWayReviewRetry": {
+    "description": "Button that asks for the drive time again."
+  },
+  "oneWayReviewConfirm": "Confirm booking",
+  "@oneWayReviewConfirm": {
+    "description": "Button that books the One-Way trip."
+  },
+  "pickupTitle": "Set pickup",
+  "@pickupTitle": {
+    "description": "Title of the screen where the customer chooses the pickup place."
+  },
+  "pickupField": "Pickup location",
+  "@pickupField": {
+    "description": "Label of the pickup search field."
+  },
+  "pickupStartTitle": "Set starting point",
+  "@pickupStartTitle": {
+    "description": "Title of the place picker when choosing where a trip starts."
+  },
+  "pickupStartField": "Starting point",
+  "@pickupStartField": {
+    "description": "Label of the search field when choosing where a trip starts; also the caption on the map pin."
+  },
+  "pickupSearchHint": "Search for a place",
+  "@pickupSearchHint": {
+    "description": "Hint inside the place search field."
+  },
+  "pickupSelectOnMap": "Select on map",
+  "@pickupSelectOnMap": {
+    "description": "Row that opens the map to pick a place by moving a pin."
+  },
+  "pickupMapSubtitle": "Opens the map to adjust the pin",
+  "@pickupMapSubtitle": {
+    "description": "Under 'Use my current location': the map opens on the GPS fix so the pin can be nudged."
+  },
+  "pickupRecent": "Recent",
+  "@pickupRecent": {
+    "description": "Heading over places the customer used before."
+  },
+  "pickupEmptyWithLocation": "Search for a place, or use your current location.",
+  "@pickupEmptyWithLocation": {
+    "description": "Shown on the place picker before anything is typed."
+  },
+  "pickupEmptyWithMap": "Search for a place, or select it on the map.",
+  "@pickupEmptyWithMap": {
+    "description": "Shown on the destination picker before anything is typed."
+  },
+  "pickupCantPin": "Couldn't pin that place. Try another result.",
+  "@pickupCantPin": {
+    "description": "A search result came without coordinates, so it can't be used."
+  },
+  "locationUseCurrent": "Use my current location",
+  "@locationUseCurrent": {
+    "description": "Row / button that uses the phone's GPS position."
+  },
+  "mapPickerTitle": "Pin on map",
+  "@mapPickerTitle": {
+    "description": "Title of the map picker while the map isn't showing (loading or failed)."
+  },
+  "mapPickerCaption": "Pickup here",
+  "@mapPickerCaption": {
+    "description": "Caption over the address under the map pin, when picking a pickup."
+  },
+  "mapPickerMoveHint": "Move the map to place the pin",
+  "@mapPickerMoveHint": {
+    "description": "Shown on the pin card while the map is being dragged."
+  },
+  "mapPickerConfirm": "Confirm this location",
+  "@mapPickerConfirm": {
+    "description": "Button that takes the place under the map pin."
+  },
+  "mapPickerNotSetUp": "The map isn't set up yet. Go back and search for your pickup instead.",
+  "@mapPickerNotSetUp": {
+    "description": "Map picker: this build has no Google Maps key."
+  },
+  "mapPickerLoadFailed": "Couldn't load the map. Check your connection, or that the Maps API key allows this site.",
+  "@mapPickerLoadFailed": {
+    "description": "Map picker on the web: the Google Maps script failed to load."
+  },
+  "routeFrom": "From",
+  "@routeFrom": {
+    "description": "Route summary: label over the starting address."
+  },
+  "routeTo": "To",
+  "@routeTo": {
+    "description": "Route summary: label over the destination address."
+  },
+  "routeMapUnavailable": "Map preview unavailable",
+  "@routeMapUnavailable": {
+    "description": "In place of the route map when it can't be shown."
+  },
+  "locationNoConnection": "Can't reach the maps service. Check your connection and try again.",
+  "@locationNoConnection": {
+    "description": "Place search / map lookups couldn't reach the server."
+  },
+  "locationServiceUnavailable": "The maps service is unavailable right now. Please try again.",
+  "@locationServiceUnavailable": {
+    "description": "Place search / map lookups failed on the server."
+  },
+  "locationUnexpectedReply": "Unexpected response from the maps service.",
+  "@locationUnexpectedReply": {
+    "description": "Place search / map lookups returned something unreadable."
+  },
+  "locationDriveTimeNotSetUp": "Drive-time estimates are not set up on this build.",
+  "@locationDriveTimeNotSetUp": {
+    "description": "This build can't estimate drive times for later departures."
+  },
+  "locationNotFound": "Couldn't find your location. Search for your pickup instead.",
+  "@locationNotFound": {
+    "description": "The phone's GPS position couldn't be read."
+  },
+  "locationTurnedOff": "Location is turned off. Switch it on to use your current spot.",
+  "@locationTurnedOff": {
+    "description": "The phone's location setting is off."
+  },
+  "locationPermissionDeclined": "Location permission was declined. Search for your pickup instead.",
+  "@locationPermissionDeclined": {
+    "description": "The customer said no to the location permission prompt."
+  },
+  "locationBlocked": "Location is blocked. Enable it in Settings, or search instead.",
+  "@locationBlocked": {
+    "description": "Location permission is permanently denied for the app."
+  },
+  "placesSessionExpired": "Your session has expired. Sign in again to search for places.",
+  "@placesSessionExpired": {
+    "description": "Place search refused because the customer's login expired."
+  },
+  "placesNotSetUp": "Map search isn't set up yet.",
+  "@placesNotSetUp": {
+    "description": "Place search isn't configured on the server."
+  },
+  "placesAuthFailed": "Map search authorization failed. Please try again.",
+  "@placesAuthFailed": {
+    "description": "Place search couldn't get access from the server."
+  },
+  "placesAuthUnexpected": "Unexpected authorization response.",
+  "@placesAuthUnexpected": {
+    "description": "Place search access reply was unreadable."
+  },
+  "placesAuthNoToken": "Authorization response carried no token.",
+  "@placesAuthNoToken": {
+    "description": "Place search access reply had no access token."
+  },
+  "rideYourDriver": "Your driver",
+  "@rideYourDriver": {
+    "description": "Stands in for the driver's first name when the server didn't send one; used as the subject of rideIsYourDriver, rideAtYourPickup, rideIsDriving, rideTrackingOnTrip, rideTrackingLocation, rideTrackingAway."
+  },
+  "rideIsYourDriver": "{name} is your driver",
+  "@rideIsYourDriver": {
+    "description": "Headline once a driver has taken the ride. name is the driver's first name (or rideYourDriver).",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideAtYourPickup": "{name} is at your pickup",
+  "@rideAtYourPickup": {
+    "description": "The driver has reached the pickup. name is the driver's first name (or rideYourDriver).",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideIsDriving": "{name} is driving.",
+  "@rideIsDriving": {
+    "description": "Under 'On your trip' when the start time isn't known. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsTitleMissing": "Your ride",
+  "@rideDetailsTitleMissing": {
+    "description": "Title of the ride screen when the ride is no longer in the customer's list."
+  },
+  "rideDetailsNotInList": "This ride isn't in your list any more.",
+  "@rideDetailsNotInList": {
+    "description": "Body of the ride screen when the ride is no longer in the customer's list."
+  },
+  "rideDetailsCancelledPayFee": "Your ride is cancelled. Please pay the {fee} fee.",
+  "@rideDetailsCancelledPayFee": {
+    "description": "Snackbar after cancelling a ride that cost a cancellation fee. fee is like ₹50.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsCancelled": "Your ride is cancelled.",
+  "@rideDetailsCancelled": {
+    "description": "Snackbar after cancelling a ride for free."
+  },
+  "rideDetailsCancelFailed": "Couldn't cancel the ride.",
+  "@rideDetailsCancelFailed": {
+    "description": "Snackbar when a cancel failed without a reason."
+  },
+  "rideDetailsTripEnded": "Your trip has ended.",
+  "@rideDetailsTripEnded": {
+    "description": "Snackbar after the customer ended the trip early."
+  },
+  "rideDetailsEndFailed": "Couldn't end the trip.",
+  "@rideDetailsEndFailed": {
+    "description": "Snackbar when ending the trip failed without a reason."
+  },
+  "rideDetailsPaymentReceived": "Payment received. Thank you!",
+  "@rideDetailsPaymentReceived": {
+    "description": "Snackbar once a UPI payment is confirmed."
+  },
+  "rideDetailsThanksForRating": "Thanks for rating your trip.",
+  "@rideDetailsThanksForRating": {
+    "description": "Snackbar after the customer rated the driver."
+  },
+  "rideDetailsCancelRide": "Cancel ride",
+  "@rideDetailsCancelRide": {
+    "description": "Button on the ride screen that opens the cancel sheet."
+  },
+  "rideDetailsFindingDriver": "Finding you a driver",
+  "@rideDetailsFindingDriver": {
+    "description": "Headline while no driver has taken the ride yet."
+  },
+  "rideDetailsFindingDriverDetail": "We'll let you know as soon as one accepts.",
+  "@rideDetailsFindingDriverDetail": {
+    "description": "Under rideDetailsFindingDriver."
+  },
+  "rideDetailsPickupWhen": "Pickup {when}",
+  "@rideDetailsPickupWhen": {
+    "description": "Under rideIsYourDriver: when the pickup is. when is like 'Today, 9:30 AM'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsShareStartCode": "Share the start code when you meet.",
+  "@rideDetailsShareStartCode": {
+    "description": "Under rideAtYourPickup: tell the driver the start code to begin the trip."
+  },
+  "rideDetailsOnYourTrip": "On your trip",
+  "@rideDetailsOnYourTrip": {
+    "description": "Headline while the trip is underway."
+  },
+  "rideDetailsStartedWhen": "Started {when}",
+  "@rideDetailsStartedWhen": {
+    "description": "Under rideDetailsOnYourTrip: when the trip started. when is like 'Today, 9:30 AM'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsTripEndedEarly": "Trip ended early",
+  "@rideDetailsTripEndedEarly": {
+    "description": "Headline of a trip the customer ended before its booked end."
+  },
+  "rideDetailsTripCompleted": "Trip completed",
+  "@rideDetailsTripCompleted": {
+    "description": "Headline of a finished trip."
+  },
+  "rideDetailsRideCancelled": "Ride cancelled",
+  "@rideDetailsRideCancelled": {
+    "description": "Headline of a cancelled ride."
+  },
+  "rideDetailsWasCancelled": "This ride was cancelled.",
+  "@rideDetailsWasCancelled": {
+    "description": "Under rideDetailsRideCancelled when the server said neither who cancelled nor why."
+  },
+  "rideDetailsNoDriverDetail": "No driver accepted in time. Please book again.",
+  "@rideDetailsNoDriverDetail": {
+    "description": "Under 'No driver found': the ride closed before any driver took it."
+  },
+  "rideDetailsPayFeeTitle": "Pay the cancellation fee",
+  "@rideDetailsPayFeeTitle": {
+    "description": "Heading of the payment card on a ride cancelled after the driver reached the pickup."
+  },
+  "rideDetailsPayTripTitle": "Pay for your trip",
+  "@rideDetailsPayTripTitle": {
+    "description": "Heading of the payment card on a finished trip."
+  },
+  "rideDetailsPayFeeSubtitle": "You cancelled after your driver reached the pickup. Pay {amount} with any UPI app: GPay, PhonePe, Paytm or your bank's.",
+  "@rideDetailsPayFeeSubtitle": {
+    "description": "Under rideDetailsPayFeeTitle. amount is like ₹50. GPay, PhonePe, Paytm are app names.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsPayTripSubtitle": "Pay {amount} with any UPI app: GPay, PhonePe, Paytm or your bank's.",
+  "@rideDetailsPayTripSubtitle": {
+    "description": "Under rideDetailsPayTripTitle. amount is like ₹640. GPay, PhonePe, Paytm are app names.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsWaitingForUpi": "Waiting for UPI…",
+  "@rideDetailsWaitingForUpi": {
+    "description": "Pay button while the UPI app is open."
+  },
+  "rideDetailsPayByUpi": "Pay {amount} by UPI",
+  "@rideDetailsPayByUpi": {
+    "description": "Pay button. amount is like ₹640.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsYouRated": "You rated ",
+  "@rideDetailsYouRated": {
+    "description": "Followed by the stars the customer gave (shown as star icons). Keep the trailing space."
+  },
+  "rideDetailsRateDriver": "Rate your driver",
+  "@rideDetailsRateDriver": {
+    "description": "Heading of the rating card on a finished trip."
+  },
+  "rideDetailsHowWasTrip": "How was your trip?",
+  "@rideDetailsHowWasTrip": {
+    "description": "Under rideDetailsRateDriver when the driver's name isn't known."
+  },
+  "rideDetailsHowWasTripWith": "How was your trip with {name}?",
+  "@rideDetailsHowWasTripWith": {
+    "description": "Under rideDetailsRateDriver. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsRoute": "Route",
+  "@rideDetailsRoute": {
+    "description": "Heading of the card listing pickup, stops and destination."
+  },
+  "rideDetailsStopsPlanned": "{count, plural, =1{1 stop planned} other{{count} stops planned}}",
+  "@rideDetailsStopsPlanned": {
+    "description": "Under rideDetailsRoute when the stops themselves aren't listed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rideDetailsRoutePickup": "Pickup",
+  "@rideDetailsRoutePickup": {
+    "description": "Label of the pickup in the route card."
+  },
+  "rideDetailsRouteStop": "Stop {number}",
+  "@rideDetailsRouteStop": {
+    "description": "Label of a stop in the route card.",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "rideDetailsRouteDestination": "Destination",
+  "@rideDetailsRouteDestination": {
+    "description": "Label of the destination (drop) in the route card."
+  },
+  "rideDetailsLeaveBy": "Leave by {time}",
+  "@rideDetailsLeaveBy": {
+    "description": "When the driver should move on from a stop. time is like 9:30 AM.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDetailsTripDetails": "Trip details",
+  "@rideDetailsTripDetails": {
+    "description": "Heading of the card with what was booked."
+  },
+  "rideDetailsInfoTrip": "Trip",
+  "@rideDetailsInfoTrip": {
+    "description": "Row label in Trip details: the kind of trip."
+  },
+  "rideDetailsInfoStarts": "Starts",
+  "@rideDetailsInfoStarts": {
+    "description": "Row label in Trip details: when the trip starts."
+  },
+  "rideDetailsInfoBookedFor": "Booked for",
+  "@rideDetailsInfoBookedFor": {
+    "description": "Row label in Trip details: how many hours a round trip is booked for."
+  },
+  "rideDetailsInfoEstDuration": "Est. duration",
+  "@rideDetailsInfoEstDuration": {
+    "description": "Row label in Trip details: about how long the trip will take."
+  },
+  "rideDetailsInfoCar": "Car",
+  "@rideDetailsInfoCar": {
+    "description": "Row label in Trip details: the customer's car."
+  },
+  "rideFare": "Fare",
+  "@rideFare": {
+    "description": "Row label: the trip's fare (Trip details and the receipt)."
+  },
+  "rideBookedFare": "Booked fare",
+  "@rideBookedFare": {
+    "description": "Row label: the fare as booked, on a trip charged for the time actually used."
+  },
+  "rideCancellationFee": "Cancellation fee",
+  "@rideCancellationFee": {
+    "description": "Row label: the fee for cancelling after the driver reached the pickup."
+  },
+  "rideDetailsTimeline": "Timeline",
+  "@rideDetailsTimeline": {
+    "description": "Heading of the card listing the ride's steps with their times."
+  },
+  "rideTimelineBooked": "Booked",
+  "@rideTimelineBooked": {
+    "description": "Timeline step: the customer booked the ride."
+  },
+  "rideTimelineDriverAssigned": "Driver assigned",
+  "@rideTimelineDriverAssigned": {
+    "description": "Timeline step: a driver took the ride."
+  },
+  "rideTimelineDriverArrived": "Driver arrived",
+  "@rideTimelineDriverArrived": {
+    "description": "Timeline step: the driver reached the pickup."
+  },
+  "rideTimelineTripStarted": "Trip started",
+  "@rideTimelineTripStarted": {
+    "description": "Timeline step: the trip began."
+  },
+  "rideTimelineEndedEarly": "Ended early",
+  "@rideTimelineEndedEarly": {
+    "description": "Timeline step: the customer ended the trip before its booked end."
+  },
+  "rideTimelineCompleted": "Completed",
+  "@rideTimelineCompleted": {
+    "description": "Timeline step: the trip finished."
+  },
+  "rideTimelineNoDriverDetail": "No driver accepted in time.",
+  "@rideTimelineNoDriverDetail": {
+    "description": "Under the timeline's last step 'No driver found'."
+  },
+  "rideTrackingWaiting": "Waiting for your driver's location",
+  "@rideTrackingWaiting": {
+    "description": "Under the live map when the driver hasn't shared a location lately."
+  },
+  "rideTrackingFinding": "Finding your driver's location…",
+  "@rideTrackingFinding": {
+    "description": "Under the live map before the first location check."
+  },
+  "rideTrackingOnTrip": "{name} is on your trip",
+  "@rideTrackingOnTrip": {
+    "description": "Under the live map while the trip is on. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideTrackingLocation": "{name}'s location",
+  "@rideTrackingLocation": {
+    "description": "Under the live map when the distance to the pickup isn't known. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideTrackingAway": "{name} is {distance} away",
+  "@rideTrackingAway": {
+    "description": "Under the live map: how far the driver is from the pickup. distance is rideDistanceMeters / rideDistanceKm.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "rideTrackingUpdated": "{where} · updated {age}",
+  "@rideTrackingUpdated": {
+    "description": "The line under the live map: where the driver is, and how old that is. age is rideAgeJustNow / rideAgeSeconds / rideAgeMinutes / rideAgeHours.",
+    "placeholders": {
+      "where": {
+        "type": "String"
+      },
+      "age": {
+        "type": "String"
+      }
+    }
+  },
+  "rideDistanceMeters": "{meters} m",
+  "@rideDistanceMeters": {
+    "description": "A distance under a kilometre.",
+    "placeholders": {
+      "meters": {
+        "type": "int"
+      }
+    }
+  },
+  "rideDistanceKm": "{km} km",
+  "@rideDistanceKm": {
+    "description": "A distance in kilometres; km is like 2.3 or 14.",
+    "placeholders": {
+      "km": {
+        "type": "String"
+      }
+    }
+  },
+  "rideAgeJustNow": "just now",
+  "@rideAgeJustNow": {
+    "description": "How old the driver's location is: a few seconds."
+  },
+  "rideAgeSeconds": "{seconds} s ago",
+  "@rideAgeSeconds": {
+    "description": "How old the driver's location is, in seconds.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "rideAgeMinutes": "{minutes} min ago",
+  "@rideAgeMinutes": {
+    "description": "How old the driver's location is, in minutes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "rideAgeHours": "{hours} h ago",
+  "@rideAgeHours": {
+    "description": "How old the driver's location is, in hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "rideErrorNotFound": "We couldn't find this ride any more.",
+  "@rideErrorNotFound": {
+    "description": "A ride action failed because the server no longer has the ride."
+  },
+  "rideErrorCancelHasFee": "Cancelling now has a fee. Pull down to refresh, then try again.",
+  "@rideErrorCancelHasFee": {
+    "description": "A free cancel was refused because cancelling now costs a fee."
+  },
+  "rideErrorCannotCancel": "This ride has already started or finished, so it can no longer be cancelled.",
+  "@rideErrorCannotCancel": {
+    "description": "A cancel was refused because the ride moved on."
+  },
+  "rideErrorNotInProgress": "This trip isn't in progress any more.",
+  "@rideErrorNotInProgress": {
+    "description": "Ending the trip failed because it isn't on any more."
+  },
+  "rideErrorAlreadyRated": "This ride has already been rated.",
+  "@rideErrorAlreadyRated": {
+    "description": "A rating was refused because the ride already has one."
+  },
+  "rideErrorInvalidRating": "Pick 1 to 5 stars, and keep the note under {max} characters.",
+  "@rideErrorInvalidRating": {
+    "description": "A rating was refused as invalid. max is the longest note allowed.",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "ridePayStillConfirming": "We're still confirming your payment with the bank. This ride will show as paid in a minute or two.",
+  "@ridePayStillConfirming": {
+    "description": "Under the Pay button after the UPI app said the payment went through, while the server is checking with the bank."
+  },
+  "ridePayFailed": "The payment didn't go through. Please try again.",
+  "@ridePayFailed": {
+    "description": "The UPI app said the payment failed."
+  },
+  "ridePayCancelled": "Payment cancelled.",
+  "@ridePayCancelled": {
+    "description": "The customer closed the UPI page without paying."
+  },
+  "ridePayUnavailable": "Paying in the app isn't available yet.",
+  "@ridePayUnavailable": {
+    "description": "Payments are switched off on the server."
+  },
+  "ridePayNotYet": "This ride can't be paid for yet.",
+  "@ridePayNotYet": {
+    "description": "The ride isn't due for payment."
+  },
+  "receiptTitle": "Receipt",
+  "@receiptTitle": {
+    "description": "Heading of the receipt of a paid ride."
+  },
+  "receiptPaidThanks": "Paid. Thank you!",
+  "@receiptPaidThanks": {
+    "description": "Top line of the receipt."
+  },
+  "receiptFareForTimeUsed": "Fare for the time used",
+  "@receiptFareForTimeUsed": {
+    "description": "Receipt row: the fare of a trip charged for the time actually used (ended early or ran over)."
+  },
+  "receiptBaseFare": "Base fare",
+  "@receiptBaseFare": {
+    "description": "Receipt row: the fare before the night surcharge."
+  },
+  "receiptNightSurcharge": "Night surcharge",
+  "@receiptNightSurcharge": {
+    "description": "Receipt row: the extra charged for driving at night."
+  },
+  "receiptTotalPaid": "Total paid",
+  "@receiptTotalPaid": {
+    "description": "Receipt row: what the whole payment came to, when it also paid other rides."
+  },
+  "receiptPaidVia": "Paid via",
+  "@receiptPaidVia": {
+    "description": "Receipt row: how the ride was paid (UPI, Cash, …)."
+  },
+  "receiptReference": "Reference",
+  "@receiptReference": {
+    "description": "Receipt row: the bank's UTR or the gateway's transaction id, to quote in a dispute."
+  },
+  "receiptOrder": "Order",
+  "@receiptOrder": {
+    "description": "Receipt row: MOJUD's payment order id."
+  },
+  "receiptPaidAt": "Paid",
+  "@receiptPaidAt": {
+    "description": "Receipt row: when the payment was made; the value is a day and time."
+  },
+  "endTripTitle": "End trip now?",
+  "@endTripTitle": {
+    "description": "Title of the dialog confirming ending the trip early."
+  },
+  "endTripByTheHour": "You'll pay by the hour for the time used. Each started hour counts as a full hour.",
+  "@endTripByTheHour": {
+    "description": "End-trip dialog: how ending early is charged."
+  },
+  "endTripOvertime": "If you're past your booked time, the extra hours are charged too, after a {minutes}-minute grace.",
+  "@endTripOvertime": {
+    "description": "End-trip dialog: hours past the booked time are charged after a grace period of minutes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "endTripKeepGoing": "Keep going",
+  "@endTripKeepGoing": {
+    "description": "End-trip dialog: don't end the trip."
+  },
+  "endTripNow": "End trip now",
+  "@endTripNow": {
+    "description": "Button that ends the trip early (on the ride screen and in its confirmation dialog)."
+  },
+  "startCodeTitle": "Start code",
+  "@startCodeTitle": {
+    "description": "The code the customer tells the driver at the pickup to start the trip."
+  },
+  "startCodeHint": "Share it with your driver when you meet.",
+  "@startCodeHint": {
+    "description": "Under startCodeTitle."
+  },
+  "startCodeSemantics": "Start code {digits}",
+  "@startCodeSemantics": {
+    "description": "Screen-reader label: the start code read digit by digit. digits is like '4 8 1 2'.",
+    "placeholders": {
+      "digits": {
+        "type": "String"
+      }
+    }
+  },
+  "driverRowCall": "Call driver",
+  "@driverRowCall": {
+    "description": "Tooltip of the button that calls the driver."
+  },
+  "driverRowPhotoOf": "Photo of {name}",
+  "@driverRowPhotoOf": {
+    "description": "Screen-reader label of the driver's photo.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "starsOutOfFive": "{stars} out of 5 stars",
+  "@starsOutOfFive": {
+    "description": "Screen-reader label of a read-only star rating.",
+    "placeholders": {
+      "stars": {
+        "type": "int"
+      }
+    }
+  },
+  "starsCount": "{count, plural, =1{1 star} other{{count} stars}}",
+  "@starsCount": {
+    "description": "Tooltip of each star button when rating.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "starsWordPoor": "Poor",
+  "@starsWordPoor": {
+    "description": "Shown under the stars when 1 star is picked."
+  },
+  "starsWordNotGreat": "Not great",
+  "@starsWordNotGreat": {
+    "description": "Shown under the stars when 2 stars are picked."
+  },
+  "starsWordOkay": "Okay",
+  "@starsWordOkay": {
+    "description": "Shown under the stars when 3 stars are picked."
+  },
+  "starsWordGood": "Good",
+  "@starsWordGood": {
+    "description": "Shown under the stars when 4 stars are picked."
+  },
+  "starsWordExcellent": "Excellent",
+  "@starsWordExcellent": {
+    "description": "Shown under the stars when 5 stars are picked."
+  },
+  "starsNoteHint": "Add a note for your driver (optional)",
+  "@starsNoteHint": {
+    "description": "Hint in the rating note field."
+  },
+  "starsSubmit": "Submit rating",
+  "@starsSubmit": {
+    "description": "Button that sends the rating."
+  },
+  "liveMapPickup": "Pickup",
+  "@liveMapPickup": {
+    "description": "Map pin title: the pickup."
+  },
+  "liveMapYourDriver": "Your driver",
+  "@liveMapYourDriver": {
+    "description": "Map pin title: the driver's live position."
+  },
+  "activityTitle": "Activity",
+  "@activityTitle": {
+    "description": "Title of the Activity tab: the customer's upcoming and past rides."
+  },
+  "activityTabUpcoming": "Upcoming",
+  "@activityTabUpcoming": {
+    "description": "Activity tab: rides not finished yet."
+  },
+  "activityTabCompleted": "Completed",
+  "@activityTabCompleted": {
+    "description": "Activity tab: finished, cancelled or expired rides."
+  },
+  "activityNoUpcomingTitle": "No upcoming rides",
+  "@activityNoUpcomingTitle": {
+    "description": "Empty Upcoming tab, title."
+  },
+  "activityNoUpcomingBody": "Rides you book from Home show up here until they finish.",
+  "@activityNoUpcomingBody": {
+    "description": "Empty Upcoming tab, help line. Home is the app's Home tab."
+  },
+  "activityNoCompletedTitle": "No completed rides yet",
+  "@activityNoCompletedTitle": {
+    "description": "Empty Completed tab, title."
+  },
+  "activityNoCompletedBody": "Finished trips and their fares show up here.",
+  "@activityNoCompletedBody": {
+    "description": "Empty Completed tab, help line."
+  },
+  "activityLoadFailed": "Couldn't load your rides",
+  "@activityLoadFailed": {
+    "description": "Title when the rides list couldn't be loaded; the reason is shown under it."
+  },
+  "rateTitle": "How was your trip?",
+  "@rateTitle": {
+    "description": "Rating sheet title when the driver's name isn't known."
+  },
+  "rateTitleWithDriver": "How was your trip with {name}?",
+  "@rateTitleWithDriver": {
+    "description": "Rating sheet title; name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rateNotNow": "Not now",
+  "@rateNotNow": {
+    "description": "Closes the rating sheet without rating."
+  },
+  "rideCardStopCount": "{count, plural, =1{1 stop} other{{count} stops}}",
+  "@rideCardStopCount": {
+    "description": "On a Multi-Stop ride card: how many stops the trip has.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "rideCardTripCompleted": "Trip completed",
+  "@rideCardTripCompleted": {
+    "description": "On a completed ride's card when the driver's name isn't known, beside the fare."
+  },
+  "rideCardDrivenBy": "Driven by {name}",
+  "@rideCardDrivenBy": {
+    "description": "On a completed ride's card, beside the fare: who drove.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "rideCardEndedEarly": "Ended early. {charge}",
+  "@rideCardEndedEarly": {
+    "description": "On a ride the customer ended early. charge is the sentence fmtEndedEarly (Charged ₹320 for the time used (booked ₹640).).",
+    "placeholders": {
+      "charge": {
+        "type": "String"
+      }
+    }
+  },
+  "rideCardYouRated": "You rated",
+  "@rideCardYouRated": {
+    "description": "On a rated ride's card, followed by the stars given (drawn as stars, not text)."
+  },
+  "rideCardRateTrip": "Rate your trip",
+  "@rideCardRateTrip": {
+    "description": "Button on an unrated completed ride's card; opens the rating sheet."
+  },
+  "rideCardCancelled": "This ride was cancelled.",
+  "@rideCardCancelled": {
+    "description": "On a cancelled ride's card when the server didn't say who cancelled or why."
+  },
+  "rideCardCancellationFee": "Cancellation fee",
+  "@rideCardCancellationFee": {
+    "description": "On a ride cancelled at the pickup: the fee's label, beside its amount."
+  },
+  "rideCardNoDriver": "No driver accepted in time. Please book again.",
+  "@rideCardNoDriver": {
+    "description": "On a ride no driver took before it closed."
+  },
+  "rideCardWaitingForDriver": "We'll show your driver here as soon as one accepts.",
+  "@rideCardWaitingForDriver": {
+    "description": "On a ride still looking for a driver."
+  },
+  "rideCardPayByUpi": "Pay {amount} by UPI",
+  "@rideCardPayByUpi": {
+    "description": "Button on a ride (or cancellation fee) still to pay. amount is like ₹640.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "rideCardPaid": "Paid",
+  "@rideCardPaid": {
+    "description": "Small tag beside the amount of a paid ride. Keep it short."
+  },
+  "cancelSheetTitle": "Cancel this ride?",
+  "@cancelSheetTitle": {
+    "description": "Title of the cancel sheet."
+  },
+  "cancelSheetFeeNowNamed": "{name} has reached your pickup, so cancelling now costs {fee}.",
+  "@cancelSheetFeeNowNamed": {
+    "description": "Cancel sheet, once the driver is at the pickup. name is the driver's first name; fee is like ₹50.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetFeeNow": "Your driver has reached your pickup, so cancelling now costs {fee}.",
+  "@cancelSheetFeeNow": {
+    "description": "As cancelSheetFeeNowNamed when the driver's name isn't known.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetFree": "Cancelling is free.",
+  "@cancelSheetFree": {
+    "description": "Cancel sheet when the driver is at the pickup but no fee applies."
+  },
+  "cancelSheetFreeUntilPickup": "Cancelling is free until the driver reaches your pickup. After that it costs {fee}.",
+  "@cancelSheetFreeUntilPickup": {
+    "description": "Cancel sheet before the driver reaches the pickup. fee is like ₹50.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetFeeWarningNamed": "You'll pay the fee by UPI, like a ride, before your next booking. {name} will be told you cancelled.",
+  "@cancelSheetFeeWarningNamed": {
+    "description": "Cancel sheet note when cancelling costs a fee. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetFeeWarning": "You'll pay the fee by UPI, like a ride, before your next booking. Your driver will be told you cancelled.",
+  "@cancelSheetFeeWarning": {
+    "description": "As cancelSheetFeeWarningNamed when the driver's name isn't known."
+  },
+  "cancelSheetWaitingNamed": "{name} is already waiting at your pickup. They will be told you cancelled.",
+  "@cancelSheetWaitingNamed": {
+    "description": "Cancel sheet note, driver at the pickup, no fee. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetWaiting": "Your driver is already waiting at your pickup. They will be told you cancelled.",
+  "@cancelSheetWaiting": {
+    "description": "As cancelSheetWaitingNamed when the driver's name isn't known."
+  },
+  "cancelSheetAcceptedNamed": "{name} has accepted this ride and is planning around it. They will be told you cancelled.",
+  "@cancelSheetAcceptedNamed": {
+    "description": "Cancel sheet note once a driver has taken the ride. name is the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetAccepted": "Your driver has accepted this ride and is planning around it. They will be told you cancelled.",
+  "@cancelSheetAccepted": {
+    "description": "As cancelSheetAcceptedNamed when the driver's name isn't known."
+  },
+  "cancelSheetWhy": "Tell us why — it helps us improve.",
+  "@cancelSheetWhy": {
+    "description": "Above the list of cancel reasons."
+  },
+  "cancelSheetTellUsMore": "Tell us more (optional)",
+  "@cancelSheetTellUsMore": {
+    "description": "Hint in the text field shown for the 'Other' cancel reason."
+  },
+  "cancelSheetCancelAndPay": "Cancel and pay {fee}",
+  "@cancelSheetCancelAndPay": {
+    "description": "Confirm button when cancelling costs a fee. fee is like ₹50.",
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelSheetCancelRide": "Cancel ride",
+  "@cancelSheetCancelRide": {
+    "description": "Confirm button when cancelling is free."
+  },
+  "cancelSheetKeepRide": "Keep my ride",
+  "@cancelSheetKeepRide": {
+    "description": "Closes the cancel sheet without cancelling."
+  },
+  "helpTitle": "Help & safety",
+  "@helpTitle": {
+    "description": "Heading of the help & safety buttons on a ride."
+  },
+  "helpCall112": "Call 112",
+  "@helpCall112": {
+    "description": "Button: calls 112, India's emergency number."
+  },
+  "helpShareTrip": "Share trip",
+  "@helpShareTrip": {
+    "description": "Button: shares the trip's details with someone (WhatsApp)."
+  },
+  "helpContactSupport": "Contact support",
+  "@helpContactSupport": {
+    "description": "Button: opens a WhatsApp chat with MOJUD support."
+  },
+  "helpDialerFailed": "Couldn't open the dialer. Dial 112.",
+  "@helpDialerFailed": {
+    "description": "Snackbar when the phone's dialer couldn't be opened."
+  },
+  "helpTripCopied": "Trip details copied",
+  "@helpTripCopied": {
+    "description": "Snackbar when WhatsApp isn't there and the trip details were copied instead."
+  },
+  "helpWhatsAppFailed": "Couldn't open WhatsApp.",
+  "@helpWhatsAppFailed": {
+    "description": "Snackbar when WhatsApp couldn't be opened to contact support."
+  },
+  "helpShareIntro": "My MOJUD trip",
+  "@helpShareIntro": {
+    "description": "First line of the trip details the customer shares with a friend."
+  },
+  "helpShareWhen": "When: {when}",
+  "@helpShareWhen": {
+    "description": "Shared trip details: when the trip starts. when is helpShareDateTime.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "helpSharePickup": "Pickup: {place}",
+  "@helpSharePickup": {
+    "description": "Shared trip details: the pickup address, as entered.",
+    "placeholders": {
+      "place": {
+        "type": "String"
+      }
+    }
+  },
+  "helpShareDriver": "Driver: {name}",
+  "@helpShareDriver": {
+    "description": "Shared trip details: the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "helpShareBooking": "Booking: {id}",
+  "@helpShareBooking": {
+    "description": "Shared trip details: a short booking id, like 3F2A9C1B.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "helpShareDateTime": "{weekday, select, mon{Mon} tue{Tue} wed{Wed} thu{Thu} fri{Fri} sat{Sat} sun{Sun} other{}} {day} {month, select, jan{Jan} feb{Feb} mar{Mar} apr{Apr} may{May} jun{Jun} jul{Jul} aug{Aug} sep{Sep} oct{Oct} nov{Nov} dec{Dec} other{}}, {time}",
+  "@helpShareDateTime": {
+    "description": "When the shared trip starts, absolute (the friend may read it another day), e.g. Wed 18 Nov, 9:30 AM. time stays like 9:30 AM.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "month": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "bookingErrorPayLastRide": "Pay for your last ride before booking another.",
+  "@bookingErrorPayLastRide": {
+    "description": "A booking refused because a finished ride is still unpaid."
+  },
+  "bookingErrorLoadFailed": "Loading your rides failed ({status}).",
+  "@bookingErrorLoadFailed": {
+    "description": "The rides list couldn't be loaded; status is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "bookingErrorRequestFailed": "Booking request failed ({status}).",
+  "@bookingErrorRequestFailed": {
+    "description": "A booking the server refused without a reason; status is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "checkoutCouldNotStart": "PhonePe couldn't start.",
+  "@checkoutCouldNotStart": {
+    "description": "The PhonePe payment page couldn't be set up. PhonePe is a brand: keep it."
+  },
+  "checkoutCouldNotOpen": "PhonePe couldn't open.",
+  "@checkoutCouldNotOpen": {
+    "description": "The PhonePe payment page couldn't be opened."
+  },
+  "checkoutAndroidOnly": "Paying by UPI works in the Android app.",
+  "@checkoutAndroidOnly": {
+    "description": "Shown on builds (web, desktop) where UPI payment isn't available."
+  }
+}

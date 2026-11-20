@@ -20,6 +20,7 @@ import 'package:user_app/features/update/update_providers.dart';
 import 'package:user_app/features/update/view/update_gate.dart';
 import 'package:user_app/features/update/view/update_required_screen.dart';
 import 'package:user_app/features/update/view_model/update_gate_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 const _updateRequired = {
   'error':
@@ -241,6 +242,9 @@ void main() {
         ProviderScope(
           overrides: [updateGateProvider.overrideWith((ref) => gate)],
           child: MaterialApp(
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             theme: SkylineTheme.light(),
             builder: (context, child) => UpdateGate(child: child!),
             home: const Scaffold(body: Text('Home')),
@@ -300,6 +304,9 @@ void main() {
     Future<void> pump(WidgetTester tester, UrlOpener open) async {
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: SkylineTheme.light(),
           home: UpdateRequiredScreen(
             downloadUrl: 'https://apps.mojud.life',
