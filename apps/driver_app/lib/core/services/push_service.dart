@@ -7,20 +7,79 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+/// What a push is about — the `type` the backend tags each driver push
+/// with.
+enum PushType {
+  /// A new open request near the driver.
+  rideRequest('ride_request'),
+
+  /// MOJUD assigned a ride to the driver.
+  rideAssigned('ride_assigned'),
+
+  /// The customer (or MOJUD) cancelled one of the driver's rides.
+  rideCancelled('ride_cancelled'),
+
+  /// A held ride starts within the hour.
+  rideReminder('ride_reminder'),
+
+  /// The customer ended the trip early: it's completed, charged for the
+  /// time used.
+  rideEndedEarly('ride_ended_early'),
+
+  /// A customer paid for a ride.
+  paymentReceived('payment_received'),
+
+  /// MOJUD recorded a bank transfer to the driver.
+  payoutSent('payout_sent'),
+
+  /// A reviewer decided on the driver's KYC.
+  kycDecided('kyc_decided'),
+
+  /// The payout account changed, which reopens KYC.
+  bankAccountChanged('bank_account_changed'),
+
+  /// The backend took a silent driver off duty.
+  dutyOff('duty_off'),
+
+  /// A type this app version doesn't know — a newer server's.
+  /// [PushEvent.type] keeps the raw tag.
+  unknown('');
+
+  const PushType(this.wireName);
+
+  final String wireName;
+
+  static PushType fromWire(Object? value) {
+    for (final type in values) {
+      if (type != unknown && type.wireName == value) return type;
+    }
+    return unknown;
+  }
+}
+
 /// A push notification's routing data, as the backend sends it: what
 /// happened (`ride_request`, `driver_assigned`) and to which ride.
 @immutable
 class PushEvent {
   const PushEvent({required this.type, this.rideId});
 
-  /// Reads the data payload of an FCM message or a local notification.
-  factory PushEvent.fromData(Map<String, dynamic> data) => PushEvent(
-    type: data['type'] as String? ?? '',
-    rideId: data['rideId'] as String?,
-  );
+  /// Reads the data payload of an FCM message or a local notification. A
+  /// field of the wrong type reads as absent rather than throwing.
+  factory PushEvent.fromData(Map<String, dynamic> data) {
+    final type = data['type'];
+    final rideId = data['rideId'];
+    return PushEvent(
+      type: type is String ? type : '',
+      rideId: rideId is String && rideId.isNotEmpty ? rideId : null,
+    );
+  }
 
+  /// The raw `type` tag, as sent.
   final String type;
   final String? rideId;
+
+  /// [type] parsed; [PushType.unknown] for one this build doesn't know.
+  PushType get kind => PushType.fromWire(type);
 }
 
 /// The device side of push notifications: Firebase Cloud Messaging plus

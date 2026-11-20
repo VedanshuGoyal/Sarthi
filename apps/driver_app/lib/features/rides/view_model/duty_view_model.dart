@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/refresh_throttle.dart';
 import '../../../core/services/location_service.dart';
 import '../data/rides_repository.dart';
 import '../domain/ride.dart';
@@ -21,9 +22,11 @@ class DutyViewModel extends ChangeNotifier {
     required this._location,
     this._onAccepted,
     this.pollEvery = const Duration(seconds: 20),
-  });
+    Clock? now,
+  }) : _fetched = RefreshThrottle(now: now);
 
   final RidesRepository _repository;
+  final RefreshThrottle _fetched;
   final LocationService _location;
 
   /// Hands an accepted ride to the driver's own rides list.
@@ -119,6 +122,7 @@ class DutyViewModel extends ChangeNotifier {
   /// put them back in line for ride pushes behind their back.
   Future<void> refresh({bool locate = false}) async {
     if (!_isOnline || _isLoading) return;
+    _fetched.mark();
     _isLoading = true;
     _notify();
     try {
@@ -144,6 +148,16 @@ class DutyViewModel extends ChangeNotifier {
       _isLoading = false;
       _notify();
     }
+  }
+
+  /// For the app coming back to the foreground while on duty: re-locates,
+  /// re-reports the driver and re-reads the feed — unless the poll (or a
+  /// push) did within the last [RefreshThrottle.defaultGap]. In the
+  /// background the poll may not have run at all (Android pauses a
+  /// sleeping phone), so the feed and the driver's presence can be stale.
+  Future<void> refreshIfStale() async {
+    if (!_isOnline || _isLoading || !_fetched.isStale) return;
+    await refresh(locate: true);
   }
 
   /// Takes [ride]. Returns null on success, or a message to show. A ride

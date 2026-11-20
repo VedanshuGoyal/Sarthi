@@ -8,9 +8,9 @@ abstract final class DocumentValidators {
 
   static String? aadharNumber(String value) {
     final digits = value.trim();
-    if (digits.isEmpty) return 'Enter your Aadhar number';
+    if (digits.isEmpty) return 'Enter your Aadhaar number';
     if (!_aadhar.hasMatch(digits)) {
-      return 'Enter a valid 12-digit Aadhar number';
+      return 'Enter a valid 12-digit Aadhaar number';
     }
     return null;
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/refresh_throttle.dart';
 import '../data/rides_repository.dart';
 import '../domain/payout.dart';
 import '../domain/ride.dart';
@@ -7,9 +8,11 @@ import '../domain/ride.dart';
 /// The Earnings panel's summary — today, this week, this month, all time —
 /// and the bank transfers MOJUD has made to the driver.
 class EarningsViewModel extends ChangeNotifier {
-  EarningsViewModel({required this._repository});
+  EarningsViewModel({required this._repository, Clock? now})
+    : _fetched = RefreshThrottle(now: now);
 
   final RidesRepository _repository;
+  final RefreshThrottle _fetched;
 
   Earnings _earnings = const Earnings();
   List<Payout> _payouts = const [];
@@ -40,6 +43,7 @@ class EarningsViewModel extends ChangeNotifier {
   /// totals back. A payouts failure keeps the last list it had.
   Future<void> load() async {
     final seq = ++_loadSeq;
+    _fetched.mark();
     _isLoading = true;
     _notify();
     final payouts = _fetchPayouts();
@@ -62,6 +66,14 @@ class EarningsViewModel extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  /// Re-reads the money unless it was read within the last
+  /// [RefreshThrottle.defaultGap] or a read is in flight — for the app
+  /// coming back to the foreground on the Earnings tab.
+  Future<void> refreshIfStale() async {
+    if (_isLoading || !_fetched.isStale) return;
+    await load();
   }
 
   /// The payouts list, or null when it couldn't be read.

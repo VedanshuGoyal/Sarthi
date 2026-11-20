@@ -20,6 +20,11 @@
          coming while the driver is in another app, e.g. Google Maps. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- That service holds a wake lock while it runs, so fixes keep reaching
+         the customer with the screen off instead of arriving in a batch when
+         the phone wakes. (firebase_messaging also merges this in; declared
+         here so it doesn't depend on that.) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application
         android:label="MOJUD Driver"
         android:allowBackup="false"

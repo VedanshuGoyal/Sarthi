@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/location_providers.dart';
+import '../../core/refresh_throttle.dart';
 import '../auth/driver_auth_controller.dart';
 import 'data/rides_repository.dart';
 import 'view_model/duty_view_model.dart';
@@ -36,6 +37,7 @@ final myRidesViewModelProvider = ChangeNotifierProvider<MyRidesViewModel>((
   return MyRidesViewModel(
     repository: ref.watch(ridesRepositoryProvider),
     onCompleted: () => ref.read(earningsViewModelProvider).load(),
+    now: ref.watch(clockProvider),
   )..load();
 });
 
@@ -44,8 +46,10 @@ final earningsViewModelProvider = ChangeNotifierProvider<EarningsViewModel>((
   ref,
 ) {
   ref.watch(_driverIdProvider);
-  return EarningsViewModel(repository: ref.watch(ridesRepositoryProvider))
-    ..load();
+  return EarningsViewModel(
+    repository: ref.watch(ridesRepositoryProvider),
+    now: ref.watch(clockProvider),
+  )..load();
 });
 
 /// On/off duty and the open requests feed. An accepted request moves into
@@ -56,6 +60,7 @@ final dutyViewModelProvider = ChangeNotifierProvider<DutyViewModel>((ref) {
     repository: ref.watch(ridesRepositoryProvider),
     location: ref.watch(locationServiceProvider),
     onAccepted: (ride) => ref.read(myRidesViewModelProvider).upsert(ride),
+    now: ref.watch(clockProvider),
   );
 });
 

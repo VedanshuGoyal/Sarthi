@@ -8,7 +8,12 @@ enum RideStatus {
   arrived('arrived', 'At pickup'),
   inProgress('in_progress', 'On trip'),
   completed('completed', 'Completed'),
-  cancelled('cancelled', 'Cancelled');
+  cancelled('cancelled', 'Cancelled'),
+
+  /// A status this app version doesn't know — a newer server's. Such a ride
+  /// sits in no tab and offers no actions (the app can't tell what's
+  /// allowed next); [Ride.rawStatus] keeps what the server sent.
+  unknown('', 'Status unknown');
 
   const RideStatus(this.wireName, this.label);
 
@@ -18,10 +23,15 @@ enum RideStatus {
   /// Short label for status chips.
   final String label;
 
-  static RideStatus fromWire(String? value) => RideStatus.values.firstWhere(
-    (s) => s.wireName == value,
-    orElse: () => RideStatus.requested,
-  );
+  /// Parses the backend's status. One this build doesn't know is [unknown]
+  /// — never a guess like [requested], which would offer to accept a ride
+  /// that may already be over.
+  static RideStatus fromWire(Object? value) {
+    for (final status in values) {
+      if (status != unknown && status.wireName == value) return status;
+    }
+    return unknown;
+  }
 
   /// The ride is the driver's and still ahead of them or underway.
   bool get isActive =>
@@ -32,17 +42,24 @@ enum RideStatus {
 enum TripKind {
   roundTrip('roundTrip', 'Round trip'),
   oneWay('oneWay', 'One way'),
-  multiStop('multiStop', 'Multi-stop');
+  multiStop('multiStop', 'Multi-stop'),
+
+  /// A trip type this app version doesn't know — a newer server's. Shown as
+  /// a plain booking for its time span rather than as a round trip, whose
+  /// hours it may not have.
+  other('', 'Trip');
 
   const TripKind(this.wireName, this.label);
 
   final String wireName;
   final String label;
 
-  static TripKind fromWire(String? value) => TripKind.values.firstWhere(
-    (k) => k.wireName == value,
-    orElse: () => TripKind.roundTrip,
-  );
+  static TripKind fromWire(Object? value) {
+    for (final kind in values) {
+      if (kind != other && kind.wireName == value) return kind;
+    }
+    return other;
+  }
 }
 
 /// One address on a ride.
@@ -211,6 +228,7 @@ class Ride {
     required this.endsAt,
     required this.farePaise,
     required this.pickup,
+    this.rawStatus,
     this.approximate = false,
     this.fareEstimated = false,
     this.destination,
@@ -239,6 +257,19 @@ class Ride {
   final String id;
   final TripKind kind;
   final RideStatus status;
+
+  /// The status exactly as the server sent it. Kept for a
+  /// [RideStatus.unknown] one, so the driver still sees what a newer server
+  /// calls it.
+  final String? rawStatus;
+
+  /// The status chip's text: the known label or, for a status this build
+  /// doesn't know, the server's own word (`on_hold` → "On hold").
+  String get statusLabel {
+    final raw = (rawStatus ?? '').replaceAll(RegExp(r'[_-]+'), ' ').trim();
+    if (status != RideStatus.unknown || raw.isEmpty) return status.label;
+    return '${raw[0].toUpperCase()}${raw.substring(1)}';
+  }
 
   /// An open request as drivers see it before accepting: each place is its
   /// locality (e.g. "Saket, New Delhi") with coordinates rounded to about a
@@ -408,6 +439,7 @@ class Ride {
     id: id,
     kind: kind,
     status: status,
+    rawStatus: rawStatus,
     approximate: approximate,
     scheduledAt: scheduledAt,
     endsAt: endsAt,
@@ -452,10 +484,12 @@ class Ride {
     final dest = json['destination'];
     final car = json['car'];
     final customer = json['customer'];
+    final status = json['status'];
     return Ride(
       id: id,
-      kind: TripKind.fromWire(json['tripType'] as String?),
-      status: RideStatus.fromWire(json['status'] as String?),
+      kind: TripKind.fromWire(json['tripType']),
+      status: RideStatus.fromWire(status),
+      rawStatus: status is String ? status : null,
       approximate: json['approximate'] == true,
       scheduledAt: scheduledAt,
       endsAt:

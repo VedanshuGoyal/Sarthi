@@ -110,13 +110,15 @@ abstract final class RideFormat {
   }
 
   /// What the ride books the driver for: "3 h hire", "~45 min drive",
-  /// "2 stops · 1 h 45 min".
+  /// "2 stops · 1 h 45 min" — or, for a trip type this build doesn't know,
+  /// just the booked span ("2 h").
   static String span(Ride ride) => switch (ride.kind) {
     TripKind.roundTrip => '${ride.hours ?? ride.duration.inHours} h hire',
     TripKind.oneWay =>
       '~${duration(Duration(minutes: ride.estimatedMinutes ?? ride.duration.inMinutes))} drive',
     TripKind.multiStop =>
       '${ride.stops.length} ${ride.stops.length == 1 ? 'stop' : 'stops'} · ${duration(ride.duration)}',
+    TripKind.other => duration(ride.duration),
   };
 
   /// +91 98765 43210
@@ -151,4 +153,5 @@ IconData tripKindIcon(TripKind kind) => switch (kind) {
   TripKind.oneWay => Icons.arrow_forward_rounded,
   TripKind.roundTrip => Icons.schedule_rounded,
   TripKind.multiStop => Icons.alt_route_rounded,
+  TripKind.other => Icons.directions_car_rounded,
 };

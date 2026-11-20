@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:checks/checks.dart';
 import 'package:driver_app/core/location_providers.dart';
+import 'package:driver_app/core/refresh_throttle.dart';
 import 'package:driver_app/features/auth/data/driver_session_storage.dart';
 import 'package:driver_app/features/auth/domain/driver.dart';
 import 'package:driver_app/features/auth/domain/driver_auth_session.dart';
@@ -10,6 +11,7 @@ import 'package:driver_app/features/auth/driver_auth_controller.dart';
 import 'package:driver_app/features/documents/data/document_file_store.dart';
 import 'package:driver_app/features/documents/data/driver_kyc_repository.dart';
 import 'package:driver_app/features/documents/document_providers.dart';
+import 'package:driver_app/features/documents/domain/document_kind.dart';
 import 'package:driver_app/features/documents/domain/driver_kyc.dart';
 import 'package:driver_app/features/documents/view_model/document_registration_view_model.dart';
 import 'package:driver_app/core/services/push_service.dart';
@@ -37,7 +39,11 @@ void main() {
   late _KycRepository kyc;
   late _FakePush push;
 
+  /// The view models' clock, which tests move on by hand.
+  late DateTime now;
+
   setUp(() {
+    now = DateTime(2026, 11, 21, 9);
     tempDir = Directory.systemTemp.createTempSync('shell_test');
     kyc = _KycRepository();
     push = _FakePush();
@@ -61,6 +67,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          clockProvider.overrideWithValue(() => now),
           ridesRepositoryProvider.overrideWithValue(rides),
           pushServiceProvider.overrideWithValue(push),
           locationServiceProvider.overrideWithValue(FakeLocationService()),
@@ -68,7 +75,8 @@ void main() {
           documentRegistrationViewModelProvider.overrideWith(
             (ref) => DocumentRegistrationViewModel(
               repository: kyc,
-              files: DocumentFileStore(directory: tempDir),
+              files: _NoCaptures(tempDir),
+              now: () => now,
             ),
           ),
         ],
@@ -161,6 +169,36 @@ void main() {
       await tester.pumpAndSettle();
       check(rides.requestsCalls).equals(requests + 1);
       check(kyc.loads).equals(kycLoads + 1);
+
+      await goOffDuty(tester);
+    });
+
+    testWidgets('a push type from a newer server re-reads the feed and, '
+        'naming a ride, the rides — and its tap opens Home', (tester) async {
+      await pumpShell(tester);
+      await goOnDuty(tester);
+      await tester.tap(find.text('Rides'));
+      await tester.pumpAndSettle();
+      final requests = rides.requestsCalls;
+      final loads = rides.myRidesCalls;
+      final kycLoads = kyc.loads;
+
+      push.arrive(const PushEvent(type: 'ride_rescheduled', rideId: 'r9'));
+      await tester.pumpAndSettle();
+
+      check(rides.requestsCalls).equals(requests + 1);
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(kyc.loads).equals(kycLoads);
+
+      // Without a ride, only the feed.
+      push.arrive(const PushEvent(type: 'promo'));
+      await tester.pumpAndSettle();
+      check(rides.requestsCalls).equals(requests + 2);
+      check(rides.myRidesCalls).equals(loads + 1);
+
+      push.tap(const PushEvent(type: 'promo'));
+      await tester.pumpAndSettle();
+      check(find.text("You're on duty").evaluate()).isNotEmpty();
 
       await goOffDuty(tester);
     });
@@ -278,6 +316,7 @@ void main() {
       await pumpShell(tester);
       final loads = rides.myRidesCalls;
       rides.mine = [ride(id: 'trip', status: 'completed', bookedFarePaise: 1)];
+      now = now.add(const Duration(minutes: 1));
 
       await leaveAndReturn(tester);
 
@@ -285,13 +324,115 @@ void main() {
       check(find.text('Ride in progress').evaluate()).isEmpty();
     });
 
-    testWidgets('holding no ride reads nothing', (tester) async {
+    testWidgets('holding no ride still re-reads the rides (MOJUD may have '
+        'assigned one) and the KYC', (tester) async {
       await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+      final kycLoads = kyc.loads;
+      rides.mine = [ride(id: 'assigned', status: 'accepted')];
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(kyc.loads).equals(kycLoads + 1);
+      check(find.text('Your next ride').evaluate()).isNotEmpty();
+    });
+
+    testWidgets('right after a read, or a quick second time, reads nothing', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      final loads = rides.myRidesCalls;
+      final kycLoads = kyc.loads;
+
+      // Just loaded: still fresh.
+      await leaveAndReturn(tester);
+      check(rides.myRidesCalls).equals(loads);
+      check(kyc.loads).equals(kycLoads);
+
+      now = now.add(const Duration(minutes: 1));
+      await leaveAndReturn(tester);
+      now = now.add(const Duration(seconds: 5));
+      await leaveAndReturn(tester);
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(kyc.loads).equals(kycLoads + 1);
+
+      // Fresh again once the gap has passed.
+      now = now.add(RefreshThrottle.defaultGap);
+      await leaveAndReturn(tester);
+      check(rides.myRidesCalls).equals(loads + 2);
+    });
+
+    testWidgets('a push just before coming back counts as the read', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      now = now.add(const Duration(minutes: 1));
+      push.arrive(const PushEvent(type: 'ride_cancelled', rideId: 'r1'));
+      await tester.pumpAndSettle();
       final loads = rides.myRidesCalls;
 
       await leaveAndReturn(tester);
 
       check(rides.myRidesCalls).equals(loads);
+    });
+
+    testWidgets('on duty, re-reports the driver and re-reads the feed', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      final requests = rides.requestsCalls;
+      final reports = rides.duty.length;
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+
+      check(rides.requestsCalls).equals(requests + 1);
+      check(rides.duty.length).equals(reports + 1);
+      check(rides.duty.last).isTrue();
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('re-reads the earnings only while they are on screen', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      final earnings = rides.earningsCalls;
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+      check(rides.earningsCalls).equals(earnings);
+
+      await tester.tap(find.text('Earnings').last);
+      await tester.pumpAndSettle();
+      final opened = rides.earningsCalls;
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+      check(rides.earningsCalls).equals(opened + 1);
+    });
+
+    testWidgets('with the Documents open from Account, the KYC is read once', (
+      tester,
+    ) async {
+      kyc.status = KycStatus.verified;
+      await pumpShell(tester);
+      await tester.tap(find.text('Account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Documents'));
+      await tester.pumpAndSettle();
+      check(find.text("You're verified").evaluate()).isNotEmpty();
+      final kycLoads = kyc.loads;
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+
+      check(kyc.loads).equals(kycLoads + 1);
     });
   });
 }
@@ -319,6 +460,22 @@ class _FakePush extends PushService {
   }
 }
 
+/// No captures on the device, and no disk I/O — which never finishes under
+/// the widget tester's fake clock, and would leave the KYC load (and with
+/// it every later refresh) hanging.
+class _NoCaptures extends DocumentFileStore {
+  _NoCaptures(Directory directory) : super(directory: directory);
+
+  @override
+  Future<String?> pathFor(DocumentKind kind) async => null;
+
+  @override
+  Future<void> discard(DocumentKind kind) async {}
+
+  @override
+  Future<void> discardAll() async {}
+}
+
 class _SessionStorage implements DriverSessionStorage {
   @override
   Future<DriverAuthSession?> read() async =>
@@ -335,10 +492,18 @@ class _KycRepository implements DriverKycRepository {
   /// How many times the KYC record was read.
   int loads = 0;
 
+  KycStatus status = KycStatus.submitted;
+
   @override
   Future<DriverKyc> load() async {
     loads++;
-    return _kyc;
+    return DriverKyc(
+      status: status,
+      fullName: _kyc.fullName,
+      drivingLicenseNumber: _kyc.drivingLicenseNumber,
+      aadhaarLast4: _kyc.aadhaarLast4,
+      bankAccount: _kyc.bankAccount,
+    );
   }
 
   static const _kyc = DriverKyc(

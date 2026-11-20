@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -81,26 +83,48 @@ class LocationService {
   /// whatever the OS allows in the foreground; callers are expected to stop
   /// quietly if it goes silent rather than treat that as an error.
   Stream<DeviceFix> positionStream() {
-    final settings = defaultTargetPlatform == TargetPlatform.android
-        ? AndroidSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10,
-            intervalDuration: const Duration(seconds: 10),
-            foregroundNotificationConfig: const ForegroundNotificationConfig(
-              notificationTitle: 'Sharing your location',
-              notificationText: 'Your customer can see you on the way.',
-            ),
-          )
-        : const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 10,
-          );
+    final settings = streamSettings(defaultTargetPlatform);
     return Geolocator.getPositionStream(locationSettings: settings).map(
       (p) => (
         lat: p.latitude,
         lng: p.longitude,
         // headingAccuracy is negative when the platform can't tell.
         heading: p.headingAccuracy >= 0 ? p.heading : null,
+      ),
+    );
+  }
+
+  /// The settings [positionStream] runs with on [platform].
+  ///
+  /// On Android the stream runs as geolocator's foreground service (type
+  /// `location`, declared by the plugin's manifest) with a notification:
+  ///
+  ///  * a wake lock while it runs — without one the phone sleeps with the
+  ///    screen off and the fixes arrive in a batch when it wakes, so the
+  ///    customer sees the driver jump instead of move;
+  ///  * the monochrome status-bar icon the push notifications use (the
+  ///    launcher icon draws as a blank square there), on a channel named
+  ///    for what it is in system settings.
+  @visibleForTesting
+  static LocationSettings streamSettings(TargetPlatform platform) {
+    if (platform != TargetPlatform.android) {
+      return const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      );
+    }
+    return AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+      intervalDuration: const Duration(seconds: 10),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationTitle: 'Sharing your location',
+        notificationText: 'Your customer can see you on the way.',
+        notificationChannelName: 'Live location',
+        notificationIcon: AndroidResource(name: 'ic_stat_sarthi'),
+        color: Color(0xFF2A93BE),
+        enableWakeLock: true,
+        setOngoing: true,
       ),
     );
   }
