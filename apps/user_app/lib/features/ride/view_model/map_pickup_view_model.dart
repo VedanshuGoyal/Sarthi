@@ -73,9 +73,15 @@ class MapPickupViewModel extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
-  /// The address to show under the pin: the resolved street address, or the
-  /// raw coordinates while we wait / if geocoding had nothing.
-  String get pinLabel => _resolved?.address ?? _center.toLatLngParam();
+  /// The street address found for an out-of-area pin: shown, though it
+  /// can't be confirmed.
+  String? _outsideAddress;
+
+  /// The address to show under the pin: the resolved street address (also
+  /// for a pin outside the service area), or the raw coordinates while we
+  /// wait / if geocoding had nothing.
+  String get pinLabel =>
+      _resolved?.address ?? _outsideAddress ?? _center.toLatLngParam();
 
   /// True once the centre has a confirmable pickup and isn't mid-pan.
   bool get canConfirm => _resolved != null && !_isMoving;
@@ -106,6 +112,7 @@ class MapPickupViewModel extends ChangeNotifier {
     if (_isMoving) return;
     _isMoving = true;
     _resolved = null;
+    _outsideAddress = null;
     _error = null;
     _notify();
   }
@@ -143,14 +150,17 @@ class MapPickupViewModel extends ChangeNotifier {
         // Pinned outside Delhi NCR: no confirmable pickup, but the customer can
         // keep panning back into the served area.
         _resolved = null;
+        _outsideAddress = pickup.address;
         _error = ServiceArea.outsideMessage;
       } else {
         _resolved = pickup;
+        _outsideAddress = null;
         _error = null;
       }
     } on LocationException catch (e) {
       if (seq != _resolveSeq) return;
       _resolved = null;
+      _outsideAddress = null;
       _error = e.message;
     } finally {
       if (seq == _resolveSeq) {
