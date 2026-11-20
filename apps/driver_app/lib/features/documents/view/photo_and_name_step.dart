@@ -12,8 +12,8 @@ import '../widgets/local_photo.dart';
 
 /// Document step 2 — selfie, full name, date of birth, and gender.
 ///
-/// Once the Aadhar is verified the name, date of birth and gender are the
-/// Aadhar's: shown read-only, and never re-sent.
+/// Once the Aadhaar is verified the name, date of birth and gender are the
+/// Aadhaar's: shown read-only, and never re-sent.
 class PhotoAndNameStep extends ConsumerStatefulWidget {
   const PhotoAndNameStep({super.key});
 
@@ -198,7 +198,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
         ),
         const SizedBox(height: DeepSignalTokens.s22),
         if (locked) ...[
-          Text('From your Aadhar', style: t.body(size: 12, color: t.muted)),
+          Text('From your Aadhaar', style: t.body(size: 12, color: t.muted)),
           const SizedBox(height: DeepSignalTokens.s8),
         ],
         SarthiTextField(

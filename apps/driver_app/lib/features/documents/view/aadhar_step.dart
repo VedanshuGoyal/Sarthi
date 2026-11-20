@@ -8,7 +8,7 @@ import '../document_providers.dart';
 import '../domain/document_validators.dart';
 import '../widgets/verified_details.dart';
 
-/// Document step 3 — the Aadhar number, then a DigiLocker sign-in that proves
+/// Document step 3 — the Aadhaar number, then a DigiLocker sign-in that proves
 /// it's the driver's.
 ///
 /// DigiLocker opens in a browser tab. When the driver comes back to the app
@@ -134,10 +134,10 @@ class _AadharStepState extends ConsumerState<AadharStep> {
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Aadhar card',
+      title: 'Aadhaar card',
       subtitle: kyc.isAadhaarVerified
-          ? 'Your Aadhar is verified.'
-          : 'Enter your Aadhar number, then sign in to DigiLocker to verify it.',
+          ? 'Your Aadhaar is verified.'
+          : 'Enter your Aadhaar number, then sign in to DigiLocker to verify it.',
       fields: [
         if (kyc.isAadhaarVerified)
           VerifiedDetails(
@@ -145,12 +145,12 @@ class _AadharStepState extends ConsumerState<AadharStep> {
             lines: [
               kyc.fullName,
               if (dob != null) 'Born ${formatCardDate(dob)}',
-              if (last4 != null) 'Aadhar XXXX XXXX $last4',
+              if (last4 != null) 'Aadhaar XXXX XXXX $last4',
             ],
           )
         else ...[
           SarthiTextField(
-            label: 'Aadhar number',
+            label: 'Aadhaar number',
             controller: _number,
             readOnly: _waiting,
             hintText: last4 == null ? 'XXXX XXXX XXXX' : 'XXXX XXXX $last4',

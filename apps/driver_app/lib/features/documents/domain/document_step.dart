@@ -14,7 +14,7 @@ enum DocumentStep {
     icon: Icons.badge_outlined,
   ),
   aadhar(
-    title: 'Aadhar Card',
+    title: 'Aadhaar Card',
     subtitle: 'Verify with DigiLocker',
     icon: Icons.credit_card_outlined,
   ),

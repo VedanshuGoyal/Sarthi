@@ -4,6 +4,7 @@ import '../auth/driver_auth_controller.dart';
 import 'data/driver_kyc_repository.dart';
 import 'data/kyc_status_store.dart';
 import 'data/lost_capture.dart';
+import 'data/permission_grants.dart';
 import 'view_model/document_registration_view_model.dart';
 
 /// Single shared [DriverKycRepository].
@@ -44,5 +45,6 @@ final documentRegistrationViewModelProvider =
         statusStore: ref.watch(kycStatusStoreProvider),
         driverId: driverId,
         lostCaptures: retrieveLostCameraPhoto,
+        permissionGrants: readPermissionGrants,
       );
     });

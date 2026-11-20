@@ -6,6 +6,7 @@ import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
 import '../data/kyc_status_store.dart';
 import '../data/lost_capture.dart';
+import '../data/permission_grants.dart';
 import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/document_step.dart';
@@ -38,6 +39,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     KycStatusStore? statusStore,
     String? driverId,
     this._lostCaptures,
+    this._permissionGrants,
   }) : _files = files ?? DocumentFileStore(),
        _statusStore = statusStore,
        _driverId = driverId {
@@ -54,6 +56,9 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
   /// A selfie taken while Android had killed the app; asked for once.
   LostCaptureSource? _lostCaptures;
+
+  /// The OS's current permission grants; null where they can't be read.
+  final PermissionGrantsSource? _permissionGrants;
 
   DriverDocuments _data = const DriverDocuments();
   DriverKyc _kyc = const DriverKyc();
@@ -79,6 +84,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// the screen can offer is to try again (or to log out).
   bool get loadFailed => _loadFailed && !_hasBackendKyc;
 
+  /// Whether [kyc] is the backend's answer, so a reload can refresh the
+  /// screen in place instead of blanking it.
+  bool get hasKyc => _hasBackendKyc;
+
   /// On-device state: capture paths and permission grants.
   DriverDocuments get data => _data;
 
@@ -98,14 +107,16 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// react to a specific failure rather than parse its message.
   String? get errorCode => _errorCode;
 
-  /// Loads the driver's saved progress and re-attaches any captures still on
-  /// the device. Safe to call more than once.
+  /// Loads the driver's saved progress, re-attaches any captures still on
+  /// the device and re-reads the OS permission grants. Safe to call more
+  /// than once.
   Future<void> load() async {
     _isLoading = true;
     _notify();
     try {
       _setKyc(await _repository.load());
       await _restoreCaptures();
+      await _readPermissionGrants();
       _error = null;
       if (_lostCaptures case final source?) {
         _lostCaptures = null;
@@ -137,9 +148,13 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     DocumentStep.bankDetails => _kyc.isBankVerified,
   };
 
-  /// A step is reachable once every step before it is complete; the first
-  /// step is always open.
+  /// A step is reachable once the step before it is complete; the first
+  /// step is always open. A step that is itself complete never looks
+  /// locked — a verified bank account isn't something left to do because
+  /// an earlier step lapsed — and a cleared driver may open any step to see
+  /// or change it.
   bool isUnlocked(DocumentStep step) {
+    if (isComplete(step) || _kyc.status == KycStatus.verified) return true;
     final index = DocumentStep.values.indexOf(step);
     if (index == 0) return true;
     return isComplete(DocumentStep.values[index - 1]);
@@ -265,6 +280,32 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
       ifscCode: ifscCode,
     ),
   );
+
+  /// Re-reads the OS permission grants — local, no request — so the
+  /// permissions step ticks itself for a driver who turned them on in
+  /// system settings, and un-ticks for one who turned one off.
+  Future<void> refreshPermissionGrants() async {
+    final before = _data;
+    await _readPermissionGrants();
+    if (!identical(before, _data)) _notify();
+  }
+
+  Future<void> _readPermissionGrants() async {
+    final source = _permissionGrants;
+    if (source == null) return;
+    final grants = await source();
+    if (grants == null || _disposed) return;
+    if (grants.overlay == _data.overlayPermissionGranted &&
+        grants.backgroundLocation == _data.backgroundLocationGranted &&
+        grants.battery == _data.batteryUnrestricted) {
+      return;
+    }
+    _data = _data.copyWith(
+      overlayPermissionGranted: grants.overlay,
+      backgroundLocationGranted: grants.backgroundLocation,
+      batteryUnrestricted: grants.battery,
+    );
+  }
 
   /// Records the OS permission grants. Local only — there is nothing for the
   /// backend to verify, and the OS is asked again on every visit.
