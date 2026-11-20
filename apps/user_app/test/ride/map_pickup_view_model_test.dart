@@ -104,23 +104,31 @@ void main() {
       check(vm.canConfirm).isFalse();
     });
 
-    test('a pin outside the service area blocks confirm with a notice', () async {
-      final repo = FakeLocationRepository(
-        reverseResult: const PickupLocation(
-          address: 'MG Road, Bengaluru',
-          point: GeoPoint(latitude: 12.97, longitude: 77.6),
-        ),
-      );
-      final vm = MapPickupViewModel(repository: repo);
-      await vm.init();
+    test(
+      'a pin outside the service area blocks confirm with a notice',
+      () async {
+        final repo = FakeLocationRepository(
+          reverseResult: const PickupLocation(
+            address: 'MG Road, Bengaluru',
+            point: GeoPoint(latitude: 12.97, longitude: 77.6),
+          ),
+        );
+        final vm = MapPickupViewModel(repository: repo);
+        await vm.init();
 
-      vm.onCameraMove(const GeoPoint(latitude: 12.97, longitude: 77.6));
-      await vm.onCameraIdle();
+        vm.onCameraMove(const GeoPoint(latitude: 12.97, longitude: 77.6));
+        await vm.onCameraIdle();
 
-      check(vm.resolved).isNull();
-      check(vm.canConfirm).isFalse();
-      check(vm.error).equals(ServiceArea.outsideMessage);
-    });
+        check(vm.resolved).isNull();
+        check(vm.canConfirm).isFalse();
+        check(vm.error).equals(ServiceArea.outsideMessage);
+        // The address still shows under the pin, not raw coordinates.
+        check(vm.pinLabel).equals('MG Road, Bengaluru');
+
+        vm.onCameraMove(const GeoPoint(latitude: 12.98, longitude: 77.61));
+        check(vm.pinLabel).equals('12.98,77.61');
+      },
+    );
 
     test('locateMe returns the current point for the camera', () async {
       final repo = FakeLocationRepository(
