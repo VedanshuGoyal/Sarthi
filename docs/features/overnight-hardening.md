@@ -49,8 +49,11 @@ review of the whole diff); fixes by Claude Code.
 
 ## Not done (next)
 
-- Multi-stop car requirement; feed SQL filter / large-radius query / bounded fan-out (F16/F25/F17).
-- Driver Document View verified state; resume refresh; unknown enums; paise rounding.
-- Outbox for pushes; `sarthi_core` shared Dart package + one `ApiClient`; crash reporting; Hindi.
+Done on 21 Nov 2026 (on main, server not deployed, apps not built): the multi-stop car (F16); Driver Document View states; refresh on resume; unknown enums; crash reporting (Crashlytics). The driver ride-location service now keeps a wake lock. See `docs/features/receipts-multistop.md` and `payments-review-rollout.sh`.
+
+Still open:
+
+- Feed SQL filter / large-radius query / bounded fan-out (F17/F25).
+- Outbox for pushes; `sarthi_core` shared Dart package + one `ApiClient`; Hindi for the customer app.
 - Dedicated VPS (Fable's recommendation: the shared box also runs a trading controller).
-- Driver foreground service for duty location (Play policy declaration).
+- A driver foreground service for location for the whole duty shift (Play policy declaration; battery is the owner's call).
