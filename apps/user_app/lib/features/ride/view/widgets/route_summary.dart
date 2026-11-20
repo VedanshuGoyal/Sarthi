@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// A compact, read-only banner echoing both ends of the route chosen on the
 /// earlier location steps. The One-Way details and review screens share it so
 /// the route reads the same on every step.
@@ -62,9 +64,15 @@ class RouteSummary extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _RouteEnd(label: 'From', address: startAddress),
+                  _RouteEnd(
+                    label: context.l10n.routeFrom,
+                    address: startAddress,
+                  ),
                   Divider(height: Skyline.s24, color: t.hairline),
-                  _RouteEnd(label: 'To', address: destinationAddress),
+                  _RouteEnd(
+                    label: context.l10n.routeTo,
+                    address: destinationAddress,
+                  ),
                 ],
               ),
             ),

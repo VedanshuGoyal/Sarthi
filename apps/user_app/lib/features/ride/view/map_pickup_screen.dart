@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/config/google_maps_config.dart';
 import '../../../core/maps/web_maps_loader.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
@@ -20,14 +21,11 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 /// `PickupLocationScreen`. The camera controller is a view-local rendering
 /// concern (like a `ScrollController`); all data access stays in the view model.
 class MapPickupScreen extends ConsumerStatefulWidget {
-  const MapPickupScreen({
-    super.key,
-    this.caption = 'Pickup here',
-    this.onConfirmed,
-  });
+  const MapPickupScreen({super.key, this.caption, this.onConfirmed});
 
-  /// What the pinned place is for, shown above its address on the card.
-  final String caption;
+  /// What the pinned place is for, shown above its address on the card;
+  /// null reads "Pickup here" in the app's language.
+  final String? caption;
 
   /// Invoked with the confirmed pickup. Defaults to popping and returning it.
   final void Function(BuildContext context, PickupLocation pickup)? onConfirmed;
@@ -43,7 +41,7 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
   /// Whether the platform map SDK is ready to build a `GoogleMap`. Instant on
   /// mobile (native SDK); on web it awaits the injected Maps JS SDK.
   bool _mapsReady = false;
-  String? _mapsError;
+  _MapsProblem? _mapsError;
 
   static LatLng _toLatLng(GeoPoint p) => LatLng(p.latitude, p.longitude);
   static GeoPoint _toGeo(LatLng p) =>
@@ -67,26 +65,14 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
     // No Google Maps key in this build: say so plainly rather than building a
     // map that cannot render.
     if (!GoogleMapsConfig.isConfigured) {
-      if (mounted) {
-        setState(() {
-          _mapsError =
-              "The map isn't set up yet. Go back and search for your "
-              'pickup instead.';
-        });
-      }
+      if (mounted) setState(() => _mapsError = _MapsProblem.notSetUp);
       return;
     }
     try {
       await ensureWebMapsReady();
       if (mounted) setState(() => _mapsReady = true);
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _mapsError =
-              "Couldn't load the map. Check your connection, or that the "
-              'Maps API key allows this site.';
-        });
-      }
+      if (mounted) setState(() => _mapsError = _MapsProblem.loadFailed);
     }
   }
 
@@ -116,6 +102,7 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
     final vm = ref.watch(mapPickupViewModelProvider);
 
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final showMap = _mapsError == null && vm.isReady && _mapsReady;
 
     return Scaffold(
@@ -124,13 +111,13 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
       extendBodyBehindAppBar: showMap,
       appBar: AppBar(
         backgroundColor: showMap ? Colors.transparent : null,
-        title: showMap ? null : const Text('Pin on map'),
+        title: showMap ? null : Text(l10n.mapPickerTitle),
         leadingWidth: 72,
         leading: Padding(
           padding: const EdgeInsets.only(left: Skyline.s16),
           child: Center(
             child: _FloatingSquareButton(
-              tooltip: 'Back',
+              tooltip: l10n.commonBack,
               icon: Icons.arrow_back_rounded,
               onPressed: () => Navigator.of(context).maybePop(),
             ),
@@ -138,7 +125,10 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
         ),
       ),
       body: _mapsError != null
-          ? _errorState(_mapsError!)
+          ? _errorState(switch (_mapsError!) {
+              _MapsProblem.notSetUp => l10n.mapPickerNotSetUp,
+              _MapsProblem.loadFailed => l10n.mapPickerLoadFailed,
+            })
           : !showMap
           ? const Center(child: CircularProgressIndicator())
           : Stack(
@@ -170,7 +160,7 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
                           Padding(
                             padding: const EdgeInsets.all(Skyline.s16),
                             child: _FloatingSquareButton(
-                              tooltip: 'Use my current location',
+                              tooltip: l10n.locationUseCurrent,
                               icon: Icons.my_location_rounded,
                               iconColor: t.primaryText,
                               onPressed: () => _locateMe(vm),
@@ -228,7 +218,7 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
                 });
                 _loadMapsSdk();
               },
-              child: const Text('Try again'),
+              child: Text(context.l10n.commonTryAgain),
             ),
           ],
         ),
@@ -236,6 +226,10 @@ class _MapPickupScreenState extends ConsumerState<MapPickupScreen> {
     );
   }
 }
+
+/// Why the map can't be shown: no Maps key in this build, or (on the web)
+/// its script didn't load.
+enum _MapsProblem { notSetUp, loadFailed }
 
 /// The stationary marker centred over the map. Purely decorative — the pinned
 /// coordinate comes from the camera target, not from this widget.

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../data/cars_repository.dart';
 import '../../domain/car.dart';
 import '../../domain/car_type.dart';
@@ -77,7 +78,7 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
       if (mounted) setState(() => _errorMessage = e.message);
     } on Exception {
       if (mounted) {
-        setState(() => _errorMessage = "Couldn't save the car. Try again.");
+        setState(() => _errorMessage = context.l10n.carsSaveFailed);
       }
     }
   }
@@ -85,6 +86,7 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     final isSaving = ref.watch(
       savedCarsViewModelProvider.select((vm) => vm.isSaving),
     );
@@ -101,29 +103,29 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Add a car',
+              l10n.carsAdd,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Saved once, offered on every booking.',
+              l10n.carsAddSubtitle,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 20),
             SarthiTextField(
-              label: 'Registration number',
+              label: l10n.carsRegistrationLabel,
               controller: _registration,
-              hintText: 'e.g. KA 01 AB 1234',
+              hintText: l10n.carsRegistrationHint,
               textCapitalization: TextCapitalization.characters,
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9 -]')),
               ],
               errorText: _registration.text.isNotEmpty && !_registrationValid
-                  ? 'Enter the full registration number.'
+                  ? l10n.carsRegistrationIncomplete
                   : null,
               onChanged: (_) => setState(() => _errorMessage = null),
             ),
@@ -151,7 +153,7 @@ class _AddCarSheetState extends ConsumerState<AddCarSheet> {
             ],
             const SizedBox(height: 20),
             SarthiPrimaryButton(
-              label: isSaving ? 'Saving…' : 'Save car',
+              label: isSaving ? l10n.carsSaving : l10n.carsSave,
               onPressed: _canSave ? _save : null,
             ),
           ],

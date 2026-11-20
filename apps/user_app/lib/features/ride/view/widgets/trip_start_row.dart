@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/pickup_location.dart';
+
+/// What the start of a trip is called on a step: the "Starting point" of a
+/// One-Way route, or Round Trip's "Pickup".
+enum TripStartKind { startingPoint, pickup }
 
 /// The "From" row on top of the One-Way route step (and Round Trip's pickup
 /// row): the starting point, filled from GPS, tappable to change.
@@ -14,7 +19,7 @@ class TripStartRow extends StatelessWidget {
     required this.start,
     required this.isLocating,
     this.isCurrentLocation = false,
-    this.label = 'Starting point',
+    this.kind = TripStartKind.startingPoint,
     this.onTap,
   });
 
@@ -26,24 +31,31 @@ class TripStartRow extends StatelessWidget {
   final bool isCurrentLocation;
 
   /// What the place is called on this step — "Starting point", "Pickup".
-  final String label;
+  final TripStartKind kind;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final start = this.start;
+    final pickup = kind == TripStartKind.pickup;
     final (title, subtitle) = switch ((start, isLocating)) {
       (final s?, _) => (
         s.address,
         isCurrentLocation
-            ? 'From your current location · tap to change'
-            : '$label · tap to change',
+            ? l10n.tripStartFromCurrentLocation
+            : pickup
+            ? l10n.tripStartPickupTapToChange
+            : l10n.tripStartStartingPointTapToChange,
       ),
-      (null, true) => ('Finding your location…', label),
+      (null, true) => (
+        l10n.tripStartFindingLocation,
+        pickup ? l10n.tripStartPickup : l10n.tripStartStartingPoint,
+      ),
       (null, false) => (
-        'Choose a ${label.toLowerCase()}',
-        "Couldn't use your current location",
+        pickup ? l10n.tripStartChoosePickup : l10n.tripStartChooseStartingPoint,
+        l10n.tripStartNoCurrentLocation,
       ),
     };
     return SkylineRow(

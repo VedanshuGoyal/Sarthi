@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/my_booking.dart';
 import '../ride_providers.dart';
 import '../view_model/my_bookings_view_model.dart';
@@ -22,23 +23,24 @@ class ActivityPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(myBookingsViewModelProvider);
+    final l10n = context.l10n;
     final tabs = <(String, List<MyBooking>, _EmptyMessage)>[
       (
-        'Upcoming',
+        l10n.activityTabUpcoming,
         vm.active,
-        const _EmptyMessage(
+        _EmptyMessage(
           icon: Icons.event_available_rounded,
-          title: 'No upcoming rides',
-          body: 'Rides you book from Home show up here until they finish.',
+          title: l10n.activityNoUpcomingTitle,
+          body: l10n.activityNoUpcomingBody,
         ),
       ),
       (
-        'Completed',
+        l10n.activityTabCompleted,
         vm.past,
-        const _EmptyMessage(
+        _EmptyMessage(
           icon: Icons.task_alt_rounded,
-          title: 'No completed rides yet',
-          body: 'Finished trips and their fares show up here.',
+          title: l10n.activityNoCompletedTitle,
+          body: l10n.activityNoCompletedBody,
         ),
       ),
     ];
@@ -47,7 +49,7 @@ class ActivityPanel extends ConsumerWidget {
       length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Activity'),
+          title: Text(l10n.activityTitle),
           bottom: TabBar(
             tabs: [
               for (final (label, bookings, _) in tabs)
@@ -100,11 +102,11 @@ class _BookingList extends StatelessWidget {
     } else if (bookings.isEmpty && vm.error != null) {
       content = _EmptyMessage(
         icon: Icons.cloud_off_rounded,
-        title: "Couldn't load your rides",
+        title: context.l10n.activityLoadFailed,
         body: vm.error!,
         action: OutlinedButton(
           onPressed: vm.load,
-          child: const Text('Try again'),
+          child: Text(context.l10n.commonTryAgain),
         ),
       );
     } else if (bookings.isEmpty) {

@@ -7,6 +7,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../../core/config/google_maps_config.dart';
 import '../../../../core/maps/web_maps_loader.dart';
+import '../../../../l10n/l10n.dart';
 import '../../domain/geo_point.dart';
 
 /// A small live map of the pickup and the driver's latest position, framed
@@ -126,7 +127,7 @@ class _LiveRideMapState extends State<LiveRideMap> {
         markerId: const MarkerId('pickup'),
         position: _toLatLng(pickup),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        infoWindow: const InfoWindow(title: 'Pickup'),
+        infoWindow: InfoWindow(title: context.l10n.liveMapPickup),
       ),
     if (widget.driver case final driver?)
       Marker(
@@ -138,7 +139,7 @@ class _LiveRideMapState extends State<LiveRideMap> {
         anchor: const Offset(0.5, 0.5),
         flat: true,
         rotation: widget.heading ?? 0,
-        infoWindow: const InfoWindow(title: 'Your driver'),
+        infoWindow: InfoWindow(title: context.l10n.liveMapYourDriver),
       ),
   };
 

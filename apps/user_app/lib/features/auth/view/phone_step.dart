@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../../core/brand/mojud_logo.dart';
+import '../../../l10n/l10n.dart';
+import '../../language/view/language_switch.dart';
 import '../auth_providers.dart';
 
 /// Step 1 — collect the customer's +91 mobile number.
@@ -37,12 +39,16 @@ class _PhoneStepState extends ConsumerState<PhoneStep> {
     // (landscape phones, small windows) it gives way so the form and its
     // Continue button stay in view.
     final roomy = MediaQuery.sizeOf(context).height >= 700;
+    final l10n = context.l10n;
     return SarthiFormScaffold(
+      // English or Hindi before sign-in, whatever the phone is set to.
+      actions: const [LanguageMenuButton()],
       header: roomy ? const _BrandHeader() : null,
-      title: 'Enter your mobile number',
-      subtitle: "We'll text you a one-time code to verify it's you.",
+      title: l10n.authPhoneTitle,
+      subtitle: l10n.authPhoneSubtitle,
       fields: [
         SarthiPhoneField(
+          label: l10n.authMobileNumberLabel,
           controller: _controller,
           autofocus: true,
           errorText: vm.errorText,
@@ -51,7 +57,7 @@ class _PhoneStepState extends ConsumerState<PhoneStep> {
         ),
       ],
       footer: SarthiPrimaryButton(
-        label: 'Continue',
+        label: l10n.commonContinue,
         isLoading: vm.isLoading,
         onPressed: vm.submitPhone,
       ),
@@ -64,11 +70,15 @@ class _PhoneStepState extends ConsumerState<PhoneStep> {
 class _BrandHeader extends StatelessWidget {
   const _BrandHeader();
 
-  static const _services = ['By the hour', 'One-way', 'Multi-stop'];
-
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    final services = [
+      l10n.authServiceByTheHour,
+      l10n.authServiceOneWay,
+      l10n.authServiceMultiStop,
+    ];
     return Container(
       padding: const EdgeInsets.all(Skyline.s20),
       decoration: BoxDecoration(
@@ -80,18 +90,15 @@ class _BrandHeader extends StatelessWidget {
         children: [
           const MojudLockup(markHeight: 28),
           const SizedBox(height: Skyline.s16),
-          Text('Your car, our driver.', style: t.heading(22)),
+          Text(l10n.authBrandTagline, style: t.heading(22)),
           const SizedBox(height: Skyline.s4),
-          Text(
-            'Book a driver for your own car, whenever you need one.',
-            style: t.body(size: 14),
-          ),
+          Text(l10n.authBrandBody, style: t.body(size: 14)),
           const SizedBox(height: Skyline.s16),
           Wrap(
             spacing: Skyline.s8,
             runSpacing: Skyline.s8,
             children: [
-              for (final service in _services)
+              for (final service in services)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: Skyline.s12,

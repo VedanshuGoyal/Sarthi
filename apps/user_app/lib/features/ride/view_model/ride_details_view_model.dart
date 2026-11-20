@@ -49,13 +49,20 @@ class RideMilestone {
 }
 
 /// A ride's steps from booking to completion — or to where it ended early.
+/// In the app's language ([L10n.current]); a cancel reason the customer
+/// picked reads in it too, one they typed as typed.
 List<RideMilestone> rideTimeline(MyBooking b) {
+  final l10n = L10n.current;
   final steps = <(String, DateTime?, String?)>[
-    ('Booked', b.createdAt, null),
-    ('Driver assigned', b.acceptedAt, b.driverName),
-    ('Driver arrived', b.arrivedAt, null),
-    ('Trip started', b.startedAt, null),
-    (b.endedEarly ? 'Ended early' : 'Completed', b.completedAt, null),
+    (l10n.rideTimelineBooked, b.createdAt, null),
+    (l10n.rideTimelineDriverAssigned, b.acceptedAt, b.driverName),
+    (l10n.rideTimelineDriverArrived, b.arrivedAt, null),
+    (l10n.rideTimelineTripStarted, b.startedAt, null),
+    (
+      b.endedEarly ? l10n.rideTimelineEndedEarly : l10n.rideTimelineCompleted,
+      b.completedAt,
+      null,
+    ),
   ];
   // How many steps in the ride got, counting from Booked.
   final reached = switch (b.status) {
@@ -90,15 +97,19 @@ List<RideMilestone> rideTimeline(MyBooking b) {
         ),
     if (b.status == BookingStatus.cancelled)
       RideMilestone(
-        label: b.cancelledByLabelIn(L10n.current) ?? 'Cancelled',
+        label:
+            b.cancelledByLabelIn(l10n) ?? BookingStatus.cancelled.labelIn(l10n),
         at: b.cancelledAt,
-        detail: b.cancelReason,
+        detail: switch (b.cancelReason) {
+          final reason? => cancelReasonLabel(reason, l10n),
+          null => null,
+        },
         state: MilestoneState.ended,
       ),
     if (b.status == BookingStatus.expired)
-      const RideMilestone(
-        label: 'No driver found',
-        detail: 'No driver accepted in time.',
+      RideMilestone(
+        label: BookingStatus.expired.labelIn(l10n),
+        detail: l10n.rideTimelineNoDriverDetail,
         state: MilestoneState.ended,
       ),
   ];
@@ -258,42 +269,49 @@ class RideDetailsViewModel extends ChangeNotifier {
 
   /// One line under the map: "Ravi is 2.3 km away · updated 10 s ago".
   String get trackingLine {
+    final l10n = L10n.current;
     final b = _booking;
     final location = _location;
     if (b == null || location == null) {
       return _locationChecked
-          ? "Waiting for your driver's location"
-          : "Finding your driver's location…";
+          ? l10n.rideTrackingWaiting
+          : l10n.rideTrackingFinding;
     }
-    final name = b.driverFirstName ?? 'Your driver';
+    final name = b.driverFirstName ?? l10n.rideYourDriver;
     final metres = driverDistanceMetres;
     final String where;
     if (b.status == BookingStatus.inProgress) {
-      where = '$name is on your trip';
+      where = l10n.rideTrackingOnTrip(name);
     } else if (metres == null) {
-      where = "$name's location";
+      where = l10n.rideTrackingLocation(name);
     } else if (b.status == BookingStatus.arrived && metres < 100) {
-      where = '$name is at your pickup';
+      where = l10n.rideAtYourPickup(name);
     } else {
-      where = '$name is ${formatDistance(metres)} away';
+      where = l10n.rideTrackingAway(name, formatDistance(metres));
     }
     final age = formatAge(_now().difference(location.updatedAt));
-    return '$where · updated $age';
+    return l10n.rideTrackingUpdated(where, age);
   }
 
   /// "350 m", "2.3 km", "14 km".
   static String formatDistance(double metres) {
-    if (metres < 1000) return '${(metres / 10).round() * 10} m';
+    final l10n = L10n.current;
+    if (metres < 1000) {
+      return l10n.rideDistanceMeters((metres / 10).round() * 10);
+    }
     final km = metres / 1000;
-    return km < 10 ? '${km.toStringAsFixed(1)} km' : '${km.round()} km';
+    return l10n.rideDistanceKm(
+      km < 10 ? km.toStringAsFixed(1) : '${km.round()}',
+    );
   }
 
   /// "just now", "10 s ago", "3 min ago", "2 h ago".
   static String formatAge(Duration age) {
-    if (age.inSeconds < 5) return 'just now';
-    if (age.inMinutes < 1) return '${age.inSeconds} s ago';
-    if (age.inHours < 1) return '${age.inMinutes} min ago';
-    return '${age.inHours} h ago';
+    final l10n = L10n.current;
+    if (age.inSeconds < 5) return l10n.rideAgeJustNow;
+    if (age.inMinutes < 1) return l10n.rideAgeSeconds(age.inSeconds);
+    if (age.inHours < 1) return l10n.rideAgeMinutes(age.inMinutes);
+    return l10n.rideAgeHours(age.inHours);
   }
 
   /// The screen is showing: poll while the ride allows it.
@@ -419,15 +437,12 @@ class RideDetailsViewModel extends ChangeNotifier {
         if (cancelFeePaise > acceptFeePaise) return CancelOutcome.feeChanged;
         // Refused for a fee neither the server nor the list names: don't
         // offer the same free cancel again.
-        _cancelError =
-            'Cancelling now has a fee. Pull down to refresh, then try again.';
+        _cancelError = L10n.current.rideErrorCancelHasFee;
         return CancelOutcome.failed;
       }
       _cancelError = switch (e.code) {
-        BookingErrorCode.wrongState =>
-          'This ride has already started or finished, so it can no longer '
-              'be cancelled.',
-        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        BookingErrorCode.wrongState => L10n.current.rideErrorCannotCancel,
+        BookingErrorCode.notFound => L10n.current.rideErrorNotFound,
         _ => e.message,
       };
       // The ride moved on without us; show where it is now.
@@ -471,8 +486,8 @@ class RideDetailsViewModel extends ChangeNotifier {
           e.code == BookingErrorCode.cannotEnd ||
           e.code == BookingErrorCode.wrongState;
       _endError = switch (e.code) {
-        _ when movedOn => "This trip isn't in progress any more.",
-        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        _ when movedOn => L10n.current.rideErrorNotInProgress,
+        BookingErrorCode.notFound => L10n.current.rideErrorNotFound,
         _ => e.message,
       };
       // The driver may have ended it already; show where it is now.
@@ -532,11 +547,11 @@ class RideDetailsViewModel extends ChangeNotifier {
       return true;
     } on BookingActionException catch (e) {
       _ratingError = switch (e.code) {
-        BookingErrorCode.wrongState => 'This ride has already been rated.',
-        BookingErrorCode.invalidRating =>
-          'Pick 1 to 5 stars, and keep the note under $maxRatingNoteLength '
-              'characters.',
-        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        BookingErrorCode.wrongState => L10n.current.rideErrorAlreadyRated,
+        BookingErrorCode.invalidRating => L10n.current.rideErrorInvalidRating(
+          maxRatingNoteLength,
+        ),
+        BookingErrorCode.notFound => L10n.current.rideErrorNotFound,
         _ => e.message,
       };
       if (e.code == BookingErrorCode.wrongState) unawaited(_bookings.load());
@@ -559,9 +574,7 @@ class RideDetailsViewModel extends ChangeNotifier {
   /// The check made on opening a due ride; [pay] waits for it.
   Future<MyBooking?>? _openCheck;
 
-  static const String _stillConfirming =
-      "We're still confirming your payment with the bank. This ride will "
-      'show as paid in a minute or two.';
+  static String get _stillConfirming => L10n.current.ridePayStillConfirming;
 
   bool get isPaying => _isPaying;
 
@@ -621,17 +634,15 @@ class RideDetailsViewModel extends ChangeNotifier {
       }
       _payError = switch (outcome) {
         CheckoutOutcome.success => _stillConfirming,
-        CheckoutOutcome.failure =>
-          "The payment didn't go through. Please try again.",
-        CheckoutOutcome.interrupted => 'Payment cancelled.',
+        CheckoutOutcome.failure => L10n.current.ridePayFailed,
+        CheckoutOutcome.interrupted => L10n.current.ridePayCancelled,
       };
       return false;
     } on BookingActionException catch (e) {
       _payError = switch (e.code) {
-        BookingErrorCode.paymentsOff =>
-          "Paying in the app isn't available yet.",
-        BookingErrorCode.wrongState => "This ride can't be paid for yet.",
-        BookingErrorCode.notFound => "We couldn't find this ride any more.",
+        BookingErrorCode.paymentsOff => L10n.current.ridePayUnavailable,
+        BookingErrorCode.wrongState => L10n.current.ridePayNotYet,
+        BookingErrorCode.notFound => L10n.current.rideErrorNotFound,
         _ => e.message,
       };
       return false;

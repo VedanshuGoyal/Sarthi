@@ -95,6 +95,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
       if (reason == null || !mounted) return;
       final outcome = await vm.cancel(reason: reason, acceptFeePaise: fee);
       if (!mounted) return;
+      final l10n = context.l10n;
       switch (outcome) {
         case CancelOutcome.feeChanged:
           lastReason = reason;
@@ -103,12 +104,13 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
           final owed = vm.booking;
           _say(
             owed != null && owed.canPay
-                ? 'Your ride is cancelled. Please pay the '
-                      '${RideFormat.rupees(owed.chargePaise)} fee.'
-                : 'Your ride is cancelled.',
+                ? l10n.rideDetailsCancelledPayFee(
+                    RideFormat.rupees(owed.chargePaise),
+                  )
+                : l10n.rideDetailsCancelled,
           );
         case CancelOutcome.failed:
-          _say(vm.cancelError ?? "Couldn't cancel the ride.");
+          _say(vm.cancelError ?? l10n.rideDetailsCancelFailed);
       }
       return;
     }
@@ -118,22 +120,23 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
     if (!await showEndTripDialog(context, booking) || !mounted) return;
     final ended = await vm.endTrip();
     if (!mounted) return;
+    final l10n = context.l10n;
     _say(
       ended
-          ? 'Your trip has ended.'
-          : vm.endTripError ?? "Couldn't end the trip.",
+          ? l10n.rideDetailsTripEnded
+          : vm.endTripError ?? l10n.rideDetailsEndFailed,
     );
   }
 
   Future<void> _pay(RideDetailsViewModel vm) async {
     if (await vm.pay() && mounted) {
-      _say('Payment received. Thank you!');
+      _say(context.l10n.rideDetailsPaymentReceived);
     }
   }
 
   Future<void> _rate(RideDetailsViewModel vm) async {
     if (await vm.submitRating() && mounted) {
-      _say('Thanks for rating your trip.');
+      _say(context.l10n.rideDetailsThanksForRating);
     }
   }
 
@@ -141,13 +144,14 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
   Widget build(BuildContext context) {
     final vm = ref.watch(rideDetailsViewModelProvider(widget.bookingId));
     final booking = vm.booking;
+    final l10n = context.l10n;
     if (booking == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Your ride')),
-        body: const Center(
+        appBar: AppBar(title: Text(l10n.rideDetailsTitleMissing)),
+        body: Center(
           child: Padding(
-            padding: EdgeInsets.all(Skyline.s24),
-            child: Text("This ride isn't in your list any more."),
+            padding: const EdgeInsets.all(Skyline.s24),
+            child: Text(l10n.rideDetailsNotInList),
           ),
         ),
       );
@@ -157,10 +161,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
     final live = <Widget>[
       _StatusHeader(booking: booking),
       if (vm.isPastBookedTime)
-        RideNote(
-          text: RideFormat.pastBookedTime,
-          icon: Icons.schedule_rounded,
-        ),
+        RideNote(text: RideFormat.pastBookedTime, icon: Icons.schedule_rounded),
       if (vm.isTracking)
         _TrackingCard(
           line: vm.trackingLine,
@@ -215,7 +216,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.stop_circle_outlined),
-          label: const Text('End trip now'),
+          label: Text(l10n.endTripNow),
         ),
       ],
       if (booking.canCancel) ...[
@@ -230,7 +231,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.close_rounded),
-          label: const Text('Cancel ride'),
+          label: Text(l10n.rideDetailsCancelRide),
         ),
       ],
     ];
@@ -246,7 +247,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text(RideFormat.tripLabel(booking.tripType))),
+      appBar: AppBar(title: Text(booking.tripType.labelIn(l10n))),
       body: RefreshIndicator(
         onRefresh: vm.refresh,
         child: LayoutBuilder(
@@ -296,40 +297,45 @@ class _StatusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final b = booking;
-    final name = b.driverFirstName ?? 'Your driver';
+    final name = b.driverFirstName ?? l10n.rideYourDriver;
     final (headline, detail) = switch (b.status) {
       BookingStatus.requested => (
-        'Finding you a driver',
-        "We'll let you know as soon as one accepts.",
+        l10n.rideDetailsFindingDriver,
+        l10n.rideDetailsFindingDriverDetail,
       ),
       BookingStatus.accepted => (
-        '$name is your driver',
-        'Pickup ${RideFormat.when(context, b.scheduledAt)}',
+        l10n.rideIsYourDriver(name),
+        l10n.rideDetailsPickupWhen(RideFormat.when(context, b.scheduledAt)),
       ),
       BookingStatus.arrived => (
-        '$name is at your pickup',
-        'Share the start code when you meet.',
+        l10n.rideAtYourPickup(name),
+        l10n.rideDetailsShareStartCode,
       ),
       BookingStatus.inProgress => (
-        'On your trip',
+        l10n.rideDetailsOnYourTrip,
         b.startedAt == null
-            ? '$name is driving.'
-            : 'Started ${RideFormat.when(context, b.startedAt!)}',
+            ? l10n.rideIsDriving(name)
+            : l10n.rideDetailsStartedWhen(
+                RideFormat.when(context, b.startedAt!),
+              ),
       ),
       BookingStatus.completed => (
-        b.endedEarly ? 'Trip ended early' : 'Trip completed',
+        b.endedEarly
+            ? l10n.rideDetailsTripEndedEarly
+            : l10n.rideDetailsTripCompleted,
         RideFormat.endedEarly(b) ??
             RideFormat.ranOver(b) ??
             RideFormat.when(context, b.completedAt ?? b.scheduledAt),
       ),
       BookingStatus.cancelled => (
-        'Ride cancelled',
-        b.cancellationSummaryIn(context.l10n) ?? 'This ride was cancelled.',
+        l10n.rideDetailsRideCancelled,
+        b.cancellationSummaryIn(l10n) ?? l10n.rideDetailsWasCancelled,
       ),
       BookingStatus.expired => (
-        'No driver found',
-        'No driver accepted in time. Please book again.',
+        BookingStatus.expired.labelIn(l10n),
+        l10n.rideDetailsNoDriverDetail,
       ),
     };
     return SkylineCard(
@@ -337,30 +343,40 @@ class _StatusHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: t.primarySoft,
-                  borderRadius: BorderRadius.circular(Skyline.radiusSm),
+          // A long status (Hindi runs long) takes at most half the row and
+          // wraps, rather than pushing the date off a narrow phone.
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: t.primarySoft,
+                    borderRadius: BorderRadius.circular(Skyline.radiusSm),
+                  ),
+                  child: Icon(
+                    RideFormat.tripIcon(b.tripType),
+                    color: t.primaryText,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  RideFormat.tripIcon(b.tripType),
-                  color: t.primaryText,
-                  size: 20,
+                const SizedBox(width: Skyline.s12),
+                Expanded(
+                  child: Text(
+                    RideFormat.when(context, b.scheduledAt),
+                    style: t.body(size: 13),
+                  ),
                 ),
-              ),
-              const SizedBox(width: Skyline.s12),
-              Expanded(
-                child: Text(
-                  RideFormat.when(context, b.scheduledAt),
-                  style: t.body(size: 13),
+                const SizedBox(width: Skyline.s8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth / 2,
+                  ),
+                  child: BookingStatusPill(status: b.status),
                 ),
-              ),
-              BookingStatusPill(status: b.status),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: Skyline.s12),
           Text(headline, style: t.heading(22)),
@@ -426,14 +442,14 @@ class _PaymentCard extends StatelessWidget {
     if (booking.paymentStatus == RidePaymentStatus.paid) {
       return ReceiptCard(booking: booking);
     }
+    final l10n = context.l10n;
     final error = vm.payError;
     final fee = booking.hasCancellationFee;
     return SkylineSection(
-      title: fee ? 'Pay the cancellation fee' : 'Pay for your trip',
-      subtitle:
-          '${fee ? 'You cancelled after your driver reached the pickup. ' : ''}'
-          'Pay $amount with any UPI app: GPay, PhonePe, Paytm or your '
-          "bank's.",
+      title: fee ? l10n.rideDetailsPayFeeTitle : l10n.rideDetailsPayTripTitle,
+      subtitle: fee
+          ? l10n.rideDetailsPayFeeSubtitle(amount)
+          : l10n.rideDetailsPayTripSubtitle(amount),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -446,7 +462,9 @@ class _PaymentCard extends StatelessWidget {
                   )
                 : const Icon(Icons.qr_code_2_rounded),
             label: Text(
-              vm.isPaying ? 'Waiting for UPI…' : 'Pay $amount by UPI',
+              vm.isPaying
+                  ? l10n.rideDetailsWaitingForUpi
+                  : l10n.rideDetailsPayByUpi(amount),
             ),
           ),
           if (carried case final dues?) ...[
@@ -478,15 +496,17 @@ class _RatingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     if (booking.myRating case final rating?) {
       return SkylineCard(
         padding: const EdgeInsets.all(Skyline.s16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text('You rated ', style: t.title(15)),
+                Text(l10n.rideDetailsYouRated, style: t.title(15)),
                 StarRow(stars: rating.stars),
               ],
             ),
@@ -499,10 +519,11 @@ class _RatingCard extends StatelessWidget {
       );
     }
     return SkylineSection(
-      title: 'Rate your driver',
-      subtitle: booking.driverFirstName == null
-          ? 'How was your trip?'
-          : 'How was your trip with ${booking.driverFirstName}?',
+      title: l10n.rideDetailsRateDriver,
+      subtitle: switch (booking.driverFirstName) {
+        final name? => l10n.rideDetailsHowWasTripWith(name),
+        null => l10n.rideDetailsHowWasTrip,
+      },
       child: RatingForm(
         stars: vm.ratingStars,
         onStars: vm.setRatingStars,
@@ -525,25 +546,40 @@ class _RouteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = booking;
+    final l10n = context.l10n;
     // (icon, stop number, label, address, errand, leave-by)
     final places = <(IconData?, int?, String, String, String?, DateTime?)>[
-      (Icons.trip_origin_rounded, null, 'Pickup', b.pickupAddress, null, null),
+      (
+        Icons.trip_origin_rounded,
+        null,
+        l10n.rideDetailsRoutePickup,
+        b.pickupAddress,
+        null,
+        null,
+      ),
       for (final (i, stop) in b.stops.indexed)
         (
           null,
           i + 1,
-          'Stop ${i + 1}',
+          l10n.rideDetailsRouteStop(i + 1),
           stop.address,
           stop.task.isEmpty ? null : stop.task,
           stop.departBy,
         ),
       if (b.destinationAddress case final destination?)
-        (Icons.place_rounded, null, 'Destination', destination, null, null),
+        (
+          Icons.place_rounded,
+          null,
+          l10n.rideDetailsRouteDestination,
+          destination,
+          null,
+          null,
+        ),
     ];
     return SkylineSection(
-      title: 'Route',
+      title: l10n.rideDetailsRoute,
       subtitle: b.stops.isEmpty && b.stopCount > 0
-          ? '${b.stopCount} ${b.stopCount == 1 ? 'stop' : 'stops'} planned'
+          ? l10n.rideDetailsStopsPlanned(b.stopCount)
           : null,
       child: Column(
         children: [
@@ -557,7 +593,7 @@ class _RouteCard extends StatelessWidget {
               task: task,
               departBy: departBy == null
                   ? null
-                  : 'Leave by ${RideFormat.time(context, departBy)}',
+                  : l10n.rideDetailsLeaveBy(RideFormat.time(context, departBy)),
               last: i == places.length - 1,
             ),
         ],
@@ -659,25 +695,30 @@ class _TripInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = booking;
+    final l10n = context.l10n;
     final duration = b.duration;
     final car = RideFormat.car(b);
+    final fare = l10n.rideFare;
     final rows = <(String, String)>[
-      ('Trip', RideFormat.tripLabel(b.tripType)),
-      ('Starts', RideFormat.when(context, b.scheduledAt)),
+      (l10n.rideDetailsInfoTrip, b.tripType.labelIn(l10n)),
+      (l10n.rideDetailsInfoStarts, RideFormat.when(context, b.scheduledAt)),
       if (duration != null)
         b.tripType == TripType.roundTrip && b.hours != null
-            ? ('Booked for', RideFormat.duration(duration))
-            : ('Est. duration', '≈ ${RideFormat.duration(duration)}'),
-      if (car != null) ('Car', car),
-      ('Fare', RideFormat.fare(b)),
+            ? (l10n.rideDetailsInfoBookedFor, RideFormat.duration(duration))
+            : (
+                l10n.rideDetailsInfoEstDuration,
+                '≈ ${RideFormat.duration(duration)}',
+              ),
+      if (car != null) (l10n.rideDetailsInfoCar, car),
+      (fare, RideFormat.fare(b)),
       if (b.bookedFarePaise case final booked? when b.chargedByTime)
-        ('Booked fare', RideFormat.rupees(booked)),
+        (l10n.rideBookedFare, RideFormat.rupees(booked)),
       if (b.hasCancellationFee)
-        ('Cancellation fee', RideFormat.rupees(b.cancellationFeePaise)),
+        (l10n.rideCancellationFee, RideFormat.rupees(b.cancellationFeePaise)),
     ];
     final t = SkylineTokens.of(context);
     return SkylineSection(
-      title: 'Trip details',
+      title: l10n.rideDetailsTripDetails,
       child: Column(
         children: [
           for (final (i, (label, value)) in rows.indexed) ...[
@@ -692,7 +733,7 @@ class _TripInfoCard extends StatelessWidget {
                   child: Text(
                     value,
                     textAlign: TextAlign.end,
-                    style: label == 'Fare' ? t.title(16) : t.title(13.5),
+                    style: label == fare ? t.title(16) : t.title(13.5),
                   ),
                 ),
               ],
@@ -715,7 +756,7 @@ class _TimelineCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
     return SkylineSection(
-      title: 'Timeline',
+      title: context.l10n.rideDetailsTimeline,
       child: Column(
         children: [
           for (final (i, step) in milestones.indexed)

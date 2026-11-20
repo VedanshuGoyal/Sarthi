@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../core/config/google_maps_config.dart';
 import '../../../core/config/ola_maps_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/geo_point.dart';
 import '../domain/pickup_location.dart';
 import '../domain/place_suggestion.dart';
@@ -185,7 +186,7 @@ class LocationRepository {
         if (found) return Duration(seconds: seconds);
       }
     }
-    throw const LocationException('Unexpected response from the maps service.');
+    throw LocationException(L10n.current.locationUnexpectedReply);
   }
 
   /// Traffic-aware drive time for a future departure, via the Google Routes
@@ -197,9 +198,7 @@ class LocationRepository {
     DateTime departureAt,
   ) async {
     if (_routesApiKey.isEmpty) {
-      throw const LocationException(
-        'Drive-time estimates are not set up on this build.',
-      );
+      throw LocationException(L10n.current.locationDriveTimeNotSetUp);
     }
 
     final departure = departureAt.toUtc();
@@ -219,7 +218,7 @@ class LocationRepository {
         if (seconds != null) return Duration(seconds: seconds);
       }
     }
-    throw const LocationException('Unexpected response from the maps service.');
+    throw LocationException(L10n.current.locationUnexpectedReply);
   }
 
   /// A Routes API waypoint literal for [point].
@@ -255,20 +254,16 @@ class LocationRepository {
         body: jsonEncode(body),
       );
     } catch (_) {
-      throw const LocationException(
-        "Can't reach the maps service. Check your connection and try again.",
-      );
+      throw LocationException(L10n.current.locationNoConnection);
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw LocationException(
-        'The maps service is unavailable right now. Please try again.',
-      );
+      throw LocationException(L10n.current.locationServiceUnavailable);
     }
 
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) return decoded;
-    throw const LocationException('Unexpected response from the maps service.');
+    throw LocationException(L10n.current.locationUnexpectedReply);
   }
 
   /// Reads the device's current position and reverse-geocodes it into a
@@ -387,20 +382,16 @@ class LocationRepository {
           ? await _client.post(uri, headers: headers)
           : await _client.get(uri, headers: headers);
     } catch (_) {
-      throw const LocationException(
-        "Can't reach the maps service. Check your connection and try again.",
-      );
+      throw LocationException(L10n.current.locationNoConnection);
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw LocationException(
-        'The maps service is unavailable right now. Please try again.',
-      );
+      throw LocationException(L10n.current.locationServiceUnavailable);
     }
 
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) return decoded;
-    throw const LocationException('Unexpected response from the maps service.');
+    throw LocationException(L10n.current.locationUnexpectedReply);
   }
 
   /// How long to wait for a fresh fix. Indoors a high-accuracy fix can take
@@ -422,17 +413,13 @@ class LocationRepository {
       rethrow;
     } catch (_) {
       // A permission prompt already open, a platform error, a timeout.
-      throw const LocationException(
-        "Couldn't find your location. Search for your pickup instead.",
-      );
+      throw LocationException(L10n.current.locationNotFound);
     }
   }
 
   static Future<GeoPoint> _readDevicePosition() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
-      throw const LocationServiceDisabledException(
-        'Location is turned off. Switch it on to use your current spot.',
-      );
+      throw LocationServiceDisabledException(L10n.current.locationTurnedOff);
     }
 
     var permission = await Geolocator.checkPermission();
@@ -440,14 +427,12 @@ class LocationRepository {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.denied) {
-      throw const LocationPermissionException(
-        'Location permission was declined. Search for your pickup instead.',
+      throw LocationPermissionException(
+        L10n.current.locationPermissionDeclined,
       );
     }
     if (permission == LocationPermission.deniedForever) {
-      throw const LocationPermissionException(
-        'Location is blocked. Enable it in Settings, or search instead.',
-      );
+      throw LocationPermissionException(L10n.current.locationBlocked);
     }
 
     Position position;

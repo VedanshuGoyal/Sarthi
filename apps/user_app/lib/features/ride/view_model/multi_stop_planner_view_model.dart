@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/car.dart';
 import '../domain/multi_stop_trip.dart';
 import '../domain/pickup_location.dart';
@@ -179,17 +180,21 @@ class MultiStopPlannerViewModel extends ChangeNotifier {
   String? timeErrorFor(int id) => _timeErrors[id];
 
   Map<int, String> get _timeErrors {
+    final l10n = L10n.current;
     final errors = <int, String>{};
     var lastAt = _scheduledAt;
-    var lastLabel = 'the start time';
+    // The 1-based number of the last timed stop; null while that's the start.
+    int? lastStop;
     for (final (i, stop) in _stops.indexed) {
       final departBy = stop.departBy;
       if (departBy == null) continue;
       if (!departBy.isAfter(lastAt)) {
-        errors[stop.id] = 'Leave-by must be after $lastLabel.';
+        errors[stop.id] = lastStop == null
+            ? l10n.multiStopLeaveByAfterStart
+            : l10n.multiStopLeaveByAfterStop(lastStop);
       } else {
         lastAt = departBy;
-        lastLabel = 'stop ${i + 1}';
+        lastStop = i + 1;
       }
     }
     return errors;

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../data/location_repository.dart';
 import '../domain/pickup_location.dart';
 import '../domain/service_area.dart';
@@ -79,7 +80,7 @@ class TripStartViewModel extends ChangeNotifier {
       } else {
         _start = null;
         _isCurrentLocation = false;
-        _error = ServiceArea.outsideMessage;
+        _error = L10n.current.serviceAreaOutside;
       }
     } on LocationException {
       // Keep the remembered spot.
@@ -99,7 +100,7 @@ class TripStartViewModel extends ChangeNotifier {
       // A manual pick may have landed while GPS was resolving — it wins.
       if (_start != null) return _start;
       if (!ServiceArea.contains(here.point)) {
-        _error = ServiceArea.outsideMessage;
+        _error = L10n.current.serviceAreaOutside;
         return null;
       }
       _start = here;

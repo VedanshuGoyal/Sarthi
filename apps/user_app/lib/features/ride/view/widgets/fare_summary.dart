@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// A single-line fare readout: a label and hire caption on the left, the amount
 /// on the right.
 ///
@@ -33,6 +35,7 @@ class FareSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final l10n = context.l10n;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -42,13 +45,15 @@ class FareSummary extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                approximate ? 'Estimated fare from' : 'Estimated fare',
+                approximate
+                    ? l10n.fareSummaryEstimatedFrom
+                    : l10n.fareSummaryEstimated,
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
               ),
               Text(
-                'for $hours ${hours == 1 ? 'hour' : 'hours'}',
+                l10n.fareSummaryForHours(hours),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),

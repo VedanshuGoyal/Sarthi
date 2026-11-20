@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:phonepe_payment_sdk/phonepe_payment_sdk.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/payment_checkout.dart';
 
 /// How the payment page closed, as the gateway's SDK reports it. Only the
@@ -62,7 +63,7 @@ class PhonePeUpiCheckout implements UpiCheckout {
           false,
         );
         if (!ok) {
-          throw const UpiCheckoutException("PhonePe couldn't start.");
+          throw UpiCheckoutException(L10n.current.checkoutCouldNotStart);
         }
         _initialisedFor = key;
       }
@@ -80,11 +81,12 @@ class PhonePeUpiCheckout implements UpiCheckout {
         _ => CheckoutOutcome.interrupted,
       };
     } on PlatformException catch (e) {
-      throw UpiCheckoutException(e.message ?? "PhonePe couldn't open.");
-    } on MissingPluginException {
-      throw const UpiCheckoutException(
-        'Paying by UPI works in the Android app.',
+      // The SDK's own message, as it sent it, when it gave one.
+      throw UpiCheckoutException(
+        e.message ?? L10n.current.checkoutCouldNotOpen,
       );
+    } on MissingPluginException {
+      throw UpiCheckoutException(L10n.current.checkoutAndroidOnly);
     }
   }
 

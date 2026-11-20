@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../data/location_repository.dart';
 import '../domain/pickup_location.dart';
 import '../domain/place_suggestion.dart';
@@ -113,7 +114,7 @@ class PickupSelectionViewModel extends ChangeNotifier {
 
     final point = suggestion.point;
     if (point == null) {
-      _error = "Couldn't pin that place. Try another result.";
+      _error = L10n.current.pickupCantPin;
       _notify();
       return null;
     }
@@ -166,11 +167,11 @@ class PickupSelectionViewModel extends ChangeNotifier {
   }
 
   /// Adopts [location] as the selection when it's inside the [ServiceArea];
-  /// otherwise leaves the selection untouched, surfaces [ServiceArea.outsideMessage]
+  /// otherwise leaves the selection untouched, surfaces the out-of-area note
   /// and returns null. The single gate every pickup source passes through.
   PickupLocation? _selectWithinArea(PickupLocation location) {
     if (!ServiceArea.contains(location.point)) {
-      _error = ServiceArea.outsideMessage;
+      _error = L10n.current.serviceAreaOutside;
       _notify();
       return null;
     }

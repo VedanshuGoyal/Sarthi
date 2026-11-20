@@ -2,35 +2,36 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../profile_providers.dart';
 
-/// What deleting an account removes, and what MOJUD has to keep.
-const String deleteAccountExplanation =
-    "We'll remove your name, email, phone number, saved cars and recent "
-    'pickups, and sign you out on every device. Records of past rides and '
-    'payments are kept, without your details, because the law requires us '
-    "to keep them. This can't be undone.";
+/// What deleting an account removes, and what MOJUD has to keep — in the
+/// app's language.
+String get deleteAccountExplanation => L10n.current.accountDeleteExplanation;
 
 /// Asks the customer to confirm deleting their account; true when they do.
 Future<bool> showDeleteAccountDialog(BuildContext context) async {
   final t = SkylineTokens.of(context);
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Delete your account?'),
-      content: const Text(deleteAccountExplanation),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: t.danger),
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Delete account'),
-        ),
-      ],
-    ),
+    builder: (context) {
+      final l10n = context.l10n;
+      return AlertDialog(
+        title: Text(l10n.accountDeleteConfirmTitle),
+        content: Text(l10n.accountDeleteExplanation),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.commonCancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: t.danger),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.accountDelete),
+          ),
+        ],
+      );
+    },
   );
   return confirmed ?? false;
 }
@@ -45,16 +46,11 @@ class DeleteAccountButton extends ConsumerWidget {
     if (!await showDeleteAccountDialog(context) || !context.mounted) return;
     final vm = ref.read(accountDeletionViewModelProvider);
     final messenger = ScaffoldMessenger.of(context);
+    final failed = context.l10n.accountDeleteFailed;
     if (await vm.deleteAccount()) return;
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            vm.errorText ?? "Couldn't delete your account. Please try again.",
-          ),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(vm.errorText ?? failed)));
   }
 
   @override
@@ -71,7 +67,9 @@ class DeleteAccountButton extends ConsumerWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.delete_forever_rounded),
-      label: Text(deleting ? 'Deleting your account…' : 'Delete account'),
+      label: Text(
+        deleting ? context.l10n.accountDeleting : context.l10n.accountDelete,
+      ),
       style: TextButton.styleFrom(foregroundColor: t.danger),
     );
   }

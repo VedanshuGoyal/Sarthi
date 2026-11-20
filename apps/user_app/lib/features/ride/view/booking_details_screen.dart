@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/pickup_location.dart';
 import '../domain/round_trip_booking.dart';
-import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/booking_details_view_model.dart';
 import '../view_model/trip_start_view_model.dart';
@@ -90,15 +90,12 @@ class BookingDetailsScreen extends ConsumerWidget {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Estimated fare'),
-        content: const Text(
-          'Prices may vary based on the final pickup or drop location and the '
-          'time taken. Time past your booked hours is charged by the hour.',
-        ),
+        title: Text(context.l10n.roundTripFareNoteTitle),
+        content: Text(context.l10n.roundTripFareNoteBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
+            child: Text(context.l10n.roundTripFareNoteOk),
           ),
         ],
       ),
@@ -119,20 +116,21 @@ class BookingDetailsScreen extends ConsumerWidget {
     final savedCars = ref.watch(savedCarsViewModelProvider);
     final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     final pickup = start.start;
     final booking = pickup == null ? null : vm.bookingFrom(pickup);
     final String? hint = switch ((pickup, vm.car)) {
-      (null, _) when start.isLocating => 'Finding your location…',
-      (null, _) => 'Choose your pickup to continue.',
-      (_, null) => 'Choose your car to continue.',
-      _ when vm.isTooSoon => tooSoonHint,
+      (null, _) when start.isLocating => l10n.tripStartFindingLocation,
+      (null, _) => l10n.roundTripChoosePickupToContinue,
+      (_, null) => l10n.bookingDetailsChooseCarToContinue,
+      _ when vm.isTooSoon => l10n.scheduleTooSoon,
       _ => null,
     };
 
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Trip details')),
+        appBar: AppBar(title: Text(l10n.roundTripTitle)),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -144,7 +142,7 @@ class BookingDetailsScreen extends ConsumerWidget {
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                       children: [
                         TripStartRow(
-                          label: 'Pickup',
+                          kind: TripStartKind.pickup,
                           start: pickup,
                           isLocating: start.isLocating,
                           isCurrentLocation: start.isCurrentLocation,
@@ -152,8 +150,8 @@ class BookingDetailsScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'How long?',
-                          subtitle: 'Hire a driver by the hour.',
+                          title: l10n.roundTripHowLong,
+                          subtitle: l10n.roundTripHowLongSubtitle,
                           child: HoursSelector(
                             hours: vm.hours,
                             quickHours: BookingDetailsViewModel.quickHours,
@@ -166,8 +164,8 @@ class BookingDetailsScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'When?',
-                          subtitle: 'Pick a start date and time.',
+                          title: l10n.roundTripWhen,
+                          subtitle: l10n.roundTripWhenSubtitle,
                           child: ScheduleField(
                             scheduledAt: vm.scheduledAt,
                             onTapDate: () => _pickDate(context, vm),
@@ -176,8 +174,8 @@ class BookingDetailsScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'Which car?',
-                          subtitle: 'The driver drives your car — pick one.',
+                          title: l10n.bookingDetailsWhichCar,
+                          subtitle: l10n.bookingDetailsWhichCarSubtitle,
                           child: CarSelectorField(
                             cars: savedCars.cars,
                             selected: vm.car,
@@ -222,7 +220,7 @@ class BookingDetailsScreen extends ConsumerWidget {
                             child: RideNote(text: RideFormat.carriedNote(owed)),
                           ),
                         SarthiPrimaryButton(
-                          label: 'Confirm booking',
+                          label: l10n.roundTripConfirm,
                           onPressed: booking == null
                               ? null
                               : () => _confirm(context, booking),

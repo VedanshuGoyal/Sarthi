@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarthi_shared/sarthi_shared.dart';
+import '../../../l10n/l10n.dart';
 import '../../auth/domain/auth_user.dart';
+import '../../language/view/language_switch.dart';
 import 'widgets/delete_account_button.dart';
 import 'widgets/saved_cars_section.dart';
 import 'widgets/user_avatar.dart';
 
 /// The customer's account page: who Sarthi thinks they are, their saved cars,
-/// plus the way out.
+/// the app's language (English / हिंदी), plus the way out.
 ///
 /// It displays the [AuthUser] it is given and emits [onLogout] — the owner
 /// handles session teardown and navigation. The saved-cars block manages
@@ -24,15 +26,10 @@ class ProfileScreen extends StatelessWidget {
   /// "Delete account", which manages itself through its view model.
   final VoidCallback? onLogout;
 
-  /// Formats a date as `12 Jan 2000` without pulling in `intl` (same style the
-  /// registration flow shows for the date of birth).
-  static String _formatDate(DateTime d) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${d.day} ${months[d.month - 1]} ${d.year}';
-  }
+  /// Formats a date as `12 Jan 2000` (`12 जनवरी 2000`) without pulling in
+  /// `intl` (same style the registration flow shows for the date of birth).
+  static String _formatDate(AppLocalizations l10n, DateTime d) =>
+      l10n.fmtDateWithYear(d.day, l10n.monthShort(d.month), d.year);
 
   /// Spaces an Indian number as `+91 98765 43210`; anything else (short test
   /// fixtures, foreign formats) is shown untouched.
@@ -47,8 +44,9 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return Scaffold(
-      appBar: AppBar(title: const Text('Your profile')),
+      appBar: AppBar(title: Text(l10n.accountYourProfile)),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -86,18 +84,18 @@ class ProfileScreen extends StatelessWidget {
                     children: [
                       _DetailTile(
                         icon: Icons.phone_rounded,
-                        label: 'Mobile number',
+                        label: l10n.authMobileNumberLabel,
                         value: _formatPhone(user.phoneE164),
                       ),
                       _DetailTile(
                         icon: Icons.mail_rounded,
-                        label: 'Email',
+                        label: l10n.authEmail,
                         value: user.email,
                       ),
                       _DetailTile(
                         icon: Icons.cake_rounded,
-                        label: 'Date of birth',
-                        value: _formatDate(user.dateOfBirth),
+                        label: l10n.authDateOfBirth,
+                        value: _formatDate(l10n, user.dateOfBirth),
                       ),
                     ],
                   ),
@@ -107,12 +105,15 @@ class ProfileScreen extends StatelessWidget {
                   padding: EdgeInsets.all(Skyline.s16),
                   child: SavedCarsSection(),
                 ),
+                const SizedBox(height: Skyline.s16),
+                // English / हिंदी, saved on this phone.
+                const LanguageSwitch(),
                 if (onLogout != null) ...[
                   const SizedBox(height: Skyline.s24),
                   OutlinedButton.icon(
                     onPressed: onLogout,
                     icon: const Icon(Icons.logout_rounded),
-                    label: const Text('Log out'),
+                    label: Text(l10n.accountLogOut),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: t.danger,
                       side: BorderSide(color: t.danger.withValues(alpha: 0.35)),

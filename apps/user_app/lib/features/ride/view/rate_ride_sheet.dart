@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/my_booking.dart';
 import '../ride_providers.dart';
 import 'widgets/ride_format.dart';
@@ -57,8 +58,8 @@ class RateRideSheet extends ConsumerWidget {
           children: [
             Text(
               name == null
-                  ? 'How was your trip?'
-                  : 'How was your trip with $name?',
+                  ? context.l10n.rateTitle
+                  : context.l10n.rateTitleWithDriver(name),
               style: t.title(20),
               textAlign: TextAlign.center,
             ),
@@ -82,7 +83,7 @@ class RateRideSheet extends ConsumerWidget {
             const SizedBox(height: Skyline.s8),
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Not now'),
+              child: Text(context.l10n.rateNotNow),
             ),
           ],
         ),

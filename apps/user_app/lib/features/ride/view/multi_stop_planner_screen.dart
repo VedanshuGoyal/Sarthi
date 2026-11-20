@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/multi_stop_trip.dart';
 import '../domain/pickup_location.dart';
-import '../domain/scheduling.dart' show tooSoonHint;
 import '../ride_providers.dart';
 import '../view_model/multi_stop_planner_view_model.dart';
 import 'pickup_location_screen.dart';
@@ -126,11 +126,12 @@ class _MultiStopPlannerScreenState
     MultiStopPlannerViewModel vm,
     StopDraft stop,
   ) async {
+    final l10n = context.l10n;
     final location = await Navigator.of(context).push<PickupLocation>(
       MaterialPageRoute(
-        builder: (_) => const PickupLocationScreen(
-          title: 'Set stop location',
-          fieldLabel: 'Stop location',
+        builder: (_) => PickupLocationScreen(
+          title: l10n.multiStopSetStopLocation,
+          fieldLabel: l10n.multiStopStopLocation,
         ),
       ),
     );
@@ -156,11 +157,12 @@ class _MultiStopPlannerScreenState
     final savedCars = ref.watch(savedCarsViewModelProvider);
     final owed = ref.watch(myBookingsViewModelProvider.select((b) => b.owed));
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return Theme(
       data: rideSurfaceTheme(context),
       child: Scaffold(
-        appBar: AppBar(title: const Text('Plan your trip')),
+        appBar: AppBar(title: Text(l10n.multiStopTitle)),
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -174,9 +176,8 @@ class _MultiStopPlannerScreenState
                         _StartSummary(address: vm.start.address),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'When do we start?',
-                          subtitle:
-                              'The driver meets you at the starting point.',
+                          title: l10n.multiStopWhenStart,
+                          subtitle: l10n.multiStopWhenStartSubtitle,
                           child: ScheduleField(
                             scheduledAt: vm.scheduledAt,
                             onTapDate: () => _pickStartDate(vm),
@@ -185,8 +186,8 @@ class _MultiStopPlannerScreenState
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'Which car?',
-                          subtitle: 'The driver drives your car — pick one.',
+                          title: l10n.bookingDetailsWhichCar,
+                          subtitle: l10n.bookingDetailsWhichCarSubtitle,
                           child: CarSelectorField(
                             cars: savedCars.cars,
                             selected: vm.car,
@@ -199,10 +200,8 @@ class _MultiStopPlannerScreenState
                         ),
                         const SizedBox(height: 24),
                         _Section(
-                          title: 'Stops',
-                          subtitle:
-                              'List each errand in order — where to go, what to '
-                              'do there, and when to move on.',
+                          title: l10n.multiStopStops,
+                          subtitle: l10n.multiStopStopsSubtitle,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -235,8 +234,10 @@ class _MultiStopPlannerScreenState
                                 ),
                                 label: Text(
                                   vm.canAddStop
-                                      ? 'Add stop'
-                                      : 'Up to ${MultiStopPlannerViewModel.maxStops} stops',
+                                      ? l10n.multiStopAddStop
+                                      : l10n.multiStopMaxStops(
+                                          MultiStopPlannerViewModel.maxStops,
+                                        ),
                                 ),
                                 onPressed: vm.canAddStop ? vm.addStop : null,
                               ),
@@ -261,7 +262,7 @@ class _MultiStopPlannerScreenState
                             child: RideNote(text: RideFormat.carriedNote(owed)),
                           ),
                         SarthiPrimaryButton(
-                          label: 'Confirm trip',
+                          label: l10n.multiStopConfirm,
                           onPressed: vm.canConfirm
                               ? () => _confirm(vm.trip!)
                               : null,
@@ -285,23 +286,21 @@ class _MultiStopPlannerScreenState
     MultiStopPlannerViewModel vm,
     ThemeData theme,
   ) {
+    final l10n = context.l10n;
     final String text;
     if (vm.canConfirm) {
-      final l10n = MaterialLocalizations.of(context);
       final endsAt = vm.endsAt!;
-      final count = vm.stops.length;
-      text =
-          '$count ${count == 1 ? 'stop' : 'stops'} · wraps up by '
-          '${l10n.formatMediumDate(endsAt)}, '
-          '${l10n.formatTimeOfDay(TimeOfDay.fromDateTime(endsAt))}';
+      text = l10n.multiStopSummary(
+        vm.stops.length,
+        RideFormat.date(l10n, endsAt),
+        RideFormat.time(context, endsAt),
+      );
     } else if (vm.isTooSoon) {
-      text = tooSoonHint;
+      text = l10n.scheduleTooSoon;
     } else if (!vm.stopsReady) {
-      text =
-          'Give every stop a location, a task, and a leave-by time to '
-          'continue.';
+      text = l10n.multiStopStopsIncomplete;
     } else {
-      text = 'Choose your car to continue.';
+      text = l10n.bookingDetailsChooseCarToContinue;
     }
     return Text(
       text,
@@ -320,8 +319,10 @@ class _StartSummary extends StatelessWidget {
   final String address;
 
   @override
-  Widget build(BuildContext context) =>
-      SkylinePlaceSummary(label: 'Starting point', address: address);
+  Widget build(BuildContext context) => SkylinePlaceSummary(
+    label: context.l10n.tripStartStartingPoint,
+    address: address,
+  );
 }
 
 /// A titled section: a heading (with optional [subtitle]) above its [child].

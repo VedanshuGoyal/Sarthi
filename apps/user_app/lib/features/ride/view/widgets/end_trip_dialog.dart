@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
 
 /// Asks whether to end [booking]'s trip now; resolves true when the
@@ -25,33 +26,26 @@ class EndTripDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return AlertDialog(
-      title: const Text('End trip now?'),
+      title: Text(l10n.endTripTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "You'll pay by the hour for the time used. Each started hour "
-            'counts as a full hour.',
-            style: t.body(color: t.ink),
-          ),
+          Text(l10n.endTripByTheHour, style: t.body(color: t.ink)),
           const SizedBox(height: Skyline.s8),
-          Text(
-            "If you're past your booked time, the extra hours are charged "
-            'too, after a ${overtimeGrace.inMinutes}-minute grace.',
-            style: t.body(),
-          ),
+          Text(l10n.endTripOvertime(overtimeGrace.inMinutes), style: t.body()),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Keep going'),
+          child: Text(l10n.endTripKeepGoing),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('End trip now'),
+          child: Text(l10n.endTripNow),
         ),
       ],
     );

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../l10n/l10n.dart';
+
 /// Opens [url] outside the app; true if something took it.
 typedef UrlOpener = Future<bool> Function(Uri url);
 
@@ -54,6 +56,7 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final site = widget.downloadUrl
         .replaceFirst(RegExp('^https?://'), '')
         .replaceFirst(RegExp(r'/$'), '');
@@ -85,29 +88,26 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                   ),
                   const SizedBox(height: Skyline.s32),
                   Text(
-                    'Update MOJUD',
+                    l10n.updateTitle,
                     textAlign: TextAlign.center,
                     style: t.heading(28),
                   ),
                   const SizedBox(height: Skyline.s12),
                   Text(
-                    'This version of the app is out of date. Install the '
-                    'latest one to keep booking drivers. Your account and '
-                    'rides are safe.',
+                    l10n.updateBody,
                     textAlign: TextAlign.center,
                     style: t.body(size: 15),
                   ),
                   const SizedBox(height: Skyline.s32),
                   SarthiPrimaryButton(
-                    label: 'Get the latest version',
+                    label: l10n.updateGetLatest,
                     onPressed: _open,
                   ),
                   const SizedBox(height: Skyline.s16),
                   Text(
                     _openFailed
-                        ? "Couldn't open a browser. Copy the link and open "
-                              'it in one: $site'
-                        : 'Download it from $site',
+                        ? l10n.updateOpenFailed(site)
+                        : l10n.updateDownloadFrom(site),
                     textAlign: TextAlign.center,
                     style: t.label(color: _openFailed ? t.danger : t.inkMuted),
                   ),
@@ -119,7 +119,9 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
                         _copied ? Icons.check_rounded : Icons.copy_rounded,
                         size: 18,
                       ),
-                      label: Text(_copied ? 'Link copied' : 'Copy link'),
+                      label: Text(
+                        _copied ? l10n.updateLinkCopied : l10n.updateCopyLink,
+                      ),
                     ),
                   ),
                 ],

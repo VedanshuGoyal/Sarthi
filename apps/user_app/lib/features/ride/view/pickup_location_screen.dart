@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../../core/config/google_maps_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
 import '../view_model/pickup_selection_view_model.dart';
@@ -26,17 +27,18 @@ import 'widgets/recent_location_tile.dart';
 class PickupLocationScreen extends ConsumerStatefulWidget {
   const PickupLocationScreen({
     super.key,
-    this.title = 'Set pickup',
-    this.fieldLabel = 'Pickup location',
+    this.title,
+    this.fieldLabel,
     this.header,
     this.offerCurrentLocation = true,
     this.onConfirmed,
   });
 
-  /// The app-bar title and search-field label — overridden when the screen is
-  /// choosing something other than a Round Trip pickup.
-  final String title;
-  final String fieldLabel;
+  /// The app-bar title and search-field label — given when the screen is
+  /// choosing something other than a Round Trip pickup; null reads "Set
+  /// pickup" / "Pickup location" in the app's language.
+  final String? title;
+  final String? fieldLabel;
 
   /// Shown at the top of the search card, above the field — e.g. the One-Way
   /// step's "From" row.
@@ -100,20 +102,24 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
   Future<void> _pickOnMap(PickupSelectionViewModel vm) async {
     final pickup = await Navigator.of(context).push<PickupLocation>(
       MaterialPageRoute(
-        builder: (_) => MapPickupScreen(caption: widget.fieldLabel),
+        builder: (context) => MapPickupScreen(caption: _fieldLabel(context)),
       ),
     );
     if (pickup == null || !mounted) return;
     await _choose(vm, vm.selectFromMap(pickup));
   }
 
+  String _fieldLabel(BuildContext context) =>
+      widget.fieldLabel ?? context.l10n.pickupField;
+
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(pickupSelectionViewModelProvider);
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(title: Text(widget.title ?? l10n.pickupTitle)),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -151,8 +157,8 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                           onChanged: vm.onQueryChanged,
                           style: t.title(16, weight: FontWeight.w600),
                           decoration: InputDecoration(
-                            labelText: widget.fieldLabel,
-                            hintText: 'Search for a place',
+                            labelText: _fieldLabel(context),
+                            hintText: l10n.pickupSearchHint,
                             prefixIcon: Icon(
                               Icons.search_rounded,
                               color: t.primaryText,
@@ -172,13 +178,13 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
                           if (GoogleMapsConfig.isConfigured)
                             SkylineRow(
                               icon: Icons.map_rounded,
-                              title: 'Select on map',
+                              title: l10n.pickupSelectOnMap,
                               accent: true,
                               onTap: () => _pickOnMap(vm),
                             ),
                         ] else if (GoogleMapsConfig.isConfigured)
                           CurrentLocationButton(
-                            subtitle: 'Opens the map to adjust the pin',
+                            subtitle: l10n.pickupMapSubtitle,
                             onPressed: () => _pickOnMap(vm),
                           )
                         else
@@ -233,7 +239,7 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
               Skyline.s4,
               Skyline.s8,
             ),
-            child: Text('Recent', style: t.title(15)),
+            child: Text(context.l10n.pickupRecent, style: t.title(15)),
           ),
           Flexible(
             child: _listCard(
@@ -266,8 +272,8 @@ class _PickupLocationScreenState extends ConsumerState<PickupLocationScreen> {
           const SizedBox(height: Skyline.s12),
           Text(
             widget.offerCurrentLocation
-                ? 'Search for a place, or use your current location.'
-                : 'Search for a place, or select it on the map.',
+                ? context.l10n.pickupEmptyWithLocation
+                : context.l10n.pickupEmptyWithMap,
             textAlign: TextAlign.center,
             style: t.body(size: 14),
           ),

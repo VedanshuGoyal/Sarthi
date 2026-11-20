@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/auth_session.dart';
 
 /// Raised when the backend rejects a request (bad OTP, duplicate account, …).
@@ -42,8 +43,11 @@ class AccountBusyException extends AuthException {
 /// Raised when the server no longer accepts the session (401). The app's
 /// HTTP client has already started signing the customer out.
 class SessionExpiredException extends AuthException {
-  const SessionExpiredException()
-    : super('Your session has expired. Please sign in again.');
+  const SessionExpiredException() : super('');
+
+  /// In the app's language, when it's read.
+  @override
+  String get message => L10n.current.authSessionExpired;
 }
 
 /// The single entry point for authentication/registration data access.
@@ -145,9 +149,7 @@ class AuthRepository {
         headers: {if (bearer != null) 'Authorization': 'Bearer $bearer'},
       );
     } catch (_) {
-      throw const AuthException(
-        "Can't reach the server. Check your connection and try again.",
-      );
+      throw AuthException(L10n.current.errorNoConnection);
     }
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     if (response.statusCode == 401) throw const SessionExpiredException();
@@ -175,9 +177,7 @@ class AuthRepository {
         body: jsonEncode(payload),
       );
     } catch (_) {
-      throw const AuthException(
-        "Can't reach the server. Check your connection and try again.",
-      );
+      throw AuthException(L10n.current.errorNoConnection);
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -193,7 +193,7 @@ class AuthRepository {
     final body = _decodeBody(response);
     final message = switch (body['error']) {
       final String m => m,
-      _ => 'Something went wrong. Please try again.',
+      _ => L10n.current.errorGeneric,
     };
     switch (body['code']) {
       case 'otp_incorrect':

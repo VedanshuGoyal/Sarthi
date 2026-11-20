@@ -30,8 +30,10 @@ class BookingStatusPill extends StatelessWidget {
         color: fill,
         borderRadius: BorderRadius.circular(999),
       ),
+      // Centred, so a status that wraps on a narrow row reads as one tag.
       child: Text(
         status.labelIn(context.l10n),
+        textAlign: TextAlign.center,
         style: t.label(size: 12, color: ink),
       ),
     );

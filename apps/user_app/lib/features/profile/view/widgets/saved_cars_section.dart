@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../../ride/data/cars_repository.dart';
 import '../../../ride/domain/car.dart';
+import '../../../ride/ride_labels.dart';
 import '../../../ride/ride_providers.dart';
 import '../../../ride/view/widgets/add_car_sheet.dart';
-import '../../../ride/view/widgets/car_options_fields.dart';
 
 /// The profile's "My cars" block: every saved car with a remove action, plus
 /// the same add-car sheet the booking steps use.
@@ -31,6 +32,7 @@ class SavedCarsSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(savedCarsViewModelProvider);
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -38,7 +40,7 @@ class SavedCarsSection extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
-            'My cars',
+            l10n.carsMyCars,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -63,21 +65,21 @@ class SavedCarsSection extends ConsumerWidget {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
-                    "Couldn't load your cars.",
+                    l10n.carsLoadFailed,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.error,
                     ),
                   ),
                 ),
               ),
-              TextButton(onPressed: vm.load, child: const Text('Retry')),
+              TextButton(onPressed: vm.load, child: Text(l10n.carsRetry)),
             ],
           )
         else if (vm.cars.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: Text(
-              'No saved cars yet — add yours once and pick it on every trip.',
+              l10n.carsNoneYet,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -93,8 +95,8 @@ class SavedCarsSection extends ConsumerWidget {
               ),
               title: Text(car.registration, style: theme.textTheme.bodyLarge),
               subtitle: Text(
-                '${CarOptionsFields.carTypeLabel(car.type)}'
-                ' · ${CarOptionsFields.transmissionLabel(car.transmission)}',
+                '${car.type.labelIn(l10n)}'
+                ' · ${car.transmission.labelIn(l10n)}',
               ),
               trailing: vm.removing == car
                   ? const SizedBox(
@@ -104,7 +106,7 @@ class SavedCarsSection extends ConsumerWidget {
                     )
                   : IconButton(
                       icon: const Icon(Icons.delete_outline),
-                      tooltip: 'Remove car',
+                      tooltip: l10n.carsRemove,
                       onPressed: vm.removing != null
                           ? null
                           : () => _remove(context, ref, car),
@@ -115,7 +117,7 @@ class SavedCarsSection extends ConsumerWidget {
           child: TextButton.icon(
             onPressed: () => showAddCarSheet(context),
             icon: const Icon(Icons.add),
-            label: const Text('Add a car'),
+            label: Text(l10n.carsAdd),
           ),
         ),
       ],

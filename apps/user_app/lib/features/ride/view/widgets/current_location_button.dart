@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
+
 /// "Use my current location" action for the pickup step — opens the map picker
 /// on the GPS fix, or resolves GPS directly when there's no map.
 ///
@@ -24,7 +26,7 @@ class CurrentLocationButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SkylineRow(
       icon: Icons.my_location_rounded,
-      title: 'Use my current location',
+      title: context.l10n.locationUseCurrent,
       subtitle: subtitle,
       accent: true,
       leading: isBusy

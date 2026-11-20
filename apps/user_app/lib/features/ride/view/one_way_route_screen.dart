@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/one_way_trip.dart';
 import '../domain/pickup_location.dart';
 import '../ride_providers.dart';
@@ -42,7 +43,7 @@ class _OneWayRouteScreenState extends ConsumerState<OneWayRouteScreen> {
   ) async {
     final start = await Navigator.of(context).push<PickupLocation>(
       MaterialPageRoute(
-        builder: (_) => ProviderScope(
+        builder: (context) => ProviderScope(
           overrides: [
             pickupSelectionViewModelProvider.overrideWith(
               (ref) => PickupSelectionViewModel(
@@ -50,9 +51,9 @@ class _OneWayRouteScreenState extends ConsumerState<OneWayRouteScreen> {
               ),
             ),
           ],
-          child: const PickupLocationScreen(
-            title: 'Set starting point',
-            fieldLabel: 'Starting point',
+          child: PickupLocationScreen(
+            title: context.l10n.pickupStartTitle,
+            fieldLabel: context.l10n.pickupStartField,
           ),
         ),
       ),
@@ -87,8 +88,8 @@ class _OneWayRouteScreenState extends ConsumerState<OneWayRouteScreen> {
   Widget build(BuildContext context) {
     final vm = ref.watch(tripStartViewModelProvider);
     return PickupLocationScreen(
-      title: 'Where to?',
-      fieldLabel: 'Destination',
+      title: context.l10n.oneWayRouteTitle,
+      fieldLabel: context.l10n.oneWayRouteField,
       offerCurrentLocation: false,
       header: TripStartRow(
         start: vm.start,
