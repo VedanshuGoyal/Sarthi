@@ -63,6 +63,7 @@ Sources are linked; "my reading" marks anything that isn't from them.
 | Government ID | — | ✓ Aadhaar (last 4 digits and name), driving licence |
 | Financial info | Payment status only; PhonePe takes the payment | ✓ bank account for payouts |
 | Device ID | ✓ push token | ✓ push token |
+| Crash logs and diagnostics | ✓ sent to Firebase Crashlytics | ✓ sent to Firebase Crashlytics |
 
 ## Next steps, in order
 
