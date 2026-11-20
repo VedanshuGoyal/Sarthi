@@ -109,9 +109,72 @@ class BookingStop {
   final DateTime? departBy;
 }
 
+/// What one line of a payment paid for.
+enum PaymentLineKind {
+  /// A finished ride's fare.
+  ride('ride'),
+
+  /// The fee of a ride cancelled once the driver was at the pickup.
+  cancellationFee('cancellation_fee');
+
+  const PaymentLineKind(this.wireName);
+
+  final String wireName;
+
+  /// Anything this app version doesn't know reads as a ride.
+  static PaymentLineKind fromWire(Object? value) =>
+      value == cancellationFee.wireName ? cancellationFee : ride;
+}
+
+/// One booking a payment paid, as its receipt lists it: which booking, what
+/// for, the server's short [label] for it ("Round trip · Tue 17 Nov") and
+/// its part of the payment.
+class PaymentLine {
+  const PaymentLine({
+    required this.bookingId,
+    required this.kind,
+    required this.label,
+    required this.amountPaise,
+  });
+
+  final String bookingId;
+  final PaymentLineKind kind;
+  final String label;
+  final int amountPaise;
+
+  /// Reads one entry of a payment's `lines`, or null when it names no
+  /// booking or no positive amount. A missing label reads as what it was
+  /// for.
+  static PaymentLine? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final id = json['bookingId'];
+    final amount = json['amountPaise'];
+    if (id is! String || id.isEmpty || amount is! num || amount <= 0) {
+      return null;
+    }
+    final kind = PaymentLineKind.fromWire(json['kind']);
+    final label = json['label'];
+    return PaymentLine(
+      bookingId: id,
+      kind: kind,
+      label: label is String && label.trim().isNotEmpty
+          ? label.trim()
+          : kind == PaymentLineKind.cancellationFee
+          ? 'Cancellation fee'
+          : 'Ride',
+      amountPaise: amount.toInt(),
+    );
+  }
+}
+
 /// How a paid ride was paid, for its receipt: the gateway's payment mode
 /// (`UPI_INTENT`, `UPI_QR`, …) or `CASH` / `WAIVED` for a ride MOJUD settled
 /// by hand, with the references a dispute would need.
+///
+/// One payment can pay several of the customer's bookings at once (what
+/// they owed on earlier rides is collected with their next payment):
+/// [totalPaise] is then what the whole payment came to and [lines] every
+/// booking it paid, this one included.
 class RidePayment {
   const RidePayment({
     required this.mode,
@@ -119,6 +182,8 @@ class RidePayment {
     this.transactionId,
     this.merchantOrderId,
     this.paidAt,
+    this.totalPaise,
+    this.lines = const [],
   });
 
   /// As the server sent it; may be empty.
@@ -127,6 +192,25 @@ class RidePayment {
   final String? transactionId;
   final String? merchantOrderId;
   final DateTime? paidAt;
+
+  /// What the whole payment came to; null from servers that don't say, and
+  /// for a ride settled by hand.
+  final int? totalPaise;
+
+  /// Every booking the payment paid; empty when the server didn't say.
+  final List<PaymentLine> lines;
+
+  /// What the payment paid besides booking [bookingId]: empty when it paid
+  /// that booking alone (or the server didn't list it).
+  List<PaymentLine> besides(String bookingId) => [
+    for (final line in lines)
+      if (line.bookingId != bookingId) line,
+  ];
+
+  /// What the whole payment came to: [totalPaise], else its [lines] added
+  /// up.
+  int get paidPaise =>
+      totalPaise ?? lines.fold(0, (sum, line) => sum + line.amountPaise);
 
   /// How the customer paid, in words: "UPI", "Cash", "Waived by MOJUD", or
   /// the gateway's mode made readable ("NET_BANKING" → "Net Banking").
@@ -150,12 +234,19 @@ class RidePayment {
     if (json is! Map) return null;
     final mode = json['mode'];
     final paidAt = json['paidAt'];
+    final total = json['totalPaise'];
+    final lines = json['lines'];
     return RidePayment(
       mode: mode is String ? mode : '',
       utr: _text(json['utr']),
       transactionId: _text(json['transactionId']),
       merchantOrderId: _text(json['merchantOrderId']),
       paidAt: paidAt is String ? DateTime.tryParse(paidAt)?.toLocal() : null,
+      totalPaise: total is num && total > 0 ? total.toInt() : null,
+      lines: [
+        if (lines is List)
+          for (final line in lines) ?PaymentLine.tryParse(line),
+      ],
     );
   }
 
@@ -364,6 +455,11 @@ class MyBooking {
   /// What paying for this booking collects: its own [chargePaise] plus what
   /// is owed on the customer's other bookings ([carriedPaise]).
   int get totalDuePaise => chargePaise + carriedPaise;
+
+  /// The customer's other bookings this booking's payment also paid — what
+  /// they owed on them, collected at the same time. Empty when it paid this
+  /// booking alone, or isn't paid yet.
+  List<PaymentLine> get paidTogetherWith => payment?.besides(id) ?? const [];
 
   /// The hours the trip is booked for: a Round Trip's [hours]; for the
   /// others, the booked window ([endsAt] − [scheduledAt]) rounded up to

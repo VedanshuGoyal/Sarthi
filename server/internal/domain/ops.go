@@ -28,7 +28,39 @@ type BookingPayment struct {
 	TransactionID   string    `json:"transactionId,omitempty"`
 	MerchantOrderID string    `json:"merchantOrderId,omitempty"`
 	PaidAt          time.Time `json:"paidAt"`
+
+	// TotalPaise is what the whole payment came to, and Lines every booking
+	// it paid — this one, plus any others of the customer's it collected at
+	// the same time (carried dues). Set for a payment made in the app;
+	// omitted for a ride settled by hand.
+	TotalPaise int64         `json:"totalPaise,omitempty"`
+	Lines      []PaymentLine `json:"lines,omitempty"`
 }
+
+// PaymentLine is one booking a customer's payment paid, as their receipt
+// lists it: which booking, whether it was a ride's fare or a cancellation
+// fee, a short label ("Round Trip · Mon 17 Nov") and its part of the
+// payment. Only ever the customer's own bookings.
+type PaymentLine struct {
+	BookingID   string          `json:"bookingId"`
+	Kind        PaymentLineKind `json:"kind"`
+	Label       string          `json:"label"`
+	AmountPaise int64           `json:"amountPaise"`
+
+	// TripType and ScheduledAt are what the service makes Label from.
+	TripType    string     `json:"-"`
+	ScheduledAt *time.Time `json:"-"`
+}
+
+// PaymentLineKind is what a receipt line was charged for.
+type PaymentLineKind string
+
+const (
+	// PaymentLineRide: a completed ride's fare.
+	PaymentLineRide PaymentLineKind = "ride"
+	// PaymentLineCancellationFee: the fee of a ride cancelled at the pickup.
+	PaymentLineCancellationFee PaymentLineKind = "cancellation_fee"
+)
 
 // FareBreakdown splits a round trip's fare into the hourly tariff and the
 // late-night surcharge. Both in paise.

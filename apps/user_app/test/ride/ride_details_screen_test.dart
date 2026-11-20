@@ -206,6 +206,47 @@ void main() {
       check(find.textContaining('by UPI').evaluate()).isEmpty();
     });
 
+    testWidgets('a payment that also paid another ride says so on the '
+        'receipt', (tester) async {
+      await _pump(
+        tester,
+        FakeBookingServer([
+          bookingJson(
+            status: 'completed',
+            paymentStatus: 'paid',
+            payment: {
+              'mode': 'UPI_INTENT',
+              'utr': '412345678901',
+              'merchantOrderId': 'MOJUD_b1_m3k9',
+              'paidAt': '2030-10-26T08:00:00Z',
+              'totalPaise': 88000,
+              'lines': [
+                {
+                  'bookingId': 'b0',
+                  'kind': 'ride',
+                  'label': 'One way · Fri 25 Oct',
+                  'amountPaise': 24000,
+                },
+                {
+                  'bookingId': 'b1',
+                  'kind': 'ride',
+                  'label': 'Multi-stop · Sat 26 Oct',
+                  'amountPaise': 64000,
+                },
+              ],
+            },
+          ),
+        ]),
+      );
+      await tester.ensureVisible(find.text('Total paid'));
+      await tester.pump();
+      check(_onReceipt('Paid ₹880 together with 1 other ride.')).isTrue();
+      check(_onReceipt('One way · Fri 25 Oct')).isTrue();
+      check(_onReceipt('₹240')).isTrue();
+      check(_onReceipt('₹880')).isTrue();
+      check(_onReceipt('Multi-stop · Sat 26 Oct')).isFalse();
+    });
+
     testWidgets('a ride settled by hand says how, without a reference', (
       tester,
     ) async {

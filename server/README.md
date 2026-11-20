@@ -95,6 +95,7 @@ Without the PhonePe variables the payment routes answer 503
 | ------ | ---- | ----- |
 | POST | `/me/bookings/{id}/payment` | Opens a UPI checkout for a completed ride → `{checkout:{environment, merchantId, orderId, token, …}}` for the app's PhonePe SDK. 409 `already_paid` / `booking_state` |
 | POST | `/me/bookings/{id}/payment/sync` | Re-checks the ride's open checkouts with PhonePe → `{booking}` (`paymentStatus` `due`/`paid`) |
+| GET | `/me/bookings` | Also every `{booking}` reply (cancel, end, rating, payment sync). A booking paid in the app has `payment.totalPaise` (the whole payment) and `payment.lines` `[{bookingId, kind: "ride"\|"cancellation_fee", label, amountPaise}]`: every booking of the customer's that one payment paid, this one included, oldest first |
 | POST | `/payments/phonepe/webhook` | PhonePe → us; `Authorization: SHA256(username:password)` |
 | GET | `/admin/payouts/due[?format=csv]` | Bearer `ADMIN_TOKEN`. Per driver: rides paid and not paid out, share after commission, bank details. CSV for a bank bulk upload; keep its `as_of` |
 | POST | `/admin/payouts` | Bearer `ADMIN_TOKEN`. `{driverId, reference: "<bank UTR>", asOf}` → marks those rides paid out; audited; "payout sent" push (`payout_sent`) to the driver |

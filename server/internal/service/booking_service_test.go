@@ -25,6 +25,27 @@ type fakeBookingStore struct {
 	// dues is what UnpaidDues reports the customer owes.
 	dues   []domain.Due
 	repeat *domain.Booking
+
+	// lines is what each payment order paid, by merchant order id, for
+	// PaymentLines; linesErr fails it. linesAsked records each call's ids.
+	lines      map[string][]domain.PaymentLine
+	linesErr   error
+	linesAsked [][]string
+}
+
+// PaymentLines answers with the preset lines of the orders asked for.
+func (f *fakeBookingStore) PaymentLines(_ context.Context, _ string, orders []string) (map[string][]domain.PaymentLine, error) {
+	f.linesAsked = append(f.linesAsked, orders)
+	if f.linesErr != nil {
+		return nil, f.linesErr
+	}
+	out := map[string][]domain.PaymentLine{}
+	for _, o := range orders {
+		if l, ok := f.lines[o]; ok {
+			out[o] = l
+		}
+	}
+	return out, nil
 }
 
 // DriverBusyElsewhere looks across every listed booking, whoever's it is.

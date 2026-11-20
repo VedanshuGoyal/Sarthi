@@ -46,6 +46,9 @@ func (s *submitStore) ListForUser(context.Context, string, int) ([]domain.UserBo
 func (s *submitStore) FindForUser(context.Context, string, string) (domain.UserBooking, error) {
 	return domain.UserBooking{}, repository.ErrBookingNotFound
 }
+func (s *submitStore) PaymentLines(context.Context, string, []string) (map[string][]domain.PaymentLine, error) {
+	return nil, nil
+}
 func (s *submitStore) Cancel(context.Context, string, string, string, time.Time, repository.PickupCancel) (domain.Booking, error) {
 	return domain.Booking{}, repository.ErrBookingStateConflict
 }

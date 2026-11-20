@@ -1058,3 +1058,51 @@ Widget receiptCancellationFeePreview() => Padding(
     ),
   ),
 );
+
+/// A Round Trip whose UPI payment also cleared an earlier cancellation fee:
+/// one payment, two lines.
+@Preview(
+  name: 'Receipt — paid together',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
+Widget receiptPaidTogetherPreview() {
+  final paidAt = DateTime.now().subtract(const Duration(hours: 20));
+  return Padding(
+    padding: const EdgeInsets.all(Skyline.s16),
+    child: ReceiptCard(
+      booking: MyBooking(
+        id: 'preview-paid',
+        tripType: TripType.roundTrip,
+        status: BookingStatus.completed,
+        scheduledAt: DateTime.now().subtract(const Duration(days: 1)),
+        pickupAddress: _bookingPickup.address,
+        hours: 2,
+        farePaise: 24000,
+        paymentStatus: RidePaymentStatus.paid,
+        paidAt: paidAt,
+        payment: RidePayment(
+          mode: 'UPI_INTENT',
+          utr: '412345678901',
+          merchantOrderId: 'MOJUD_3f1c9a2b7d8e4f60a1b2c3d4e5f60718_m3k9x2',
+          paidAt: paidAt,
+          totalPaise: 29000,
+          lines: const [
+            PaymentLine(
+              bookingId: 'preview-fee',
+              kind: PaymentLineKind.cancellationFee,
+              label: 'Cancellation fee · Sun 15 Nov',
+              amountPaise: 5000,
+            ),
+            PaymentLine(
+              bookingId: 'preview-paid',
+              kind: PaymentLineKind.ride,
+              label: 'Round trip · Tue 17 Nov',
+              amountPaise: 24000,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}

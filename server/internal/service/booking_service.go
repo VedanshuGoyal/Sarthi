@@ -84,6 +84,7 @@ type BookingStore interface {
 	UnpaidDues(ctx context.Context, userID string) ([]domain.Due, error)
 	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
+	PaymentLines(ctx context.Context, userID string, merchantOrderIDs []string) (map[string][]domain.PaymentLine, error)
 	Cancel(ctx context.Context, id, userID, reason string, at time.Time, atPickup repository.PickupCancel) (domain.Booking, error)
 	EndEarly(ctx context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error)
 	RateDriver(ctx context.Context, id, userID string, rating domain.RideRating) error
@@ -214,7 +215,8 @@ func (s *BookingService) Record(
 
 // ListMine returns userID's bookings, latest scheduled first, each with its
 // status, assigned driver and — while the driver is on the way or waiting at
-// the pickup — the code the customer gives them to start the trip. A request
+// the pickup — the code the customer gives them to start the trip. A paid
+// booking's receipt lists every booking its payment paid. A request
 // no driver took before it closed is reported as expired. A booking whose
 // details can't be read is skipped rather than failing the list.
 func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.CustomerBooking, error) {
@@ -233,7 +235,7 @@ func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.
 			out = append(out, withCarried(cb, owed))
 		}
 	}
-	return out, nil
+	return s.withPaymentLines(ctx, userID, out), nil
 }
 
 // owed is what userID still owes for, by booking id — nothing while
@@ -444,7 +446,7 @@ func (s *BookingService) mine(ctx context.Context, userID, bookingID string) (do
 	if err != nil {
 		return domain.CustomerBooking{}, err
 	}
-	return withCarried(cb, owed), nil
+	return s.withPaymentLines(ctx, userID, []domain.CustomerBooking{withCarried(cb, owed)})[0], nil
 }
 
 // planOf reads a stored booking's details, with the start time the server

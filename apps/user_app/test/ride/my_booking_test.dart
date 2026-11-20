@@ -170,6 +170,103 @@ void main() {
       ).isNull();
       check(FareBreakdown.tryParse({'basePaise': 24000})!.nightPaise).equals(0);
     });
+
+    test('a payment that paid several bookings carries its total and '
+        'lines', () {
+      final b = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'paid',
+          payment: {
+            'mode': 'UPI_INTENT',
+            'merchantOrderId': 'MOJUD_b1_m3k9',
+            'paidAt': '2030-10-26T08:00:00Z',
+            'totalPaise': 69000,
+            'lines': [
+              {
+                'bookingId': 'b0',
+                'kind': 'cancellation_fee',
+                'label': 'Cancellation fee · Sun 15 Nov',
+                'amountPaise': 5000,
+              },
+              {
+                'bookingId': 'b1',
+                'kind': 'ride',
+                'label': 'Multi-stop · Sat 26 Oct',
+                'amountPaise': 64000,
+              },
+            ],
+          },
+        ),
+      )!;
+      final p = b.payment!;
+      check(p.totalPaise).equals(69000);
+      check(p.paidPaise).equals(69000);
+      check(p.lines.length).equals(2);
+      check(p.lines.first.kind).equals(PaymentLineKind.cancellationFee);
+      check(p.lines.first.label).equals('Cancellation fee · Sun 15 Nov');
+      check(p.lines.last.kind).equals(PaymentLineKind.ride);
+      // What else it paid: not this booking itself.
+      check(b.paidTogetherWith.length).equals(1);
+      check(b.paidTogetherWith.single.bookingId).equals('b0');
+      check(b.paidTogetherWith.single.amountPaise).equals(5000);
+    });
+
+    test('a payment for this booking alone, or from an older server, paid '
+        'nothing else', () {
+      final alone = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'paid',
+          payment: {
+            'mode': 'UPI_INTENT',
+            'totalPaise': 64000,
+            'lines': [
+              {'bookingId': 'b1', 'kind': 'ride', 'amountPaise': 64000},
+            ],
+          },
+        ),
+      )!;
+      check(alone.paidTogetherWith).isEmpty();
+      check(alone.payment!.lines.single.label).equals('Ride');
+
+      final old = MyBooking.tryParse(
+        bookingJson(
+          status: 'completed',
+          paymentStatus: 'paid',
+          payment: {'mode': 'UPI_INTENT', 'paidAt': '2030-10-26T08:00:00Z'},
+        ),
+      )!;
+      check(old.payment!.totalPaise).isNull();
+      check(old.payment!.lines).isEmpty();
+      check(old.paidTogetherWith).isEmpty();
+      // Not paid yet: nothing paid with it.
+      check(MyBooking.tryParse(bookingJson())!.paidTogetherWith).isEmpty();
+    });
+
+    test('garbled lines are skipped, and an unknown kind reads as a ride', () {
+      final p = RidePayment.tryParse({
+        'mode': 'UPI_INTENT',
+        'totalPaise': -5,
+        'lines': [
+          {'bookingId': '', 'amountPaise': 5000},
+          {'bookingId': 'b2', 'amountPaise': 0},
+          {'bookingId': 'b3', 'amountPaise': 'lots'},
+          'b4',
+          {'bookingId': 'b5', 'kind': 'toll', 'amountPaise': 2000},
+          {'bookingId': 'b6', 'kind': 'cancellation_fee', 'amountPaise': 5000},
+        ],
+      })!;
+      check(p.totalPaise).isNull();
+      check(p.lines.map((l) => l.bookingId).toList()).deepEquals(['b5', 'b6']);
+      check(p.lines.first.kind).equals(PaymentLineKind.ride);
+      check(p.lines.last.label).equals('Cancellation fee');
+      // No total sent: the lines add up to it.
+      check(p.paidPaise).equals(7000);
+      check(
+        RidePayment.tryParse({'mode': 'UPI', 'lines': 'b1'})!.lines,
+      ).isEmpty();
+    });
   });
 
   group('cancellation charges', () {
