@@ -1,8 +1,18 @@
+import 'package:flutter/widget_previews.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app_localizations.dart';
 
 export 'app_localizations.dart';
+
+/// `@Preview(localizations: previewLocalizations)`: a widget preview in
+/// English with the app's strings, as screens read `context.l10n`.
+PreviewLocalizationsData previewLocalizations() =>
+    const PreviewLocalizationsData(
+      locale: Locale('en'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+    );
 
 /// `context.l10n.someKey` — the customer's strings in the app's language.
 ///

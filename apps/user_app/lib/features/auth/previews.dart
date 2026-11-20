@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../l10n/l10n.dart';
 import 'auth_providers.dart';
 import 'data/auth_repository.dart';
 import 'view/otp_step.dart';
@@ -33,12 +34,27 @@ Widget _seeded(RegistrationStep step, Widget child) {
   );
 }
 
-@Preview(name: '1 · Phone (+91)', group: 'Auth flow', theme: authPreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: '1 · Phone (+91)',
+  group: 'Auth flow',
+  theme: authPreviewTheme,
+)
 Widget phoneStepPreview() => _seeded(RegistrationStep.phone, const PhoneStep());
 
-@Preview(name: '2 · OTP', group: 'Auth flow', theme: authPreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: '2 · OTP',
+  group: 'Auth flow',
+  theme: authPreviewTheme,
+)
 Widget otpStepPreview() => _seeded(RegistrationStep.otp, const OtpStep());
 
-@Preview(name: '3 · Name & email', group: 'Auth flow', theme: authPreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: '3 · Name & email',
+  group: 'Auth flow',
+  theme: authPreviewTheme,
+)
 Widget profileStepPreview() =>
     _seeded(RegistrationStep.profile, const ProfileStep());

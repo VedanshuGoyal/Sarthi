@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart' show Material, TimeOfDay;
@@ -71,21 +72,37 @@ Widget _seeded({TripType? initialType}) {
 }
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Nothing selected',
   group: 'Trip chooser',
   theme: ridePreviewTheme,
 )
 Widget tripChooserUnselectedPreview() => _seeded();
 
-@Preview(name: 'Round trip', group: 'Trip chooser', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Round trip',
+  group: 'Trip chooser',
+  theme: ridePreviewTheme,
+)
 Widget tripChooserRoundTripPreview() =>
     _seeded(initialType: TripType.roundTrip);
 
-@Preview(name: 'Multi-stop', group: 'Trip chooser', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Multi-stop',
+  group: 'Trip chooser',
+  theme: ridePreviewTheme,
+)
 Widget tripChooserMultiStopPreview() =>
     _seeded(initialType: TripType.multiStop);
 
-@Preview(name: 'One-way', group: 'Trip chooser', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'One-way',
+  group: 'Trip chooser',
+  theme: ridePreviewTheme,
+)
 Widget tripChooserOneWayPreview() => _seeded(initialType: TripType.oneWay);
 
 // --- Pickup step -----------------------------------------------------------
@@ -184,13 +201,28 @@ const _sampleRecents = [
   ),
 ];
 
-@Preview(name: 'Empty', group: 'Pickup', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Empty',
+  group: 'Pickup',
+  theme: ridePreviewTheme,
+)
 Widget pickupEmptyPreview() => _pickup();
 
-@Preview(name: 'Recent pickups', group: 'Pickup', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Recent pickups',
+  group: 'Pickup',
+  theme: ridePreviewTheme,
+)
 Widget pickupRecentsPreview() => _pickup(recents: _sampleRecents);
 
-@Preview(name: 'With results', group: 'Pickup', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'With results',
+  group: 'Pickup',
+  theme: ridePreviewTheme,
+)
 Widget pickupResultsPreview() =>
     _pickup(query: 'Connaught Place', suggestions: _sampleSuggestions);
 
@@ -208,6 +240,7 @@ Widget _route({PickupLocation? current}) => ProviderScope(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'From current location',
   group: 'One-Way route',
   theme: ridePreviewTheme,
@@ -219,7 +252,12 @@ Widget routeLocatedPreview() => _route(
   ),
 );
 
-@Preview(name: 'Locating', group: 'One-Way route', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Locating',
+  group: 'One-Way route',
+  theme: ridePreviewTheme,
+)
 Widget routeLocatingPreview() => _route();
 
 // --- Map picker card -------------------------------------------------------
@@ -232,7 +270,12 @@ Widget _pinCard(MapPinCard card) => ColoredBox(
   child: Align(alignment: Alignment.bottomCenter, child: card),
 );
 
-@Preview(name: 'Pin — resolved', group: 'Map picker', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Pin — resolved',
+  group: 'Map picker',
+  theme: ridePreviewTheme,
+)
 Widget mapPinResolvedPreview() => _pinCard(
   const MapPinCard(
     label: 'Connaught Place, New Delhi, Delhi',
@@ -242,7 +285,12 @@ Widget mapPinResolvedPreview() => _pinCard(
   ),
 );
 
-@Preview(name: 'Pin — moving', group: 'Map picker', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Pin — moving',
+  group: 'Map picker',
+  theme: ridePreviewTheme,
+)
 Widget mapPinMovingPreview() => _pinCard(
   const MapPinCard(
     label: '',
@@ -252,7 +300,12 @@ Widget mapPinMovingPreview() => _pinCard(
   ),
 );
 
-@Preview(name: 'Pin — resolving', group: 'Map picker', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Pin — resolving',
+  group: 'Map picker',
+  theme: ridePreviewTheme,
+)
 Widget mapPinResolvingPreview() => _pinCard(
   const MapPinCard(
     label: '28.6315, 77.2167',
@@ -262,7 +315,12 @@ Widget mapPinResolvingPreview() => _pinCard(
   ),
 );
 
-@Preview(name: 'Pin — error', group: 'Map picker', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Pin — error',
+  group: 'Map picker',
+  theme: ridePreviewTheme,
+)
 Widget mapPinErrorPreview() => _pinCard(
   const MapPinCard(
     label: '28.6315, 77.2167',
@@ -352,25 +410,42 @@ Widget _booking({
 }
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'No saved cars',
   group: 'Booking details',
   theme: ridePreviewTheme,
 )
 Widget bookingNoCarsPreview() => _booking(cars: const []);
 
-@Preview(name: 'Empty', group: 'Booking details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Empty',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
 Widget bookingEmptyPreview() => _booking();
 
-@Preview(name: 'Car chosen', group: 'Booking details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Car chosen',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
 Widget bookingCarChosenPreview() => _booking(hours: 4, car: _carSedan);
 
-@Preview(name: 'Ready', group: 'Booking details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Ready',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
 Widget bookingReadyPreview() =>
     _booking(hours: 6, scheduledAt: DateTime(2026, 7, 18, 9, 30), car: _carSuv);
 
 /// An unpaid cancellation fee doesn't stop the booking: a note says it's
 /// added to this trip's payment.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Ready — earlier ride unpaid',
   group: 'Booking details',
   theme: ridePreviewTheme,
@@ -431,6 +506,7 @@ const _plannerStopTwo = StopDraft(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'One empty stop',
   group: 'Multi-Stop planner',
   theme: ridePreviewTheme,
@@ -438,6 +514,7 @@ const _plannerStopTwo = StopDraft(
 Widget plannerEmptyPreview() => _planner();
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Half planned',
   group: 'Multi-Stop planner',
   theme: ridePreviewTheme,
@@ -454,7 +531,12 @@ Widget plannerHalfPlannedPreview() => _planner(
   ],
 );
 
-@Preview(name: 'Ready', group: 'Multi-Stop planner', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Ready',
+  group: 'Multi-Stop planner',
+  theme: ridePreviewTheme,
+)
 Widget plannerReadyPreview() => _planner(
   car: _carSedan,
   stops: [
@@ -474,6 +556,7 @@ Widget plannerReadyPreview() => _planner(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Time conflict',
   group: 'Multi-Stop planner',
   theme: ridePreviewTheme,
@@ -526,13 +609,19 @@ Widget _oneWay({DateTime? scheduledAt, Car? car}) {
 }
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Awaiting a car',
   group: 'One-Way details',
   theme: ridePreviewTheme,
 )
 Widget oneWayAwaitingCarPreview() => _oneWay();
 
-@Preview(name: 'Ready', group: 'One-Way details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Ready',
+  group: 'One-Way details',
+  theme: ridePreviewTheme,
+)
 Widget oneWayReadyPreview() =>
     _oneWay(scheduledAt: DateTime(2026, 7, 20, 9, 30), car: _carSedan);
 
@@ -586,11 +675,17 @@ class _CannedEtaRepository extends LocationRepository {
   }
 }
 
-@Preview(name: 'Checking', group: 'One-Way review', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Checking',
+  group: 'One-Way review',
+  theme: ridePreviewTheme,
+)
 Widget oneWayReviewCheckingPreview() =>
     _oneWayReview(repository: _CannedEtaRepository(fail: false));
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Drive time known',
   group: 'One-Way review',
   theme: ridePreviewTheme,
@@ -599,6 +694,7 @@ Widget oneWayReviewKnownPreview() =>
     _oneWayReview(travelTime: const Duration(hours: 1, minutes: 25));
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Estimate failed',
   group: 'One-Way review',
   theme: ridePreviewTheme,
@@ -612,7 +708,12 @@ Widget oneWayReviewFailedPreview() =>
 /// Preview seam: slot taps go nowhere outside a live sheet.
 void ignoreSlot(TimeOfDay slot) {}
 
-@Preview(name: 'Time slots', group: 'Booking details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Time slots',
+  group: 'Booking details',
+  theme: ridePreviewTheme,
+)
 Widget timeSlotPickerPreview() => const Align(
   alignment: Alignment.bottomCenter,
   child: Material(
@@ -633,6 +734,7 @@ Widget _fare(FareSummary summary) => Padding(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Preview (no car)',
   group: 'Fare summary',
   theme: ridePreviewTheme,
@@ -640,10 +742,20 @@ Widget _fare(FareSummary summary) => Padding(
 Widget farePreviewApproximate() =>
     _fare(const FareSummary(fare: 340, hours: 3, approximate: true));
 
-@Preview(name: 'Standard', group: 'Fare summary', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Standard',
+  group: 'Fare summary',
+  theme: ridePreviewTheme,
+)
 Widget fareStandardPreview() => _fare(const FareSummary(fare: 340, hours: 3));
 
-@Preview(name: 'Luxury', group: 'Fare summary', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Luxury',
+  group: 'Fare summary',
+  theme: ridePreviewTheme,
+)
 Widget fareLuxuryPreview() => _fare(const FareSummary(fare: 440, hours: 3));
 
 // --- Car selector ----------------------------------------------------------
@@ -675,16 +787,36 @@ Widget _carSelector({
   ),
 );
 
-@Preview(name: 'Loading', group: 'Car selector', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Loading',
+  group: 'Car selector',
+  theme: ridePreviewTheme,
+)
 Widget carSelectorLoadingPreview() => _carSelector(isLoading: true);
 
-@Preview(name: 'Load failed', group: 'Car selector', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Load failed',
+  group: 'Car selector',
+  theme: ridePreviewTheme,
+)
 Widget carSelectorFailedPreview() => _carSelector(loadFailed: true);
 
-@Preview(name: 'No cars yet', group: 'Car selector', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'No cars yet',
+  group: 'Car selector',
+  theme: ridePreviewTheme,
+)
 Widget carSelectorEmptyPreview() => _carSelector(cars: const []);
 
-@Preview(name: 'Car picked', group: 'Car selector', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Car picked',
+  group: 'Car selector',
+  theme: ridePreviewTheme,
+)
 Widget carSelectorPickedPreview() => _carSelector(selected: _carSedan);
 
 // --- Add-car sheet ---------------------------------------------------------
@@ -692,7 +824,12 @@ Widget carSelectorPickedPreview() => _carSelector(selected: _carSedan);
 // model is seeded so the sheet renders without a network; saving from a
 // preview would hit the stub repository and simply fail.
 
-@Preview(name: 'Add a car', group: 'Car selector', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Add a car',
+  group: 'Car selector',
+  theme: ridePreviewTheme,
+)
 Widget addCarSheetPreview() => ProviderScope(
   overrides: [_savedCars()],
   child: const Align(
@@ -814,6 +951,7 @@ Widget _rideDetails(MyBooking ride, {List<MyBooking> others = const []}) {
 }
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Finding a driver',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -822,6 +960,7 @@ Widget rideDetailsRequestedPreview() =>
     _rideDetails(_ride(status: BookingStatus.requested, driver: false));
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Driver assigned',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -830,6 +969,7 @@ Widget rideDetailsAcceptedPreview() =>
     _rideDetails(_ride(status: BookingStatus.accepted, otp: '4821'));
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'On trip (tracking)',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -842,6 +982,7 @@ Widget rideDetailsInProgressPreview() => _rideDetails(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Completed — rate',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -854,6 +995,7 @@ Widget rideDetailsUnratedPreview() => _rideDetails(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Completed — rated',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -866,13 +1008,19 @@ Widget rideDetailsRatedPreview() => _rideDetails(
   ),
 );
 
-@Preview(name: 'Cancelled', group: 'Ride details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Cancelled',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
 Widget rideDetailsCancelledPreview() => _rideDetails(
   _ride(status: BookingStatus.cancelled, cancelReason: 'Plans changed'),
 );
 
 /// Ended an hour in, booked for longer: charged for the time used.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Ended early — pay',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -890,6 +1038,7 @@ Widget rideDetailsEndedEarlyPreview() => _rideDetails(
 /// Booked for 3 h (2 h 30 min, rounded up), on the road for 3 h 20 min:
 /// past the booked time and the grace.
 @Preview(
+  localizations: previewLocalizations,
   name: 'On trip — past booked time',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -903,6 +1052,7 @@ Widget rideDetailsPastBookedTimePreview() => _rideDetails(
 
 /// Ran 3 h 40 min on a 3 h booking: charged for 4 h, more than booked.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Ran past booked time — pay',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -920,6 +1070,7 @@ Widget rideDetailsRanOverPreview() => _rideDetails(
 
 /// A trip due for payment that also collects an unpaid cancellation fee.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Pay — includes another ride',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -945,6 +1096,7 @@ Widget rideDetailsPayWithDuesPreview() => _rideDetails(
 
 /// An upcoming ride that will collect an earlier ride's unpaid fee.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Driver assigned — earlier ride unpaid',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -967,6 +1119,7 @@ Widget rideDetailsAcceptedWithDuesPreview() => _rideDetails(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Cancelled — fee due',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -981,6 +1134,7 @@ Widget rideDetailsCancelledFeeDuePreview() => _rideDetails(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'Cancel sheet — at pickup',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -1000,6 +1154,7 @@ Widget cancelRideSheetFeePreview() => Align(
 );
 
 @Preview(
+  localizations: previewLocalizations,
   name: 'End trip dialog',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -1008,7 +1163,12 @@ Widget endTripDialogPreview() => Center(
   child: EndTripDialog(booking: _ride(status: BookingStatus.inProgress)),
 );
 
-@Preview(name: 'Cancel sheet', group: 'Ride details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Cancel sheet',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
 Widget cancelRideSheetPreview() => Align(
   alignment: Alignment.bottomCenter,
   child: Material(
@@ -1020,7 +1180,12 @@ Widget cancelRideSheetPreview() => Align(
 
 /// A paid Round Trip that ran past 22:00: base fare plus night surcharge,
 /// paid by UPI.
-@Preview(name: 'Receipt', group: 'Ride details', theme: ridePreviewTheme)
+@Preview(
+  localizations: previewLocalizations,
+  name: 'Receipt',
+  group: 'Ride details',
+  theme: ridePreviewTheme,
+)
 Widget receiptCardPreview() => Padding(
   padding: const EdgeInsets.all(Skyline.s16),
   child: ReceiptCard(
@@ -1047,6 +1212,7 @@ Widget receiptCardPreview() => Padding(
 
 /// A ride cancelled at the pickup, its fee paid by UPI.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Receipt — cancellation fee',
   group: 'Ride details',
   theme: ridePreviewTheme,
@@ -1065,6 +1231,7 @@ Widget receiptCancellationFeePreview() => Padding(
 /// A Round Trip whose UPI payment also cleared an earlier cancellation fee:
 /// one payment, two lines.
 @Preview(
+  localizations: previewLocalizations,
   name: 'Receipt — paid together',
   group: 'Ride details',
   theme: ridePreviewTheme,
