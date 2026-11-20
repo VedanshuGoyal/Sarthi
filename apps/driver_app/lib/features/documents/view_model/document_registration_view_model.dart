@@ -73,6 +73,10 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// flight drops its own answer, which may predate it.
   int _writes = 0;
 
+  /// Bumped by every step request ([_run]), so a load doesn't set or clear
+  /// [error] over a step's own outcome.
+  int _runs = 0;
+
   DriverDocuments _data = const DriverDocuments();
   DriverKyc _kyc = const DriverKyc();
   bool _isLoading = false;
@@ -127,29 +131,37 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   /// read may be) landed while it was in flight.
   Future<void> load() async {
     final seq = ++_loadSeq;
-    final writes = _writes;
+    final writes = _writes, runs = _runs;
+    var again = false;
     _fetched.mark();
     _isLoading = true;
     _notify();
     try {
       final kyc = await _repository.load();
       if (seq != _loadSeq) return;
-      if (writes == _writes) _setKyc(kyc);
+      if (writes == _writes) {
+        _setKyc(kyc);
+      } else {
+        // A step's reply landed meanwhile. This read may predate it — or be
+        // newer (a review decision): read again rather than drop it.
+        again = true;
+      }
       await _restoreCaptures();
       await _readPermissionGrants();
-      _error = null;
+      if (runs == _runs && !_isSaving) _error = null;
       if (_lostCaptures case final source?) {
         _lostCaptures = null;
         unawaited(_recoverLostCapture(source));
       }
     } on KycException catch (e) {
       if (seq != _loadSeq) return;
-      _error = e.message;
+      if (runs == _runs && !_isSaving) _error = e.message;
       _loadFailed = true;
     } finally {
       if (seq == _loadSeq) {
         _isLoading = false;
         _notify();
+        if (again && !_disposed) unawaited(load());
       }
     }
   }
@@ -435,6 +447,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   Future<T?> _run<T>(Future<T> Function() request) async {
     if (_isSaving) return null;
     _isSaving = true;
+    _runs++;
     _error = null;
     _errorCode = null;
     _notify();

@@ -30,6 +30,7 @@ class LocationShareViewModel extends ChangeNotifier {
     this._now = DateTime.now,
     this._minSendGap = const Duration(seconds: 10),
     this.recheckEvery = const Duration(seconds: 30),
+    this.rideCheckEvery = const Duration(minutes: 2),
   }) {
     _myRides.addListener(_onRidesChanged);
     _onRidesChanged();
@@ -51,9 +52,16 @@ class LocationShareViewModel extends ChangeNotifier {
   /// of it.
   final Duration recheckEvery;
 
+  /// How often the driver's rides are re-read while sharing. A ride the
+  /// customer cancelled while the app was in the background only reached
+  /// the tray as a push; without this the location service, and its wake
+  /// lock, would run on until the driver opened the app.
+  final Duration rideCheckEvery;
+
   StreamSubscription<DeviceFix>? _subscription;
   Timer? _recheck;
   DateTime? _lastSentAt;
+  DateTime? _lastRideCheck;
   bool _isSharing = false;
   bool _disposed = false;
 
@@ -87,6 +95,7 @@ class LocationShareViewModel extends ChangeNotifier {
       cancelOnError: false,
     );
     _isSharing = true;
+    _lastRideCheck = _now(); // the rides were just read
     _notify();
   }
 
@@ -97,6 +106,12 @@ class LocationShareViewModel extends ChangeNotifier {
       return; // Throttled — the OS can fire faster than every ~10s.
     }
     _lastSentAt = now;
+    final checked = _lastRideCheck;
+    if (checked != null && now.difference(checked) >= rideCheckEvery) {
+      _lastRideCheck = now;
+      // Stops sharing (via _onRidesChanged) once no ride needs it.
+      unawaited(_myRides.load());
+    }
     try {
       await _repository.shareLocation(
         lat: fix.lat,
@@ -112,6 +127,7 @@ class LocationShareViewModel extends ChangeNotifier {
     _subscription?.cancel();
     _subscription = null;
     _lastSentAt = null;
+    _lastRideCheck = null;
     _isSharing = false;
     _notify();
   }

@@ -164,4 +164,33 @@ void main() {
     check(vm.isSharing).isFalse();
     vm.dispose();
   });
+
+  test('while sharing, re-reads the rides every rideCheckEvery and stops once '
+      'the ride was cancelled', () async {
+    repo.mine = [ride(id: 'r', status: 'accepted', scheduledAt: scheduledAt)];
+    await myRides.load();
+    final vm = buildVm();
+    check(vm.isSharing).isTrue();
+    final before = repo.myRidesCalls;
+
+    location.emit((lat: 28.6, lng: 77.2, heading: 0.0));
+    await Future<void>.delayed(Duration.zero);
+    check(repo.myRidesCalls).equals(before);
+
+    // A minute later: sent, but the rides aren't read again yet.
+    now = now.add(const Duration(minutes: 1));
+    location.emit((lat: 28.6, lng: 77.2, heading: 0.0));
+    await Future<void>.delayed(Duration.zero);
+    check(repo.myRidesCalls).equals(before);
+
+    // The customer cancelled meanwhile; the next check stops sharing.
+    repo.mine = [ride(id: 'r', status: 'cancelled', scheduledAt: scheduledAt)];
+    now = now.add(const Duration(minutes: 2));
+    location.emit((lat: 28.6, lng: 77.2, heading: 0.0));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    check(repo.myRidesCalls).equals(before + 1);
+    check(vm.isSharing).isFalse();
+    vm.dispose();
+  });
 }

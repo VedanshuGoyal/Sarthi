@@ -41,6 +41,45 @@ void main() {
     );
   }
 
+  group('a load racing a step', () {
+    test(
+      're-reads instead of dropping an answer a step reply overtook',
+      () async {
+        final repository = _LoadGatedKycRepository(kyc: _completeKyc);
+        final vm = viewModel(repository);
+
+        final first = vm.load(); // held at the gate
+        // A licence check lands while that read is in flight…
+        check(await vm.verifyDrivingLicense('MH0120210000001')).isTrue();
+        // …and meanwhile the reviewer cleared the driver.
+        repository.kyc = const DriverKyc(
+          status: KycStatus.verified,
+          fullName: 'Asha Kumari',
+        );
+        repository.loadGate.complete();
+        await first;
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        check(repository.loads).equals(2);
+        check(vm.kyc.status).equals(KycStatus.verified);
+      },
+    );
+
+    test('a failed load does not report a step that saved as failed', () async {
+      final repository = _LoadGatedKycRepository(kyc: _completeKyc)
+        ..failLoad = const KycException('offline');
+      final vm = viewModel(repository);
+
+      final first = vm.load();
+      final saved = vm.verifyDrivingLicense('MH0120210000001');
+      repository.loadGate.complete();
+      await first;
+      check(await saved).isTrue();
+      check(vm.error).isNull();
+    });
+  });
+
   group('load', () {
     test('takes its progress from the backend', () async {
       final repository = _FakeKycRepository(kyc: _completeKyc);
@@ -688,6 +727,28 @@ class _GatedKycRepository extends _FakeKycRepository {
   Future<DriverKyc> verifyDrivingLicense(String number) async {
     await gate.future;
     return super.verifyDrivingLicense(number);
+  }
+}
+
+/// A [_FakeKycRepository] whose first load waits for [loadGate] and then,
+/// with [failLoad] set, fails.
+class _LoadGatedKycRepository extends _FakeKycRepository {
+  _LoadGatedKycRepository({super.kyc});
+
+  final loadGate = Completer<void>();
+  KycException? failLoad;
+  int loads = 0;
+
+  @override
+  Future<DriverKyc> load() async {
+    loads++;
+    final stale = kyc;
+    if (loads == 1) {
+      await loadGate.future;
+      if (failLoad case final failure?) throw failure;
+      return stale; // read before the gate opened
+    }
+    return super.load();
   }
 }
 
