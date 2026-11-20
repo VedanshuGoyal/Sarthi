@@ -247,13 +247,13 @@ func (p tripPlan) billedHours() int {
 func hourlyCharge(p tripPlan, started, ended time.Time) int64 {
 	minutes := max(int(ended.Sub(started)/time.Minute), 0)
 	hours := min(max((minutes+59)/60, 1), maxHireHours)
-	// The night surcharge follows the booked start, as the quote did, so a
-	// start a few minutes either side of midnight doesn't change it.
-	from := p.ScheduledAt
-	if from.IsZero() {
-		from = started
+	// The night is the booked day's (from 22:00), so a start a few minutes
+	// after midnight doesn't drop it; the hours counted are the real ones.
+	day := p.ScheduledAt
+	if day.IsZero() {
+		day = started
 	}
-	return int64(roundTripFareRupees(from, hours, p.luxury())) * 100
+	return int64(hourlyTariffRupees(hours, p.luxury())+nightSurchargeOn(day, started, hours)) * 100
 }
 
 // finalFare is what a trip that ran from started to ended costs, booked
@@ -283,9 +283,16 @@ func finalFare(p tripPlan, booked int64, started, ended time.Time, byCustomer bo
 // then a flat fee plus a rate per night hour, a part hour counting as whole.
 // A ride that starts after 22:00 is night for its whole length.
 func nightSurchargeRupees(start time.Time, hours int) int {
-	s := start.In(ist)
+	return nightSurchargeOn(start, start, hours)
+}
+
+// nightSurchargeOn is [nightSurchargeRupees] for a hire from start, with the
+// night beginning at 22:00 IST on day's date rather than start's: a trip
+// booked for 23:30 that got going at 00:05 is still on the booked night.
+func nightSurchargeOn(day, start time.Time, hours int) int {
+	s, d := start.In(ist), day.In(ist)
 	finish := s.Add(time.Duration(hours) * time.Hour)
-	nightStart := time.Date(s.Year(), s.Month(), s.Day(), nightFromHour, 0, 0, 0, ist)
+	nightStart := time.Date(d.Year(), d.Month(), d.Day(), nightFromHour, 0, 0, 0, ist)
 	if s.After(nightStart) {
 		nightStart = s
 	}

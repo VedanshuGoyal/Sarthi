@@ -77,9 +77,10 @@ func TestPaymentRepository_OrderKeepsItsCheckoutToken_Integration(t *testing.T) 
 	booking := paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900)
 	expires := time.Now().Add(15 * time.Minute).Truncate(time.Microsecond)
 
+	// The old one first: an order with a token blocks any second order.
 	for _, o := range []domain.PaymentOrder{
-		{MerchantOrderID: "MOJUD_test_tok", CheckoutToken: "sdk-token"},
 		{MerchantOrderID: "MOJUD_test_old"}, // opened before tokens were kept
+		{MerchantOrderID: "MOJUD_test_tok", CheckoutToken: "sdk-token"},
 	} {
 		o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.ExpiresAt = booking, user, 30000, "OMO1", expires
 		orderForPaidRide(t, ctx, tx, o)

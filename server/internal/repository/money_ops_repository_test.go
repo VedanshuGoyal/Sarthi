@@ -121,6 +121,33 @@ func TestPaymentRepository_OrderItems_Integration(t *testing.T) {
 	}
 }
 
+// HUMAN REVIEW REQUIRED: payments. A booking an order still open for
+// payment collects can't go in a second order (from another server process,
+// say); one about to expire, or without a token, can be replaced.
+func TestPaymentRepository_NoSecondOpenOrder_Integration(t *testing.T) {
+	ctx, tx := rollbackTx(t)
+	payments := NewPaymentRepository(tx)
+	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
+	ride := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, time.Now().Add(-time.Hour), 24000)
+	order := func(id, token string, expires time.Duration) domain.PaymentOrder {
+		return domain.PaymentOrder{MerchantOrderID: id, BookingID: ride, UserID: user, AmountPaise: 24000,
+			ProviderOrderID: "OMO-" + id, CheckoutToken: token, ExpiresAt: time.Now().Add(expires)}
+	}
+	if err := payments.InsertOrder(ctx, order("MOJUD_open_first", "tok", 15*time.Minute)); err != nil {
+		t.Fatalf("first order: %v", err)
+	}
+	if err := payments.InsertOrder(ctx, order("MOJUD_open_second", "tok2", 15*time.Minute)); !errors.Is(err, ErrOrderOpen) {
+		t.Fatalf("second order beside an open one: err = %v, want ErrOrderOpen", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE payment_orders SET expires_at = now() + interval '1 minute'
+		WHERE merchant_order_id = 'MOJUD_open_first'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := payments.InsertOrder(ctx, order("MOJUD_open_replace", "tok3", 15*time.Minute)); err != nil {
+		t.Errorf("replacing an order about to expire: %v", err)
+	}
+}
+
 func bookingParams(userID string, start time.Time, pickup string) InsertBookingParams {
 	return InsertBookingParams{
 		UserID:   userID,

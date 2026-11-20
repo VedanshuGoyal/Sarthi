@@ -136,9 +136,9 @@ func TestBookingService_EndEarly(t *testing.T) {
 	}
 }
 
-// HUMAN REVIEW REQUIRED: payments. The night surcharge follows the booked
-// start: a 23:30 trip the driver started at 00:05 and the customer ended
-// after 1 h 45 min costs what was booked, not the daytime rate.
+// HUMAN REVIEW REQUIRED: payments. The night is the booked day's: a 23:30
+// trip the driver started at 00:05 and the customer ended after 1 h 45 min
+// costs what was booked, not the daytime rate. The hours are the real ones.
 func TestFinalFare_nightFollowsBookedStart(t *testing.T) {
 	booked := time.Date(2026, 10, 24, 23, 30, 0, 0, ist)
 	plan := tripPlan{ScheduledAt: booked, Hours: 2}
@@ -151,6 +151,21 @@ func TestFinalFare_nightFollowsBookedStart(t *testing.T) {
 	early := booked.Add(-10 * time.Minute) // 23:20
 	if got := finalFare(plan, quoted, early, early.Add(50*time.Minute), true); got != 13900+5000+2400 {
 		t.Errorf("ended in the first hour: got %d, want %d", got, 13900+5000+2400)
+	}
+
+	// The hours counted are the real ones. Booked 21:30, started 21:00 and
+	// ended 21:55: never reached 22:00, so no night charge.
+	evening := tripPlan{ScheduledAt: time.Date(2026, 10, 24, 21, 30, 0, 0, ist), Hours: 2}
+	at := time.Date(2026, 10, 24, 21, 0, 0, 0, ist)
+	if got := finalFare(evening, 33800, at, at.Add(55*time.Minute), true); got != 13900 {
+		t.Errorf("ended before 22:00: got %d, want 13900", got)
+	}
+	// Booked 19:00 for 2 h, started 19:40, ran to 22:40: overtime, three
+	// hours with 40 night minutes — ₹340 + ₹50 + ₹24.
+	seven := tripPlan{ScheduledAt: time.Date(2026, 10, 24, 19, 0, 0, 0, ist), Hours: 2}
+	late := time.Date(2026, 10, 24, 19, 40, 0, 0, ist)
+	if got := finalFare(seven, 24000, late, late.Add(3*time.Hour), false); got != 34000+5000+2400 {
+		t.Errorf("overtime into the night: got %d, want %d", got, 34000+5000+2400)
 	}
 }
 

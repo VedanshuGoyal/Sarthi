@@ -45,7 +45,7 @@ func (r *PaymentRepository) SettleByHand(
 	// Lock the row before looking for orders: InsertOrder takes the same
 	// lock, and the UPDATE below (a new statement) then sees any order
 	// committed while this waited.
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM bookings WHERE id = $1 FOR UPDATE`, id); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM bookings WHERE id = $1 FOR NO KEY UPDATE`, id); err != nil {
 		_ = tx.Rollback(ctx)
 		return domain.Booking{}, bookingExplain(ctx, r.db, err, id, "settling booking")
 	}

@@ -45,9 +45,8 @@ const (
 	sweepMinAge = time.Minute
 
 	// checkoutReuseMargin is how long an open checkout must still have to
-	// run to be handed out again rather than replaced: time to finish a UPI
-	// payment (my estimate).
-	checkoutReuseMargin = 2 * time.Minute
+	// run to be handed out again rather than replaced.
+	checkoutReuseMargin = repository.ReusableOrderMargin
 )
 
 // PaymentGateway is the slice of the gateway this service drives
@@ -137,6 +136,17 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 		return domain.PaymentCheckout{}, ErrPaymentsOff
 	}
 	defer s.lockCustomer(userID)()
+	c, err := s.checkout(ctx, userID, bookingID)
+	if errors.Is(err, repository.ErrOrderOpen) {
+		// Another server process opened an order for these dues meanwhile:
+		// look again, and hand that one out.
+		c, err = s.checkout(ctx, userID, bookingID)
+	}
+	return c, err
+}
+
+// checkout is one attempt at Checkout, under the customer's lock.
+func (s *PaymentService) checkout(ctx context.Context, userID, bookingID string) (domain.PaymentCheckout, error) {
 	ub, err := s.bookings.FindForUser(ctx, bookingID, userID)
 	if err != nil {
 		return domain.PaymentCheckout{}, err

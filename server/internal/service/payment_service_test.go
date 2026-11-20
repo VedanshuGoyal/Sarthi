@@ -55,6 +55,8 @@ type fakePaymentStore struct {
 	bookings map[string]*domain.Booking
 	orders   map[string]*domain.PaymentOrder
 	order    []string
+	// insertErrs are returned by the next InsertOrder calls, one each.
+	insertErrs []error
 }
 
 func newFakePaymentStore(bs ...domain.Booking) *fakePaymentStore {
@@ -75,6 +77,11 @@ func (s *fakePaymentStore) FindForUser(_ context.Context, id, userID string) (do
 }
 
 func (s *fakePaymentStore) InsertOrder(_ context.Context, o domain.PaymentOrder) error {
+	if len(s.insertErrs) > 0 {
+		err := s.insertErrs[0]
+		s.insertErrs = s.insertErrs[1:]
+		return err
+	}
 	o.State, o.CreatedAt = domain.PaymentPending, testNow
 	s.orders[o.MerchantOrderID] = &o
 	s.order = append(s.order, o.MerchantOrderID)
@@ -523,5 +530,22 @@ func TestSettle_unknownStateStaysPending(t *testing.T) {
 	}
 	if b := store.bookings["a-ride"]; b.PaidAt != nil {
 		t.Errorf("booking paid on an unknown gateway state")
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. When the database refuses a new order
+// because another process opened one for the same dues, Checkout looks again
+// and hands that one out.
+func TestCheckout_retriesWhenAnotherProcessOpenedAnOrder(t *testing.T) {
+	store := newFakePaymentStore(completedBooking("a-ride", 24000))
+	store.insertErrs = []error{repository.ErrOrderOpen}
+	gw := &fakeGateway{}
+	svc := newPayments(store, gw, &recordingPaymentAlerts{}, 1300)
+	c, err := svc.Checkout(context.Background(), "u1", "a-ride")
+	if err != nil || c.AmountPaise != 24000 {
+		t.Fatalf("Checkout = %d, %v; want 24000 after one retry", c.AmountPaise, err)
+	}
+	if len(gw.created) != 2 {
+		t.Errorf("gateway orders = %d, want 2 (the refused one and the retry)", len(gw.created))
 	}
 }

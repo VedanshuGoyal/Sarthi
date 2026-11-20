@@ -23,7 +23,7 @@ var ErrNothingToPayOut = errors.New("this driver has no paid rides waiting for a
 var ErrPayoutMismatch = errors.New("what this driver is owed has changed since the list was read; reload it and check the transfer")
 
 // ExpectedPayout is what the caller saw owed on the payouts list. A nil
-// field isn't checked.
+// field isn't checked here (the payout service requires the amount).
 type ExpectedPayout struct {
 	AmountPaise *int64
 	Rides       *int
@@ -32,6 +32,17 @@ type ExpectedPayout struct {
 // ErrOrderItemPaid refuses a new order for a booking that got paid (by hand,
 // or by another order) after the checkout read it.
 var ErrOrderItemPaid = fmt.Errorf("%w: a booking in this payment was paid meanwhile", ErrBookingStateConflict)
+
+// ErrOrderOpen refuses a new order for a booking another order still open
+// for payment collects (see [ReusableOrderMargin]): the checkout should hand
+// that one out instead.
+var ErrOrderOpen = fmt.Errorf("%w: another payment for this booking is still open", ErrBookingStateConflict)
+
+// ReusableOrderMargin is how long an open checkout (one with its token on
+// file) must still have to run to be handed out again rather than replaced:
+// time to finish a UPI payment (my estimate). Until then, no second order
+// may collect for its bookings.
+const ReusableOrderMargin = 2 * time.Minute
 
 // PaymentRepository persists checkouts (payment_orders), the paid state of
 // bookings, and payouts to drivers.
@@ -85,12 +96,27 @@ func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrd
 	var paid bool
 	if err := tx.QueryRow(ctx, `
 		SELECT coalesce(bool_or(paid_at IS NOT NULL), false) FROM (
-		    SELECT paid_at FROM bookings WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE) locked`,
+		    SELECT paid_at FROM bookings WHERE id = ANY($1::uuid[]) ORDER BY id FOR NO KEY UPDATE) locked`,
 		ids).Scan(&paid); err != nil {
 		return fmt.Errorf("inserting payment order: locking bookings: %w", err)
 	}
 	if paid {
 		return ErrOrderItemPaid
+	}
+	// Under those locks (a new statement, so a fresh snapshot): no order
+	// that could still be paid already collects for one of these bookings.
+	// Another server process may have opened one since the checkout looked.
+	var open bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM payment_orders po
+		               JOIN payment_order_items i ON i.merchant_order_id = po.merchant_order_id
+		               WHERE i.booking_id = ANY($1::uuid[]) AND po.state = 'pending'
+		                 AND po.checkout_token IS NOT NULL AND po.expires_at > $2)`,
+		ids, time.Now().Add(ReusableOrderMargin)).Scan(&open); err != nil {
+		return fmt.Errorf("inserting payment order: checking open orders: %w", err)
+	}
+	if open {
+		return ErrOrderOpen
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO payment_orders
