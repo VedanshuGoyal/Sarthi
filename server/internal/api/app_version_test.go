@@ -190,6 +190,33 @@ func TestSendsRegistrationTicket(t *testing.T) {
 	}
 }
 
+// A car is required on every trip type from user_app 10 on; 1.6.0 (+9) and
+// older, debug builds, the driver app and requests that don't say which
+// build they are book as before.
+func TestAsksCarOnEveryTrip(t *testing.T) {
+	for _, tc := range []struct {
+		xApp, xBuild string
+		want         bool
+	}{
+		{"user_app", "10", true},
+		{"user_app", "11", true},
+		{"user_app", "9", false},
+		{"user_app", "0", false},
+		{"user_app", "junk", false},
+		{"driver_app", "10", false},
+		{"", "", false},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/me/bookings", nil)
+		if tc.xApp != "" {
+			r.Header.Set("X-App", tc.xApp)
+			r.Header.Set("X-Build", tc.xBuild)
+		}
+		if got := asksCarOnEveryTrip(r); got != tc.want {
+			t.Errorf("X-App %q X-Build %q: %v, want %v", tc.xApp, tc.xBuild, got, tc.want)
+		}
+	}
+}
+
 func TestLegacyCounterTalliesWithoutALinePerRequest(t *testing.T) {
 	now := time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC)
 	c := newLegacyCounter(time.Minute)

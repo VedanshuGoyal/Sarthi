@@ -11,6 +11,11 @@ import 'ride_format.dart';
 /// early, or run past its booked time) as that charge beside the booked
 /// fare.
 ///
+/// A payment that also paid the customer's other bookings (what they owed
+/// on earlier rides) says so under the heading — "Paid ₹690 together with
+/// 1 other ride." — and lists those bookings after this one's fare, then
+/// the total paid.
+///
 /// Renders [booking] only; rows the server didn't send are left out, so a
 /// receipt from an older server is just the fare and the time.
 class ReceiptCard extends StatelessWidget {
@@ -33,6 +38,7 @@ class ReceiptCard extends StatelessWidget {
       _ => null,
     };
     final paidAt = payment?.paidAt ?? b.paidAt;
+    final together = RideFormat.paidTogether(b);
     final mono = t.body(size: 12.5).copyWith(fontFamily: 'monospace');
     // (label, value, style); null style is the regular value style.
     final rows = <(String, String, TextStyle?)>[
@@ -56,6 +62,11 @@ class ReceiptCard extends StatelessWidget {
         if (breakdown.nightPaise > 0)
           ('Night surcharge', '₹${breakdown.nightRupees}', null),
       ],
+      if (together != null && payment != null) ...[
+        for (final line in b.paidTogetherWith)
+          (line.label, RideFormat.rupees(line.amountPaise), null),
+        ('Total paid', RideFormat.rupees(payment.paidPaise), t.title(16)),
+      ],
       ('Paid via', payment?.modeLabel ?? 'UPI', null),
       if (payment?.reference case final reference?)
         ('Reference', reference, mono),
@@ -78,6 +89,13 @@ class ReceiptCard extends StatelessWidget {
               ),
             ],
           ),
+          if (together != null) ...[
+            const SizedBox(height: Skyline.s4),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(together, style: t.body(size: 13)),
+            ),
+          ],
           for (final (label, value, style) in rows) ...[
             const SizedBox(height: Skyline.s8),
             Row(

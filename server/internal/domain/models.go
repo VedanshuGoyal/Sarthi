@@ -492,7 +492,8 @@ type RideStop struct {
 }
 
 // RideCar is the customer's car the driver will drive. Multi-stop bookings
-// don't name one yet, so it is optional on a ride.
+// from user app builds before 10 don't name one, so it is optional on a
+// ride.
 type RideCar struct {
 	Registration string `json:"registration"`
 	CarType      string `json:"carType"`

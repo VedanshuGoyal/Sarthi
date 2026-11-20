@@ -8,11 +8,13 @@ import 'package:user_app/features/ride/data/booking_repository.dart';
 import 'package:user_app/features/ride/domain/car.dart';
 import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
+import 'package:user_app/features/ride/domain/multi_stop_trip.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/one_way_trip.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
 import 'package:user_app/features/ride/domain/round_trip_booking.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
+import 'package:user_app/features/ride/domain/trip_stop.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -121,6 +123,40 @@ void main() {
     check(
       (body['details'] as Map<String, dynamic>)['estimatedTravelMinutes'],
     ).equals(85);
+  });
+
+  test('a multi-stop submission names the car, as the others do', () async {
+    final captured = <http.Request>[];
+    final repo = _repo(
+      (_) => http.Response('{"status":"received"}', 202),
+      captured: captured,
+    );
+
+    await repo.submitMultiStop(
+      MultiStopTrip(
+        start: _pickup,
+        scheduledAt: DateTime(2026, 7, 20, 9, 15),
+        stops: [
+          TripStop(
+            location: _pickup,
+            task: 'Collect the refill',
+            departBy: DateTime(2026, 7, 20, 10, 30),
+          ),
+        ],
+        car: _sedan,
+      ),
+    );
+
+    final body = jsonDecode(captured.single.body) as Map<String, dynamic>;
+    check(body['tripType']).equals('multiStop');
+    final details = body['details'] as Map<String, dynamic>;
+    check(details['car'] as Map<String, dynamic>).deepEquals({
+      'id': 'c1',
+      'registration': 'DL01AB1234',
+      'carType': 'sedan',
+      'transmission': 'automatic',
+    });
+    check((details['stops'] as List).length).equals(1);
   });
 
   test('throws on a non-2xx response', () async {

@@ -87,6 +87,29 @@ abstract final class RideFormat {
       'Includes ${rupees(dues.paise)} from '
       '${dues.oneRide ? 'another ride' : 'other rides'}.';
 
+  /// "Paid ₹690 together with 1 other ride.", on the receipt of a booking
+  /// whose payment also paid others of the customer's; null when it paid
+  /// this booking alone. Rides and cancellation fees are counted apart, and
+  /// "other" only names the same kind as this booking.
+  static String? paidTogether(MyBooking b) {
+    final others = b.paidTogetherWith;
+    final payment = b.payment;
+    if (others.isEmpty || payment == null) return null;
+    final rides = others
+        .where((line) => line.kind == PaymentLineKind.ride)
+        .length;
+    final fees = others.length - rides;
+    final thisIsFee = b.hasCancellationFee;
+    String count(int n, String noun, {required bool sameKind}) =>
+        '$n ${sameKind ? 'other ' : ''}$noun${n == 1 ? '' : 's'}';
+    final parts = [
+      if (rides > 0) count(rides, 'ride', sameKind: !thisIsFee),
+      if (fees > 0) count(fees, 'cancellation fee', sameKind: thisIsFee),
+    ];
+    return 'Paid ${rupees(payment.paidPaise)} together with '
+        '${parts.join(' and ')}.';
+  }
+
   /// "4 h", "1 h 30 min", "45 min".
   static String duration(Duration d) {
     final hours = d.inHours;

@@ -89,6 +89,21 @@ func sendsRegistrationTicket(r *http.Request, app string) bool {
 	return ok && c.app == app && c.build >= firstTicketBuild[app]
 }
 
+// firstCarOnEveryTripBuild is the user app's first build that asks for the
+// customer's car on every trip type, multi-stop too (Fable F16). Builds
+// before it — 1.6.0 (+9) and older — never send a car with a multi-stop
+// booking, so theirs are still taken without one.
+const firstCarOnEveryTripBuild = 10
+
+// asksCarOnEveryTrip reports whether r comes from a user app build that
+// asks for the customer's car on every trip type, so its bookings must name
+// one. Older builds, debug runs (build 0) and requests that don't say which
+// build they are book as before.
+func asksCarOnEveryTrip(r *http.Request) bool {
+	c, ok := identifyClient(r)
+	return ok && c.app == AppUser && c.build >= firstCarOnEveryTripBuild
+}
+
 // exemptFromBuildGate lists the routes no app build is turned away from:
 // probes, the contract itself, the back office, and the URLs third parties
 // call (PhonePe's webhook, DigiLocker's redirect).

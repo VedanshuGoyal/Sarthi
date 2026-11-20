@@ -1,7 +1,10 @@
 import 'package:checks/checks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:user_app/features/ride/domain/car.dart';
+import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/geo_point.dart';
 import 'package:user_app/features/ride/domain/pickup_location.dart';
+import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
 
 const _start = PickupLocation(
@@ -21,12 +24,21 @@ const _office = PickupLocation(
 
 final _nineAm = DateTime(2026, 7, 18, 9);
 
-/// A planner seeded with a fixed start time and no stops filled in.
-MultiStopPlannerViewModel _vm({List<StopDraft>? stops}) =>
+const _sedan = Car(
+  id: 'c1',
+  registration: 'DL01AB1234',
+  type: CarType.sedan,
+  transmission: Transmission.manual,
+);
+
+/// A planner seeded with a fixed start time, no stops filled in, and the
+/// sedan picked unless [withCar] is false.
+MultiStopPlannerViewModel _vm({List<StopDraft>? stops, bool withCar = true}) =>
     MultiStopPlannerViewModel(
       start: _start,
       initialScheduledAt: _nineAm,
       initialStops: stops,
+      initialCar: withCar ? _sedan : null,
       // Early that morning, so the 9am start is bookable.
       clock: () => DateTime(2026, 7, 18, 7),
     );
@@ -211,6 +223,32 @@ void main() {
       final stop = (json['stops'] as List).first as Map<String, dynamic>;
       check(stop['departBy'] as String).endsWith('Z');
       check((json['stops'] as List).length).equals(2);
+      // The car goes along, as on the other trip types: its gearbox picks
+      // the drivers.
+      check(trip.car).equals(_sedan);
+      check(json['car'] as Map<String, dynamic>).deepEquals({
+        'id': 'c1',
+        'registration': 'DL01AB1234',
+        'carType': 'sedan',
+        'transmission': 'manual',
+      });
+    });
+
+    test('a car must be picked before the plan can be confirmed', () {
+      final vm = _vm(withCar: false);
+      _complete(vm, vm.stops.single.id, DateTime(2026, 7, 18, 10, 30));
+      check(vm.car).isNull();
+      check(vm.stopsReady).isTrue();
+      check(vm.canConfirm).isFalse();
+      check(vm.trip).isNull();
+
+      var notified = 0;
+      vm.addListener(() => notified++);
+      vm.selectCar(_sedan);
+      vm.selectCar(_sedan); // the same car again: no change
+      check(notified).equals(1);
+      check(vm.canConfirm).isTrue();
+      check(vm.trip!.car).equals(_sedan);
     });
 
     test('honours seeded initial stops and keeps new ids distinct', () {

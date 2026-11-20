@@ -40,6 +40,10 @@ func (e *CancellationFeeError) Error() string {
 var ErrCannotRate = fmt.Errorf("you can rate a ride once, after it's completed: %w",
 	repository.ErrBookingStateConflict)
 
+// ErrCarRequired is returned when a booking from an app that asks for the
+// customer's car on every trip type names none, or a car it can't read.
+var ErrCarRequired = errors.New("choose the car the driver will drive")
+
 // ErrBookingTooSoon is returned when a booking starts too soon for a driver
 // to accept it before it closes (see acceptCutoff).
 var ErrBookingTooSoon = errors.New("pick a start time at least 45 minutes from now")
@@ -84,6 +88,7 @@ type BookingStore interface {
 	UnpaidDues(ctx context.Context, userID string) ([]domain.Due, error)
 	ListForUser(ctx context.Context, userID string, limit int) ([]domain.UserBooking, error)
 	FindForUser(ctx context.Context, id, userID string) (domain.UserBooking, error)
+	PaymentLines(ctx context.Context, userID string, merchantOrderIDs []string) (map[string][]domain.PaymentLine, error)
 	Cancel(ctx context.Context, id, userID, reason string, at time.Time, atPickup repository.PickupCancel) (domain.Booking, error)
 	EndEarly(ctx context.Context, id, userID string, farePaise int64, at time.Time) (domain.Booking, error)
 	RateDriver(ctx context.Context, id, userID string, rating domain.RideRating) error
@@ -149,6 +154,11 @@ func (s *BookingService) SetPaymentsEnabled(on bool) { s.paymentsOff = !on }
 // tripType ("roundTrip", "oneWay", "multiStop"), returning the stored booking
 // with the id the database assigned.
 //
+// requireCar is set for apps that ask for the customer's car on every trip
+// type (the user app from build 10): such a booking must name a complete
+// car, or it is refused with [ErrCarRequired]. Older builds book
+// multi-stop trips without a car, and any driver may take those.
+//
 // A customer with a ride or fee still to pay for may book: what they owe
 // is collected with their next payment (see [PaymentService.Checkout]). A
 // repeat of a booking already made —
@@ -156,7 +166,7 @@ func (s *BookingService) SetPaymentsEnabled(on bool) { s.paymentsOff = !on }
 // the same trip type, start and details within duplicateWindow — returns
 // that booking with duplicate true, and no driver is alerted again.
 func (s *BookingService) Record(
-	ctx context.Context, userID, tripType string, details map[string]any, idempotencyKey string,
+	ctx context.Context, userID, tripType string, details map[string]any, idempotencyKey string, requireCar bool,
 ) (b domain.Booking, duplicate bool, err error) {
 	tripType, idempotencyKey = strings.TrimSpace(tripType), strings.TrimSpace(idempotencyKey)
 	if tripType == "" || len(details) == 0 {
@@ -171,6 +181,10 @@ func (s *BookingService) Record(
 	plan, err := parseTripPlan(tripType, details)
 	if err != nil {
 		return domain.Booking{}, false, fmt.Errorf("%w: %v", ErrInvalidBooking, err)
+	}
+	if requireCar && !completeCar(plan.Car) {
+		slog.WarnContext(ctx, "booking refused: no car", "userId", userID, "tripType", tripType)
+		return domain.Booking{}, false, ErrCarRequired
 	}
 	now := s.now()
 	if plan.ScheduledAt.Before(now.Add(minBookingLead - bookingLeadSlack)) {
@@ -214,7 +228,8 @@ func (s *BookingService) Record(
 
 // ListMine returns userID's bookings, latest scheduled first, each with its
 // status, assigned driver and — while the driver is on the way or waiting at
-// the pickup — the code the customer gives them to start the trip. A request
+// the pickup — the code the customer gives them to start the trip. A paid
+// booking's receipt lists every booking its payment paid. A request
 // no driver took before it closed is reported as expired. A booking whose
 // details can't be read is skipped rather than failing the list.
 func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.CustomerBooking, error) {
@@ -233,7 +248,7 @@ func (s *BookingService) ListMine(ctx context.Context, userID string) ([]domain.
 			out = append(out, withCarried(cb, owed))
 		}
 	}
-	return out, nil
+	return s.withPaymentLines(ctx, userID, out), nil
 }
 
 // owed is what userID still owes for, by booking id — nothing while
@@ -451,7 +466,7 @@ func (s *BookingService) mine(ctx context.Context, userID, bookingID string) (do
 	if err != nil {
 		return domain.CustomerBooking{}, err
 	}
-	return withCarried(cb, owed), nil
+	return s.withPaymentLines(ctx, userID, []domain.CustomerBooking{withCarried(cb, owed)})[0], nil
 }
 
 // planOf reads a stored booking's details, with the start time the server

@@ -95,10 +95,11 @@ Without the PhonePe variables the payment routes answer 503
 | ------ | ---- | ----- |
 | POST | `/me/bookings/{id}/payment` | Opens a UPI checkout for a completed ride → `{checkout:{environment, merchantId, orderId, token, …}}` for the app's PhonePe SDK. 409 `already_paid` / `booking_state` |
 | POST | `/me/bookings/{id}/payment/sync` | Re-checks the ride's open checkouts with PhonePe → `{booking}` (`paymentStatus` `due`/`paid`) |
+| GET | `/me/bookings` | Also every `{booking}` reply (cancel, end, rating, payment sync). A booking paid in the app has `payment.totalPaise` (the whole payment) and `payment.lines` `[{bookingId, kind: "ride"\|"cancellation_fee", label, amountPaise}]`: every booking of the customer's that one payment paid, this one included, oldest first |
 | POST | `/payments/phonepe/webhook` | PhonePe → us; `Authorization: SHA256(username:password)` |
 | GET | `/admin/payouts/due[?format=csv]` | Bearer `ADMIN_TOKEN`. Per driver: rides paid and not paid out, share after commission, bank details. CSV for a bank bulk upload; keep its `as_of` |
 | POST | `/admin/payouts` | Bearer `ADMIN_TOKEN`. `{driverId, reference: "<bank UTR>", asOf}` → marks those rides paid out; audited; "payout sent" push (`payout_sent`) to the driver |
-| POST | `/me/bookings` | Optional `Idempotency-Key` header (the app sends a UUID per attempt). 202 new; 200 `{id, duplicate:true}` for a repeat (same key, or same trip within 10 min); 409 `payment_due` `{bookingId}` while a completed ride is unpaid |
+| POST | `/me/bookings` | Optional `Idempotency-Key` header (the app sends a UUID per attempt). 202 new; 200 `{id, duplicate:true}` for a repeat (same key, or same trip within 10 min); 409 `payment_due` `{bookingId}` while a completed ride is unpaid. From user app build 10 (`X-App: user_app`, `X-Build` ≥ 10) every trip type must name a whole `car` (plate, type, gearbox), else 400 `car_required`; older builds still book multi-stop without one (any gearbox) |
 | GET | `/driver/payouts` | Driver session. `{payouts:[{id, amountPaise, rides, reference, createdAt}]}`, newest first, ≤ 50 |
 | GET | `/admin/bookings[?status=&date=&from=&to=]` | Bearer `ADMIN_TOKEN`. Status `requested`/`expired`/`accepted`/`arrived`/`in_progress`/`completed`/`cancelled`/`unpaid`; IST dates `YYYY-MM-DD`. ≤ 200, with customer and driver phones |
 | POST | `/admin/bookings/{id}/assign` | `{driverId}` → gives an open ride to a cleared driver (gearbox and clash checked; skips the 30-min cutoff). 409 `ride_unavailable` / `driver_not_cleared` / `transmission_mismatch` / `ride_clash` |

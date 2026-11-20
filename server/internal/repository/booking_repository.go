@@ -168,8 +168,9 @@ var ErrBookingStateConflict = errors.New("this booking can't make that change ri
 // userBookingColumns is bookingColumnsB plus the assigned driver's name and
 // phone from `d`, their average rating from customers and their photo's
 // version (a prefix of the selfie's hash), then how the ride was paid —
-// settled by hand (paid_mode) or by the order in `po` — the shape
-// scanUserBooking reads. Select it FROM userBookingTables.
+// settled by hand (paid_mode) or by the order in `po`, with that order's
+// whole amount — the shape scanUserBooking reads. Select it FROM
+// userBookingTables.
 const userBookingColumns = bookingColumnsB + `,
 	d.name, d.phone_e164,
 	(SELECT avg(x.driver_rating)::float8 FROM bookings x WHERE x.driver_id = b.driver_id),
@@ -177,7 +178,8 @@ const userBookingColumns = bookingColumnsB + `,
 	(SELECT left(dd.sha256, 12) FROM driver_documents dd
 	 WHERE dd.driver_id = b.driver_id AND dd.kind = 'selfie'),
 	coalesce(b.paid_mode, ''), coalesce(po.merchant_order_id, ''),
-	coalesce(po.payment_mode, ''), coalesce(po.utr, ''), coalesce(po.transaction_id, '')`
+	coalesce(po.payment_mode, ''), coalesce(po.utr, ''), coalesce(po.transaction_id, ''),
+	coalesce(po.amount_paise, 0)`
 
 // userBookingTables is what userBookingColumns reads from.
 const userBookingTables = `bookings b
@@ -226,6 +228,53 @@ func (r *BookingRepository) FindForUser(ctx context.Context, id, userID string) 
 		return domain.UserBooking{}, bookingErr(rideErr(err, ErrBookingNotFound, "finding booking"))
 	}
 	return ub, nil
+}
+
+// PaymentLines returns, for each of userID's payment orders named in
+// merchantOrderIDs, the bookings it paid — only userID's own — oldest
+// scheduled first, each with its part of the order and whether it was a
+// ride's fare or a cancellation fee. Orders that aren't userID's, or that
+// don't exist, are left out. It reads, never writes.
+func (r *BookingRepository) PaymentLines(
+	ctx context.Context, userID string, merchantOrderIDs []string,
+) (map[string][]domain.PaymentLine, error) {
+	if len(merchantOrderIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT i.merchant_order_id, b.id::text, b.trip_type, b.scheduled_at, i.amount_paise,
+		       b.status = 'cancelled' AND b.cancellation_fee_paise IS NOT NULL
+		FROM payment_order_items i
+		JOIN payment_orders po ON po.merchant_order_id = i.merchant_order_id
+		JOIN bookings b ON b.id = i.booking_id
+		WHERE i.merchant_order_id = ANY($2::text[]) AND po.user_id = $1 AND b.user_id = $1
+		ORDER BY i.merchant_order_id, b.scheduled_at NULLS LAST, b.created_at, b.id`,
+		userID, merchantOrderIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing payment lines: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]domain.PaymentLine{}
+	for rows.Next() {
+		var (
+			order string
+			line  domain.PaymentLine
+			fee   bool
+		)
+		if err := rows.Scan(&order, &line.BookingID, &line.TripType, &line.ScheduledAt,
+			&line.AmountPaise, &fee); err != nil {
+			return nil, fmt.Errorf("listing payment lines: %w", err)
+		}
+		line.Kind = domain.PaymentLineRide
+		if fee {
+			line.Kind = domain.PaymentLineCancellationFee
+		}
+		out[order] = append(out[order], line)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing payment lines: %w", err)
+	}
+	return out, nil
 }
 
 // PickupCancel is whether Cancel may cancel a booking whose driver is
@@ -337,7 +386,7 @@ func scanUserBooking(row pgx.Row) (domain.UserBooking, error) {
 	)
 	br := bookingRow{b: &ub.Booking}
 	err := row.Scan(br.targets(&name, &phone, &average, &rated, &photo,
-		&paidMode, &pay.MerchantOrderID, &pay.Mode, &pay.UTR, &pay.TransactionID)...)
+		&paidMode, &pay.MerchantOrderID, &pay.Mode, &pay.UTR, &pay.TransactionID, &pay.TotalPaise)...)
 	br.finish()
 	if at := ub.Booking.PaidAt; at != nil {
 		pay.PaidAt = *at
