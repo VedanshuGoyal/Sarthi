@@ -117,24 +117,6 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _refreshRequests();
   }
 
-  /// The push sent when a customer pays for a ride.
-  static const String _paymentReceived = 'payment_received';
-
-  /// The push sent when MOJUD records a bank transfer to the driver.
-  static const String _payoutSent = 'payout_sent';
-
-  /// The pushes about one of the driver's own rides: the customer (or
-  /// MOJUD) cancelled it, MOJUD assigned it to them, or the customer ended
-  /// the trip early (it's completed, charged for the time used).
-  static const String _rideCancelled = 'ride_cancelled';
-  static const String _rideAssigned = 'ride_assigned';
-  static const String _rideEndedEarly = 'ride_ended_early';
-
-  /// The pushes that change whether the driver is cleared: a reviewer's
-  /// decision, and a new payout account (which reopens KYC).
-  static const String _kycDecided = 'kyc_decided';
-  static const String _bankAccountChanged = 'bank_account_changed';
-
   /// Re-reads the driver's KYC: if they're no longer cleared, main.dart's
   /// gate sends them back to the Document View.
   void _reloadKyc() => ref.read(documentRegistrationViewModelProvider).load();
@@ -150,50 +132,57 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     _reloadMoney();
   }
 
-  /// The push sent when a held ride starts within the hour.
-  static const String _rideReminder = 'ride_reminder';
-
-  /// The push sent when the backend took a silent driver off duty.
-  static const String _dutyOff = 'duty_off';
-
   /// A push arrived while the app was open: a cancelled, assigned, ended or
   /// upcoming ride needs the rides list re-read (a reminder's ride re-checks
   /// whether to share location; a ride that finished with money in it also
   /// refreshes earnings), a duty-off shows the driver offline, a
   /// payment or payout the earnings, a KYC decision or bank change the KYC
-  /// record; anything else is a new request, so refresh the feed as before.
+  /// record, and a new request the feed.
+  ///
+  /// A type this build doesn't know (a newer server's) can't be acted on
+  /// precisely, so it re-reads what Home shows: the feed and, when it names
+  /// a ride, the driver's rides.
   void _onPushArrival(PushEvent event) {
-    switch (event.type) {
-      case _rideCancelled || _rideAssigned || _rideReminder || _rideEndedEarly:
+    switch (event.kind) {
+      case PushType.rideCancelled ||
+          PushType.rideAssigned ||
+          PushType.rideReminder ||
+          PushType.rideEndedEarly:
         ref.read(myRidesViewModelProvider).load();
-      case _dutyOff:
+      case PushType.dutyOff:
         ref.read(dutyViewModelProvider).markOffDuty();
-      case _kycDecided || _bankAccountChanged:
+      case PushType.kycDecided || PushType.bankAccountChanged:
         _reloadKyc();
-      case _paymentReceived || _payoutSent:
+      case PushType.paymentReceived || PushType.payoutSent:
         _reloadMoney();
-      default:
+      case PushType.rideRequest:
         _refreshRequests();
+      case PushType.unknown:
+        _refreshRequests();
+        if (event.rideId != null) ref.read(myRidesViewModelProvider).load();
     }
   }
 
   void _onPushTap(PushEvent event) {
-    switch (event.type) {
-      case _rideCancelled || _rideAssigned || _rideReminder || _rideEndedEarly:
+    switch (event.kind) {
+      case PushType.rideCancelled ||
+          PushType.rideAssigned ||
+          PushType.rideReminder ||
+          PushType.rideEndedEarly:
         _openRide(event.rideId);
-      case _paymentReceived || _payoutSent:
+      case PushType.paymentReceived || PushType.payoutSent:
         _openEarnings();
-      case _dutyOff:
+      case PushType.dutyOff:
         ref.read(dutyViewModelProvider).markOffDuty();
         _select(_homeTab);
-      case _bankAccountChanged:
+      case PushType.bankAccountChanged:
         // The account shows on the Account panel.
         _reloadKyc();
         _select(_accountTab);
-      case _kycDecided:
+      case PushType.kycDecided:
         _reloadKyc();
         _openRequests();
-      default:
+      case PushType.rideRequest || PushType.unknown:
         _openRequests();
     }
   }

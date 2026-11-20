@@ -43,7 +43,12 @@ class RideDetailScreen extends ConsumerWidget {
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: Skyline.s16),
-            child: Center(child: RideStatusChip(status: current.status)),
+            child: Center(
+              child: RideStatusChip(
+                status: current.status,
+                label: current.statusLabel,
+              ),
+            ),
           ),
         ],
       ),

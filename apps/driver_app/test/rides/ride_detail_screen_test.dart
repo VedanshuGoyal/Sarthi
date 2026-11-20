@@ -66,6 +66,24 @@ void main() {
     },
   );
 
+  testWidgets('a status from a newer server shows its name and offers no '
+      'action', (tester) async {
+    final held = ride(id: 'r', status: 'on_hold');
+    repo.mine = [held];
+
+    await pump(tester, held);
+
+    check(find.text('On hold').evaluate()).isNotEmpty();
+    for (final action in const [
+      'Accept ride',
+      "I've arrived at pickup",
+      'Start trip',
+      'Complete trip',
+    ]) {
+      check(find.text(action).evaluate()).isEmpty();
+    }
+  });
+
   testWidgets('waiting at the pickup: no-show waits for its time', (
     tester,
   ) async {

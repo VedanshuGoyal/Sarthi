@@ -270,6 +270,11 @@ class _KycBadge extends StatelessWidget {
         Icons.pending_outlined,
         t.inkMuted,
       ),
+      KycStatus.unknown => (
+        'Documents status unknown',
+        Icons.help_outline_rounded,
+        t.inkMuted,
+      ),
     };
     return Row(
       mainAxisSize: MainAxisSize.min,

@@ -6,16 +6,20 @@ import '../ride_format.dart';
 
 /// The ride's status as a small coloured pill.
 class RideStatusChip extends StatelessWidget {
-  const RideStatusChip({super.key, required this.status});
+  const RideStatusChip({super.key, required this.status, this.label});
 
   final RideStatus status;
+
+  /// Overrides [RideStatus.label] — e.g. [Ride.statusLabel], which names a
+  /// status this build doesn't know by the server's own word.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
     final (bg, fg) = switch (status) {
       RideStatus.requested => (t.primarySoft, t.primaryText),
-      RideStatus.accepted => (t.sunken, t.ink),
+      RideStatus.accepted || RideStatus.unknown => (t.sunken, t.ink),
       RideStatus.arrived || RideStatus.inProgress => (t.primary, t.onPrimary),
       RideStatus.completed => (t.success.withValues(alpha: 0.12), t.success),
       RideStatus.cancelled => (t.danger.withValues(alpha: 0.10), t.danger),
@@ -26,7 +30,7 @@ class RideStatusChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(status.label, style: t.label(size: 12, color: fg)),
+      child: Text(label ?? status.label, style: t.label(size: 12, color: fg)),
     );
   }
 }
@@ -299,7 +303,8 @@ class RideCard extends StatelessWidget {
             children: [
               TripKindBadge(kind: ride.kind),
               const Spacer(),
-              if (showStatus) RideStatusChip(status: ride.status),
+              if (showStatus)
+                RideStatusChip(status: ride.status, label: ride.statusLabel),
             ],
           ),
           const SizedBox(height: Skyline.s12),

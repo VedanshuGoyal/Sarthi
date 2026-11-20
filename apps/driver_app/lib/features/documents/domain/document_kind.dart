@@ -14,7 +14,7 @@ enum DocumentKind {
 
   /// Parses a kind from the API, or null for one this build doesn't know
   /// about — a newer server must not crash an older app.
-  static DocumentKind? fromWire(String value) {
+  static DocumentKind? fromWire(Object? value) {
     for (final kind in DocumentKind.values) {
       if (kind.wireName == value) return kind;
     }

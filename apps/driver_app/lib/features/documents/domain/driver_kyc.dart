@@ -18,13 +18,23 @@ enum KycStatus {
   verified,
 
   /// Something was refused and needs redoing.
-  rejected;
+  rejected,
 
-  static KycStatus fromWire(String? value) => switch (value) {
+  /// A status this app version doesn't know — a newer server's. Treated as
+  /// not cleared (the gate stays shut) and as nothing for the driver to
+  /// redo; [DriverKyc.rawStatus] keeps what the server sent.
+  unknown;
+
+  /// Parses the backend's status. A missing one is [incomplete], as from a
+  /// fresh profile; one this build doesn't know is [unknown], never
+  /// [incomplete] — that would ask a driver to redo steps the server has
+  /// moved past.
+  static KycStatus fromWire(Object? value) => switch (value) {
+    null || '' || 'incomplete' => KycStatus.incomplete,
     'submitted' => KycStatus.submitted,
     'verified' => KycStatus.verified,
     'rejected' => KycStatus.rejected,
-    _ => KycStatus.incomplete,
+    _ => KycStatus.unknown,
   };
 }
 
@@ -90,9 +100,18 @@ class DriverKyc {
     this.licenseValidUntil,
     this.licenseClasses = const [],
     this.reviewNote,
+    this.rawStatus,
+    this.submittedAt,
   });
 
   final KycStatus status;
+
+  /// The status exactly as the server sent it — what a
+  /// [KycStatus.unknown] one actually was, for support.
+  final String? rawStatus;
+
+  /// When the driver last submitted the Document View.
+  final DateTime? submittedAt;
   final String fullName;
   final DateTime? dateOfBirth;
   final Gender? gender;
@@ -131,13 +150,16 @@ class DriverKyc {
     final uploaded = <DocumentKind>{};
     for (final entry in documents) {
       if (entry is! Map<String, dynamic>) continue;
-      final kind = DocumentKind.fromWire(entry['kind'] as String? ?? '');
+      final kind = DocumentKind.fromWire(entry['kind']);
       if (kind != null) uploaded.add(kind);
     }
 
+    final status = profile['kycStatus'];
     return DriverKyc(
-      status: KycStatus.fromWire(profile['kycStatus'] as String?),
-      fullName: profile['fullName'] as String? ?? '',
+      status: KycStatus.fromWire(status),
+      rawStatus: status is String ? status : null,
+      submittedAt: _parseDate(profile['kycSubmittedAt']),
+      fullName: _nonEmpty(profile['fullName']) ?? '',
       dateOfBirth: _parseDate(profile['dateOfBirth']),
       gender: _parseEnum(Gender.values, profile['gender']),
       transmission: _parseEnum(VehicleType.values, profile['transmission']),
@@ -160,25 +182,20 @@ class DriverKyc {
   /// Whether the backend already has [kind].
   bool hasUploaded(DocumentKind kind) => uploadedKinds.contains(kind);
 
-  static String? _nonEmpty(Object? value) {
-    final text = value as String?;
-    return (text == null || text.isEmpty) ? null : text;
-  }
+  static String? _nonEmpty(Object? value) =>
+      value is String && value.isNotEmpty ? value : null;
 
   /// Parses the server's timestamps (RFC 3339) and plain dates (YYYY-MM-DD).
-  static DateTime? _parseDate(Object? value) {
-    final text = value as String?;
-    if (text == null || text.isEmpty) return null;
-    return DateTime.tryParse(text);
-  }
+  static DateTime? _parseDate(Object? value) =>
+      value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
 
   /// Matches a wire string against an enum by name — both [Gender] and
-  /// [VehicleType] use identical names on either side of the wire.
+  /// [VehicleType] use identical names on either side of the wire. A value
+  /// this build doesn't know reads as not set.
   static T? _parseEnum<T extends Enum>(List<T> values, Object? value) {
-    final text = value as String?;
-    if (text == null || text.isEmpty) return null;
+    if (value is! String || value.isEmpty) return null;
     for (final candidate in values) {
-      if (candidate.name == text) return candidate;
+      if (candidate.name == value) return candidate;
     }
     return null;
   }

@@ -165,6 +165,36 @@ void main() {
       await goOffDuty(tester);
     });
 
+    testWidgets('a push type from a newer server re-reads the feed and, '
+        'naming a ride, the rides — and its tap opens Home', (tester) async {
+      await pumpShell(tester);
+      await goOnDuty(tester);
+      await tester.tap(find.text('Rides'));
+      await tester.pumpAndSettle();
+      final requests = rides.requestsCalls;
+      final loads = rides.myRidesCalls;
+      final kycLoads = kyc.loads;
+
+      push.arrive(const PushEvent(type: 'ride_rescheduled', rideId: 'r9'));
+      await tester.pumpAndSettle();
+
+      check(rides.requestsCalls).equals(requests + 1);
+      check(rides.myRidesCalls).equals(loads + 1);
+      check(kyc.loads).equals(kycLoads);
+
+      // Without a ride, only the feed.
+      push.arrive(const PushEvent(type: 'promo'));
+      await tester.pumpAndSettle();
+      check(rides.requestsCalls).equals(requests + 2);
+      check(rides.myRidesCalls).equals(loads + 1);
+
+      push.tap(const PushEvent(type: 'promo'));
+      await tester.pumpAndSettle();
+      check(find.text("You're on duty").evaluate()).isNotEmpty();
+
+      await goOffDuty(tester);
+    });
+
     testWidgets('a payout re-reads the earnings, not the feed', (tester) async {
       await pumpShell(tester);
       await goOnDuty(tester);
