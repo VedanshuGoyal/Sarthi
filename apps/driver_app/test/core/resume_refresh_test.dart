@@ -118,7 +118,13 @@ void main() {
       // The read began before the save, so its answer predates it.
       repo.loads.single.complete(const DriverKyc());
       await load;
+      check(vm.kyc.transmission).equals(VehicleType.manual);
 
+      // It reads again (the record may have moved on since), and uses that.
+      await settle();
+      check(repo.loads).length.equals(2);
+      repo.loads[1].complete(const DriverKyc(transmission: VehicleType.manual));
+      await settle();
       check(vm.kyc.transmission).equals(VehicleType.manual);
       check(vm.isLoading).isFalse();
     });
