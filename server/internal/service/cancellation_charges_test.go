@@ -117,15 +117,40 @@ func TestBookingService_EndEarly(t *testing.T) {
 		t.Errorf("driver alerts = %+v, want one for d1 at 24000", alerts.ended)
 	}
 
-	// Not in progress (any more): refused.
-	for _, id := range []string{"driving", "coming"} {
-		if _, err := svc.EndEarly(ctx, "u1", id); !errors.Is(err, ErrCannotEnd) ||
-			!errors.Is(err, repository.ErrBookingStateConflict) {
-			t.Errorf("EndEarly(%s) err = %v, want ErrCannotEnd", id, err)
-		}
+	// Ending it again (a retry after a lost reply) returns the ended trip
+	// unchanged, with no second alert.
+	again, err := svc.EndEarly(ctx, "u1", "driving")
+	if err != nil || again.Status != domain.RideStatusCompleted || again.FarePaise != 24000 {
+		t.Errorf("EndEarly again = status %q fare %d, %v; want completed, 24000, nil", again.Status, again.FarePaise, err)
+	}
+	if len(alerts.ended) != 1 {
+		t.Errorf("driver alerts after a retry = %d, want 1", len(alerts.ended))
+	}
+	// Not started yet: refused.
+	if _, err := svc.EndEarly(ctx, "u1", "coming"); !errors.Is(err, ErrCannotEnd) ||
+		!errors.Is(err, repository.ErrBookingStateConflict) {
+		t.Errorf("EndEarly(coming) err = %v, want ErrCannotEnd", err)
 	}
 	if _, err := svc.EndEarly(ctx, "u2", "driving"); !errors.Is(err, repository.ErrBookingNotFound) {
 		t.Errorf("EndEarly(other user) err = %v, want ErrBookingNotFound", err)
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. The night surcharge follows the booked
+// start: a 23:30 trip the driver started at 00:05 and the customer ended
+// after 1 h 45 min costs what was booked, not the daytime rate.
+func TestFinalFare_nightFollowsBookedStart(t *testing.T) {
+	booked := time.Date(2026, 10, 24, 23, 30, 0, 0, ist)
+	plan := tripPlan{ScheduledAt: booked, Hours: 2}
+	// ₹240 + ₹50 + 2 × ₹24 for 23:30–01:30.
+	const quoted = 33800
+	started := booked.Add(35 * time.Minute) // 00:05, the next day
+	if got := finalFare(plan, quoted, started, started.Add(105*time.Minute), true); got != quoted {
+		t.Errorf("ended early after midnight: got %d, want %d", got, quoted)
+	}
+	early := booked.Add(-10 * time.Minute) // 23:20
+	if got := finalFare(plan, quoted, early, early.Add(50*time.Minute), true); got != 13900+5000+2400 {
+		t.Errorf("ended in the first hour: got %d, want %d", got, 13900+5000+2400)
 	}
 }
 

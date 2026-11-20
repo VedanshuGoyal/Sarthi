@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sarthi/server/internal/domain"
@@ -97,6 +99,10 @@ type PaymentService struct {
 	// commissionBP is MOJUD's cut in basis points (1500 = 15%).
 	commissionBP int64
 	now          func() time.Time
+	// checkoutLocks serialise Checkout per customer (striped by user id), so
+	// two taps or two devices can't each find no open order and each open
+	// one for the same dues.
+	checkoutLocks [64]sync.Mutex
 }
 
 // NewPaymentService wires the service. gateway nil turns payments off;
@@ -130,6 +136,7 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 	if s.gateway == nil {
 		return domain.PaymentCheckout{}, ErrPaymentsOff
 	}
+	defer s.lockCustomer(userID)()
 	ub, err := s.bookings.FindForUser(ctx, bookingID, userID)
 	if err != nil {
 		return domain.PaymentCheckout{}, err
@@ -161,20 +168,29 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, bookingID string)
 			return domain.PaymentCheckout{}, err
 		}
 	}
-	items := checkoutItems(b, dues)
+	if b.AmountDue() <= 0 {
+		return domain.PaymentCheckout{}, ErrNotPayable
+	}
+	now := s.now()
+	if o, ok := reusableCheckout(open, b.ID, now); ok {
+		// An earlier tap's order still pays this booking: hand it out again,
+		// even if other dues changed since, rather than open a second order
+		// the customer could pay as well.
+		slog.InfoContext(ctx, "payment: checkout reopened",
+			"bookingId", b.ID, "userId", userID, "merchantOrderId", o.MerchantOrderID, "amountPaise", o.AmountPaise)
+		return s.checkoutFor(o), nil
+	}
+	// Dues another open order already pays stay out of this one. An open
+	// order for b itself that can't be handed out (no token, or about to
+	// expire) is replaced: paying both in its last minutes is the one way
+	// left to pay b twice, and the paid-twice list catches it.
+	items := checkoutItems(b, withoutOpen(dues, open))
 	var amount int64
 	for _, it := range items {
 		amount += it.AmountPaise
 	}
-	if b.AmountDue() <= 0 || amount < minPaymentPaise {
+	if amount < minPaymentPaise {
 		return domain.PaymentCheckout{}, ErrNotPayable
-	}
-
-	now := s.now()
-	if o, ok := reusableCheckout(open, items, now); ok {
-		slog.InfoContext(ctx, "payment: checkout reopened",
-			"bookingId", b.ID, "userId", userID, "merchantOrderId", o.MerchantOrderID, "amountPaise", amount)
-		return s.checkoutFor(o), nil
 	}
 	merchantOrderID := newMerchantOrderID(b.ID, now)
 	order, err := s.gateway.CreateOrder(ctx, merchantOrderID, amount, orderLifetime)
@@ -238,13 +254,13 @@ func (s *PaymentService) checkoutFor(o domain.PaymentOrder) domain.PaymentChecko
 }
 
 // reusableCheckout picks, from orders the gateway says are still open, the
-// one to hand out again: paying exactly items, with its token on file and
-// at least checkoutReuseMargin to run. The latest-expiring wins.
-func reusableCheckout(open []domain.PaymentOrder, items []domain.PaymentItem, now time.Time) (domain.PaymentOrder, bool) {
+// one to hand out again for bookingID: one that pays it, with its token on
+// file and at least checkoutReuseMargin to run. The latest-expiring wins.
+func reusableCheckout(open []domain.PaymentOrder, bookingID string, now time.Time) (domain.PaymentOrder, bool) {
 	var best domain.PaymentOrder
 	found := false
 	for _, o := range open {
-		if !sameItems(o.Items, items) || o.CheckoutToken == "" || o.ExpiresAt.Before(now.Add(checkoutReuseMargin)) {
+		if !pays(o, bookingID) || o.CheckoutToken == "" || o.ExpiresAt.Before(now.Add(checkoutReuseMargin)) {
 			continue
 		}
 		if !found || o.ExpiresAt.After(best.ExpiresAt) {
@@ -254,22 +270,41 @@ func reusableCheckout(open []domain.PaymentOrder, items []domain.PaymentItem, no
 	return best, found
 }
 
-// sameItems reports whether a and b pay the same bookings the same amounts,
-// in any order.
-func sameItems(a, b []domain.PaymentItem) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	want := make(map[string]int64, len(b))
-	for _, it := range b {
-		want[it.BookingID] = it.AmountPaise
-	}
-	for _, it := range a {
-		if amount, ok := want[it.BookingID]; !ok || amount != it.AmountPaise {
-			return false
+// pays reports whether order o collects for bookingID.
+func pays(o domain.PaymentOrder, bookingID string) bool {
+	for _, it := range o.Items {
+		if it.BookingID == bookingID {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// withoutOpen is dues less those an order in open already collects.
+func withoutOpen(dues []domain.Due, open []domain.PaymentOrder) []domain.Due {
+	out := make([]domain.Due, 0, len(dues))
+	for _, d := range dues {
+		covered := false
+		for _, o := range open {
+			if pays(o, d.BookingID) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// lockCustomer takes userID's checkout lock and returns its unlock.
+func (s *PaymentService) lockCustomer(userID string) func() {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(userID))
+	m := &s.checkoutLocks[h.Sum32()%uint32(len(s.checkoutLocks))]
+	m.Lock()
+	return m.Unlock
 }
 
 // Sync re-checks userID's booking's open checkouts with the gateway — the
@@ -413,6 +448,12 @@ func (s *PaymentService) settle(ctx context.Context, o domain.PaymentOrder) (dom
 		}
 		slog.InfoContext(ctx, "payment: order failed", "merchantOrderId", o.MerchantOrderID, "bookingId", o.BookingID)
 		return domain.PaymentFailed, false, nil
+	case domain.PaymentCompleted:
+	default:
+		// Never treat a state we don't know as money received.
+		slog.ErrorContext(ctx, "payment: gateway sent an unknown order state; left pending",
+			"merchantOrderId", o.MerchantOrderID, "state", st.State)
+		return domain.PaymentPending, false, nil
 	}
 	// Completed. The gateway's amount must be what we asked for.
 	if st.AmountPaise != o.AmountPaise {

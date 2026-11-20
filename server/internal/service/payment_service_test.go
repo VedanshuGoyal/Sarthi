@@ -460,3 +460,68 @@ func TestPaymentsOff(t *testing.T) {
 		t.Error("swept with payments off")
 	}
 }
+
+// HUMAN REVIEW REQUIRED: payments. A booking already in an open order is
+// never put in a second one: a new due gets an order of its own, and tapping
+// Pay on the booking in the open order reopens that order.
+func TestCheckout_neverTwoOpenOrdersForABooking(t *testing.T) {
+	store := newFakePaymentStore(completedBooking("a-ride", 24000))
+	gw := &fakeGateway{}
+	svc := newPayments(store, gw, &recordingPaymentAlerts{}, 1300)
+	ctx := context.Background()
+
+	first, err := svc.Checkout(ctx, "u1", "a-ride")
+	if err != nil || first.AmountPaise != 24000 {
+		t.Fatalf("Checkout(a) = %d, %v; want 24000", first.AmountPaise, err)
+	}
+	// Ride b completes while a's checkout is still open.
+	b := completedBooking("b-ride", 13900)
+	store.bookings[b.ID] = &b
+
+	second, err := svc.Checkout(ctx, "u1", "b-ride")
+	if err != nil {
+		t.Fatalf("Checkout(b): %v", err)
+	}
+	if second.MerchantOrderID == first.MerchantOrderID || second.AmountPaise != 13900 {
+		t.Errorf("Checkout(b) = %s for %d; want a new order for b alone (13900)", second.MerchantOrderID, second.AmountPaise)
+	}
+	again, err := svc.Checkout(ctx, "u1", "a-ride")
+	if err != nil || again.MerchantOrderID != first.MerchantOrderID {
+		t.Errorf("Checkout(a) again = %s, %v; want the open order %s", again.MerchantOrderID, err, first.MerchantOrderID)
+	}
+
+	// Paying both orders pays each ride once.
+	gw.set(first.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 24000})
+	gw.set(second.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 13900})
+	if err := svc.Sync(ctx, "u1", "a-ride"); err != nil {
+		t.Fatalf("Sync(a): %v", err)
+	}
+	if err := svc.Sync(ctx, "u1", "b-ride"); err != nil {
+		t.Fatalf("Sync(b): %v", err)
+	}
+	for id, want := range map[string]int64{"a-ride": 24000, "b-ride": 13900} {
+		if got := store.bookings[id]; got.PaidAt == nil || got.PaidPaise != want {
+			t.Errorf("%s: paid %v %d, want %d", id, got.PaidAt != nil, got.PaidPaise, want)
+		}
+	}
+}
+
+// HUMAN REVIEW REQUIRED: payments. A state the gateway client doesn't know
+// is never taken as money received.
+func TestSettle_unknownStateStaysPending(t *testing.T) {
+	store := newFakePaymentStore(completedBooking("a-ride", 24000))
+	gw := &fakeGateway{}
+	svc := newPayments(store, gw, &recordingPaymentAlerts{}, 1300)
+	ctx := context.Background()
+	c, err := svc.Checkout(ctx, "u1", "a-ride")
+	if err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	gw.set(c.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentState("refunded"), AmountPaise: 24000})
+	if err := svc.Sync(ctx, "u1", "a-ride"); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if b := store.bookings["a-ride"]; b.PaidAt != nil {
+		t.Errorf("booking paid on an unknown gateway state")
+	}
+}

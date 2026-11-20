@@ -330,6 +330,10 @@ func (s *BookingService) EndEarly(ctx context.Context, userID, bookingID string)
 		return domain.CustomerBooking{}, err
 	}
 	b := ub.Booking
+	if b.Status == domain.RideStatusCompleted {
+		// A retry after a lost reply, or the driver completed it first.
+		return s.mine(ctx, userID, bookingID)
+	}
 	if b.Status != domain.RideStatusInProgress || b.StartedAt == nil {
 		return domain.CustomerBooking{}, ErrCannotEnd
 	}
@@ -345,6 +349,9 @@ func (s *BookingService) EndEarly(ctx context.Context, userID, bookingID string)
 	fare := finalFare(plan, booked, *b.StartedAt, now, true)
 	ended, err := s.store.EndEarly(ctx, b.ID, userID, fare, now)
 	if errors.Is(err, repository.ErrBookingStateConflict) {
+		if again, ferr := s.store.FindForUser(ctx, bookingID, userID); ferr == nil && again.Booking.Status == domain.RideStatusCompleted {
+			return s.mine(ctx, userID, bookingID)
+		}
 		return domain.CustomerBooking{}, ErrCannotEnd
 	}
 	if err != nil {

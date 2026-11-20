@@ -17,12 +17,10 @@ func TestSchema_DeletingAnAccountKeepsItsRides_Integration(t *testing.T) {
 	ctx, tx := rollbackTx(t)
 	user, driver := newTestUser(t, ctx, tx), newTestDriver(t, ctx, tx)
 	booking := paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900)
-	if err := NewPaymentRepository(tx).InsertOrder(ctx, domain.PaymentOrder{
+	orderForPaidRide(t, ctx, tx, domain.PaymentOrder{
 		MerchantOrderID: "MOJUD_schema_test", BookingID: booking, UserID: user, AmountPaise: 30000,
 		ProviderOrderID: "OMO1", ExpiresAt: time.Now().Add(time.Hour),
-	}); err != nil {
-		t.Fatalf("InsertOrder: %v", err)
-	}
+	})
 
 	for _, del := range []struct{ what, sql, id string }{
 		{"customer", `DELETE FROM users WHERE id = $1`, user},

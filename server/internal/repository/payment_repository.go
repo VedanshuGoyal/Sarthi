@@ -29,6 +29,10 @@ type ExpectedPayout struct {
 	Rides       *int
 }
 
+// ErrOrderItemPaid refuses a new order for a booking that got paid (by hand,
+// or by another order) after the checkout read it.
+var ErrOrderItemPaid = fmt.Errorf("%w: a booking in this payment was paid meanwhile", ErrBookingStateConflict)
+
 // PaymentRepository persists checkouts (payment_orders), the paid state of
 // bookings, and payouts to drivers.
 type PaymentRepository struct {
@@ -72,6 +76,22 @@ func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrd
 		return fmt.Errorf("inserting payment order: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// Lock the bookings first, in id order: SettleByHand takes the same lock,
+	// so a hand settlement and a new order can't both go through.
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.BookingID
+	}
+	var paid bool
+	if err := tx.QueryRow(ctx, `
+		SELECT coalesce(bool_or(paid_at IS NOT NULL), false) FROM (
+		    SELECT paid_at FROM bookings WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE) locked`,
+		ids).Scan(&paid); err != nil {
+		return fmt.Errorf("inserting payment order: locking bookings: %w", err)
+	}
+	if paid {
+		return ErrOrderItemPaid
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO payment_orders
 		    (merchant_order_id, booking_id, user_id, amount_paise, provider_order_id, checkout_token, expires_at)
