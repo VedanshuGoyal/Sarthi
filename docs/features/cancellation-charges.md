@@ -40,11 +40,13 @@ Customer booking JSON (`GET /me/bookings`, `GET /me/bookings/{id}`, cancel/end r
 `POST /me/bookings/{id}/end` (no body) — customer ends an `in_progress` trip.
 
 - 200 `{"booking": …}` (same envelope as cancel) → `completed`, `farePaise` = charge for the time used, `bookedFarePaise` = booked fare, `paymentStatus: "due"`.
-- 409 `{"code": "cannot_end"}` when the trip isn't in progress.
+- 409 `{"code": "cannot_end"}` when the trip hasn't started. A trip already completed (a retried request, or the driver finished first) returns 200 with it.
+- The night surcharge in this charge (and in overtime) follows the booked start, as the quote did.
 - The driver gets push `ride_ended_early` (`rideId`).
 
 Checkout (`POST /me/bookings/{id}/payment`) and sync (`…/payment/sync`) also take a cancelled booking whose `paymentStatus` is `due`; the amount is the fee.
 New bookings are never refused for money owed (no more 409 `payment_due`); checkout `amountPaise` includes `carriedPaise`.
+A booking is never in two open orders: Pay on a booking an open order already collects reopens that order, and dues another open order collects stay out of a new one (21 Nov, after the Fable review).
 
 Driver ride JSON: `cancellationFeePaise`, `paymentStatus` (`due`/`paid`/`paid_out`), `sharePaise` on a ride the customer cancelled at the pickup;
 `bookedFarePaise` on one they ended early. Earnings: fees count in "awaiting customer", "due to you" and "paid out"; ride counts and fare windows stay completed rides only.
@@ -55,4 +57,4 @@ Driver ride JSON: `cancellationFeePaise`, `paymentStatus` (`due`/`paid`/`paid_ou
 - Payouts, earnings, stats: only `cash` settlements are excluded from what MOJUD owes drivers (was: any hand settlement).
 - Old app builds (no `acceptFeePaise`) cancel free; raise `MIN_BUILD_USER_APP` to 9 once 1.6.0 is out to close that.
 - Tests: service unit tests, DB integration tests, `scripts/e2e/run.sh` steps 6 and 10 (102/102 checks).
-- Rollouts: `overnight-hardening-rollout.sh` (0030, done 17 Nov 09:34), `carry-dues-rollout.sh` (0031).
+- Rollouts: `overnight-hardening-rollout.sh` (0030, done 17 Nov 09:34), `carry-dues-rollout.sh` (0031), `payments-review-rollout.sh` (21 Nov fixes, no migration).
