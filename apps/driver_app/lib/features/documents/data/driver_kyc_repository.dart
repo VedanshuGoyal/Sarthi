@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/digilocker_session.dart';
 import '../domain/document_kind.dart';
 import '../domain/driver_kyc.dart';
@@ -169,9 +170,7 @@ class DriverKycRepository {
       }
       return await File(path).readAsBytes();
     } catch (_) {
-      throw const KycException(
-        "Couldn't read the photo. Please take it again.",
-      );
+      throw KycException(L10n.current.docPhotoReadFailed);
     }
   }
 
@@ -184,9 +183,7 @@ class DriverKycRepository {
     try {
       return fromJson(jsonDecode(body) as Map<String, dynamic>);
     } catch (_) {
-      throw const KycException(
-        'The server sent an unexpected reply. Please try again.',
-      );
+      throw KycException(L10n.current.errorUnexpectedReply);
     }
   }
 
@@ -215,9 +212,7 @@ class DriverKycRepository {
     try {
       response = await http.Response.fromStream(await _client.send(request));
     } catch (_) {
-      throw const KycException(
-        "Can't reach the server. Check your connection and try again.",
-      );
+      throw KycException(L10n.current.errorNoConnection);
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -239,7 +234,7 @@ class DriverKycRepository {
 
     final message = switch (body['error']) {
       final String m when m.isNotEmpty => m,
-      _ => 'Something went wrong. Please try again.',
+      _ => L10n.current.errorGeneric,
     };
     final code = body['code'];
     return KycException(message, code: code is String ? code : null);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../document_providers.dart';
 import '../domain/document_validators.dart';
 import '../domain/driver_kyc.dart';
@@ -68,29 +69,30 @@ class _DrivingLicenseStepState extends ConsumerState<DrivingLicenseStep> {
     final kyc = vm.kyc;
     final verified = _showsVerified(kyc);
     final validUntil = kyc.licenseValidUntil;
+    final l10n = context.l10n;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Driving license',
-      subtitle: 'We check your license number with the transport department.',
+      title: l10n.licenseStepTitle,
+      subtitle: l10n.licenseStepSubtitle,
       fields: [
         SarthiTextField(
-          label: 'License number',
+          label: l10n.licenseStepNumberLabel,
           controller: _number,
-          hintText: 'e.g. MP0920190012345',
+          hintText: l10n.licenseStepNumberHint,
           textCapitalization: TextCapitalization.characters,
           prefixIcon: const Icon(Icons.motorcycle_outlined),
         ),
         if (verified) ...[
           const SizedBox(height: DeepSignalTokens.s14),
           VerifiedDetails(
-            title: 'License verified',
+            title: l10n.licenseStepVerifiedTitle,
             lines: [
               kyc.licenseName ?? '',
               if (validUntil != null)
-                'Valid till ${formatCardDate(validUntil)}',
+                l10n.licenseStepValidTill(formatCardDate(validUntil, l10n)),
               if (kyc.licenseClasses.isNotEmpty)
-                'Covers ${kyc.licenseClasses.join(' · ')}',
+                l10n.licenseStepCovers(kyc.licenseClasses.join(' · ')),
             ],
           ),
         ],
@@ -101,11 +103,13 @@ class _DrivingLicenseStepState extends ConsumerState<DrivingLicenseStep> {
       ],
       footer: verified
           ? SarthiPrimaryButton(
-              label: 'Continue',
+              label: l10n.commonContinue,
               onPressed: () => Navigator.of(context).pop(),
             )
           : SarthiPrimaryButton(
-              label: vm.isSaving ? 'Checking…' : 'Verify license',
+              label: vm.isSaving
+                  ? l10n.licenseStepChecking
+                  : l10n.licenseStepVerify,
               onPressed: vm.isSaving ? null : _verify,
             ),
     );

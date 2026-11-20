@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../auth/domain/driver.dart';
 import '../../rides/domain/ride.dart';
 import '../../rides/rides_providers.dart';
@@ -22,13 +23,14 @@ class DutyPanel extends ConsumerWidget {
     final rides = ref.watch(myRidesViewModelProvider);
     final earnings = ref.watch(earningsViewModelProvider).earnings;
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final current = rides.current;
     final firstName = driver.name.split(' ').first;
 
     return Scaffold(
       appBar: AppBar(
         titleSpacing: Skyline.s20,
-        title: const Text('MOJUD Driver'),
+        title: Text(l10n.appTitle),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: Skyline.s20),
@@ -58,10 +60,12 @@ class DutyPanel extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Hello, $firstName', style: t.body(size: 15)),
+                    Text(l10n.dutyHello(firstName), style: t.body(size: 15)),
                     const SizedBox(height: Skyline.s4),
                     Text(
-                      duty.isOnline ? "You're on duty" : 'Ready to drive?',
+                      duty.isOnline
+                          ? l10n.dutyOnDutyHeadline
+                          : l10n.dutyReadyHeadline,
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     const SizedBox(height: Skyline.s20),
@@ -87,8 +91,8 @@ class DutyPanel extends ConsumerWidget {
                       const SizedBox(height: Skyline.s24),
                       SectionHeader(
                         title: current.status == RideStatus.accepted
-                            ? 'Your next ride'
-                            : 'Ride in progress',
+                            ? l10n.dutyNextRide
+                            : l10n.dutyRideInProgress,
                       ),
                       RideCard(
                         ride: current,
@@ -97,7 +101,7 @@ class DutyPanel extends ConsumerWidget {
                     ],
                     const SizedBox(height: Skyline.s24),
                     SectionHeader(
-                      title: 'Ride requests',
+                      title: l10n.dutyRideRequests,
                       trailing: duty.isOnline
                           ? (duty.isLoading
                                 ? SizedBox.square(
@@ -108,7 +112,7 @@ class DutyPanel extends ConsumerWidget {
                                     ),
                                   )
                                 : Text(
-                                    '${duty.requests.length} open',
+                                    l10n.dutyOpenCount(duty.requests.length),
                                     style: t.label(),
                                   ))
                           : null,
@@ -126,12 +130,13 @@ class DutyPanel extends ConsumerWidget {
 
   List<Widget> _requests(BuildContext context, WidgetRef ref) {
     final duty = ref.watch(dutyViewModelProvider);
+    final l10n = context.l10n;
     if (!duty.isOnline) {
-      return const [
+      return [
         PanelMessage(
           icon: Icons.power_settings_new_rounded,
-          title: "You're offline",
-          body: 'Go on duty to see rides booked near you.',
+          title: l10n.dutyOfflineTitle,
+          body: l10n.dutyOfflineBody,
         ),
       ];
     }
@@ -142,16 +147,13 @@ class DutyPanel extends ConsumerWidget {
               ? Icons.cloud_off_rounded
               : Icons.radar_rounded,
           title: duty.error != null
-              ? "Couldn't load requests"
-              : 'No requests right now',
-          body:
-              duty.error ??
-              'New bookings near you show up here. We check every 20 '
-                  "seconds while you're on duty.",
+              ? l10n.dutyRequestsErrorTitle
+              : l10n.dutyNoRequestsTitle,
+          body: duty.error ?? l10n.dutyNoRequestsBody(20),
           action: duty.error != null
               ? OutlinedButton(
                   onPressed: () => duty.refresh(locate: true),
-                  child: const Text('Try again'),
+                  child: Text(l10n.commonTryAgain),
                 )
               : null,
         ),
@@ -162,8 +164,7 @@ class DutyPanel extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: Skyline.s12),
           child: Text(
-            "Turn on location to see how far each pickup is. Showing all "
-            "open rides.",
+            l10n.dutyLocationOffNote,
             style: SkylineTokens.of(context).body(size: 13),
           ),
         ),
@@ -197,7 +198,10 @@ class DutyPanel extends ConsumerWidget {
       ..showSnackBar(
         SnackBar(
           content: Text(
-            error ?? 'Ride accepted for ${RideFormat.when(ride.scheduledAt)}.',
+            error ??
+                context.l10n.dutyRideAccepted(
+                  RideFormat.when(ride.scheduledAt),
+                ),
           ),
         ),
       );
@@ -235,7 +239,7 @@ class _DutyDot extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          online ? 'Online' : 'Offline',
+          online ? context.l10n.dutyOnline : context.l10n.dutyOffline,
           style: t.label(size: 13, color: online ? t.success : t.inkMuted),
         ),
       ],
@@ -258,9 +262,10 @@ class _DutyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return Semantics(
       toggled: online,
-      label: 'On duty',
+      label: l10n.dutyOnDuty,
       // The fill lives on the decoration with its shadow (a shadow over a
       // separately-filled Material would tint the card grey); the Material
       // on top is transparent and only carries the ink ripple.
@@ -310,7 +315,7 @@ class _DutyCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          online ? 'On duty' : 'Off duty',
+                          online ? l10n.dutyOnDuty : l10n.dutyOffDuty,
                           style: t.title(
                             18,
                             weight: FontWeight.w800,
@@ -320,8 +325,8 @@ class _DutyCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           online
-                              ? 'Getting ride requests near you'
-                              : 'Tap to start getting ride requests',
+                              ? l10n.dutyGettingRequests
+                              : l10n.dutyTapToStart,
                           style: t.body(
                             size: 13,
                             color: online
@@ -366,10 +371,11 @@ class _TodayStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final items = [
-      ('Today', RideFormat.rupees(rupees)),
-      ('Trips today', '$rides'),
-      ('Booked', '$upcoming'),
+      (l10n.dutyStripToday, RideFormat.rupees(rupees)),
+      (l10n.dutyStripTripsToday, '$rides'),
+      (l10n.dutyStripBooked, '$upcoming'),
     ];
     final t = SkylineTokens.of(context);
     return SkylineCard(
@@ -384,9 +390,16 @@ class _TodayStrip extends StatelessWidget {
             Expanded(
               child: Column(
                 children: [
-                  Text(value, style: t.figure(20)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(value, style: t.figure(20)),
+                  ),
                   const SizedBox(height: 4),
-                  Text(label, style: t.label(size: 12)),
+                  Text(
+                    label,
+                    style: t.label(size: 12),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
@@ -420,7 +433,11 @@ class _RequestActions extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
             ),
-            child: const Text('Decline'),
+            child: Text(
+              context.l10n.dutyDecline,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
         const SizedBox(width: Skyline.s12),
@@ -439,7 +456,11 @@ class _RequestActions extends StatelessWidget {
                       color: t.inkFaint,
                     ),
                   )
-                : const Text('Accept ride'),
+                : Text(
+                    context.l10n.dutyAcceptRide,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
           ),
         ),
       ],

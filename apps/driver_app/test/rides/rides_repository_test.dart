@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:checks/checks.dart';
 import 'package:driver_app/features/rides/data/rides_repository.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
+import 'package:driver_app/features/rides/view/ride_labels.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -43,7 +45,7 @@ void main() {
     check(ride.kind).equals(TripKind.roundTrip);
     check(ride.status).equals(RideStatus.requested);
     check(ride.fareRupees).equals(340);
-    check(ride.car!.transmissionLabel).equals('Automatic');
+    check(ride.car!.transmissionLabelIn(L10n.current)).equals('Automatic');
     check(ride.duration).equals(const Duration(hours: 3));
     check(ride.customer).isNull();
   });

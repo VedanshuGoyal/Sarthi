@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/driver_auth_session.dart';
 
 /// Raised when the backend rejects a request (bad OTP, duplicate account, …).
@@ -171,9 +172,7 @@ class DriverAuthRepository {
               body: jsonEncode(payload ?? const {}),
             );
     } catch (_) {
-      throw const AuthException(
-        "Can't reach the server. Check your connection and try again.",
-      );
+      throw AuthException(L10n.current.errorNoConnection);
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -189,7 +188,7 @@ class DriverAuthRepository {
     final body = _decodeBody(response);
     final message = switch (body['error']) {
       final String m => m,
-      _ => 'Something went wrong. Please try again.',
+      _ => L10n.current.errorGeneric,
     };
     switch (body['code']) {
       case 'otp_incorrect':
@@ -207,9 +206,7 @@ class DriverAuthRepository {
     }
     // A 401 without a code is the session check (OTP 401s carry one).
     if (response.statusCode == 401 && body['code'] == null) {
-      return const SessionExpiredException(
-        'Your session has ended. Please sign in again.',
-      );
+      return SessionExpiredException(L10n.current.authSessionEnded);
     }
     return AuthException(message);
   }

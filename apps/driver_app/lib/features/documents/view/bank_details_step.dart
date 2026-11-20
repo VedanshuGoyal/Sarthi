@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../document_providers.dart';
 import '../domain/document_validators.dart';
 import '../widgets/verified_details.dart';
@@ -91,36 +92,38 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
     final vm = ref.watch(documentRegistrationViewModelProvider);
     final t = DeepSignalTokens.of(context);
     final saved = vm.kyc.bankAccount;
+    final l10n = context.l10n;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Bank details',
-      subtitle:
-          'Your earnings are paid to this account. We check it with '
-          'your bank.',
+      title: l10n.bankStepTitle,
+      subtitle: l10n.bankStepSubtitle,
       fields: [
         if (saved != null && saved.isVerified) ...[
           VerifiedDetails(
-            title: 'Verified with your bank',
+            title: l10n.bankStepVerifiedTitle,
             lines: [
               saved.verifiedName ?? '',
-              'Account ending ${saved.accountNumberLast4} · ${saved.ifscCode}',
+              l10n.bankStepAccountEnding(
+                saved.accountNumberLast4,
+                saved.ifscCode,
+              ),
             ],
           ),
           const SizedBox(height: DeepSignalTokens.s22),
         ],
         SarthiTextField(
-          label: 'Account holder name',
+          label: l10n.bankStepHolderLabel,
           controller: _holderName,
-          hintText: 'As it appears on the bank account',
+          hintText: l10n.bankStepHolderHint,
           textCapitalization: TextCapitalization.words,
           prefixIcon: const Icon(Icons.person_outline),
         ),
         const SizedBox(height: DeepSignalTokens.s14),
         SarthiTextField(
-          label: 'Account number',
+          label: l10n.bankStepAccountNumber,
           controller: _accountNumber,
-          hintText: 'Account number',
+          hintText: l10n.bankStepAccountNumber,
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -131,16 +134,15 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
         if (saved != null) ...[
           const SizedBox(height: DeepSignalTokens.s8),
           Text(
-            'Currently paying out to the account ending '
-            '${saved.accountNumberLast4}. Re-enter the number to change it.',
+            l10n.bankStepCurrentAccount(saved.accountNumberLast4),
             style: t.body(size: 12, color: t.muted),
           ),
         ],
         const SizedBox(height: DeepSignalTokens.s14),
         SarthiTextField(
-          label: 'Confirm account number',
+          label: l10n.bankStepConfirmLabel,
           controller: _confirmAccountNumber,
-          hintText: 'Re-enter account number',
+          hintText: l10n.bankStepConfirmHint,
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -150,9 +152,9 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
         ),
         const SizedBox(height: DeepSignalTokens.s14),
         SarthiTextField(
-          label: 'IFSC code',
+          label: l10n.bankStepIfscLabel,
           controller: _ifsc,
-          hintText: 'e.g. HDFC0001234',
+          hintText: l10n.bankStepIfscHint,
           textCapitalization: TextCapitalization.characters,
           inputFormatters: [LengthLimitingTextInputFormatter(11)],
           prefixIcon: const Icon(Icons.pin_outlined),
@@ -163,7 +165,7 @@ class _BankDetailsStepState extends ConsumerState<BankDetailsStep> {
         ],
       ],
       footer: SarthiPrimaryButton(
-        label: vm.isSaving ? 'Checking with your bank…' : 'Finish',
+        label: vm.isSaving ? l10n.bankStepChecking : l10n.bankStepFinish,
         onPressed: vm.isSaving ? null : _submit,
       ),
     );

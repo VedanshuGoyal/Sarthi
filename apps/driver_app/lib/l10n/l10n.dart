@@ -13,6 +13,24 @@ extension L10nContext on BuildContext {
   AppLocalizations get l10n => AppLocalizations.of(this);
 }
 
+/// Month and weekday names by number, from the `fmtMonthShort` and
+/// `fmtWeekdayShort` select keys — instead of `intl`'s `DateFormat`, whose
+/// locale data isn't loaded in unit tests.
+extension CalendarNames on AppLocalizations {
+  static const _months = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun', //
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+  ];
+  static const _weekdays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+  /// "Mar" / "मार्च" for [month] 1–12, as in [DateTime.month].
+  String monthShort(int month) => fmtMonthShort(_months[month - 1]);
+
+  /// "Mon" / "सोम" for [weekday] 1–7 (Monday first), as in
+  /// [DateTime.weekday].
+  String weekdayShort(int weekday) => fmtWeekdayShort(_weekdays[weekday - 1]);
+}
+
 /// The strings for code that has no [BuildContext]: view models' and
 /// repositories' messages for the driver, `RideFormat`, the notification
 /// channel's name.

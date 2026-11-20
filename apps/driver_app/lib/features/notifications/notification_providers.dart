@@ -2,23 +2,26 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/push_service.dart';
+import '../../l10n/l10n.dart';
 import '../auth/driver_auth_controller.dart';
 import 'data/push_token_repository.dart';
 import 'push_registration.dart';
 
 /// New ride requests near the driver. The id is the one the backend sends
 /// (`ride_requests`); max importance makes them pop up over other apps with
-/// sound, like a cab app's ride ping.
-const rideRequestsChannel = AndroidNotificationChannel(
+/// sound, like a cab app's ride ping. Its name and description, shown in the
+/// phone's notification settings, are in the app's language when push
+/// starts; Android updates them on the next start after a language change.
+AndroidNotificationChannel rideRequestsChannel() => AndroidNotificationChannel(
   'ride_requests',
-  'Ride requests',
-  description: 'New rides booked near you while you are on duty.',
+  L10n.current.notifChannelName,
+  description: L10n.current.notifChannelDescription,
   importance: Importance.max,
 );
 
 /// The app's one [PushService]. Overridden with [PushService.off] in tests.
 final pushServiceProvider = Provider<PushService>((ref) {
-  return PushService(channel: rideRequestsChannel);
+  return PushService(channel: rideRequestsChannel());
 });
 
 /// Push registration for the signed-in driver, authenticated with the

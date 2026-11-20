@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/config/legal.dart';
+import '../../../l10n/l10n.dart';
 import '../data/driver_auth_repository.dart';
 import '../domain/auth_validators.dart';
 import '../domain/driver.dart';
@@ -252,8 +253,7 @@ class DriverRegistrationViewModel extends ChangeNotifier {
   // --- Step 3: name ------------------------------------------------------
 
   /// Shown when the driver tries to register without agreeing.
-  static const String consentRequired =
-      'Agree to the Terms and Privacy Policy to create your account.';
+  static String get consentRequired => L10n.current.authConsentRequired;
 
   /// Whether the driver ticked "I agree to the Terms and Privacy Policy".
   /// Registration is refused until they have.
@@ -343,7 +343,7 @@ class DriverRegistrationViewModel extends ChangeNotifier {
     } on AuthException catch (e) {
       _errorText = e.message;
     } catch (_) {
-      _errorText = 'Something went wrong. Please try again.';
+      _errorText = L10n.current.errorGeneric;
     } finally {
       _isLoading = false;
       _notify();

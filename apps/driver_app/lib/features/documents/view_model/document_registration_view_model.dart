@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/refresh_throttle.dart';
+import '../../../l10n/l10n.dart';
 import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
 import '../data/kyc_status_store.dart';
@@ -225,7 +226,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
         path = await _files.persist(kind, pickedPath);
       } on Exception {
         _data = _data.withUploadState(kind, DocumentUploadState.failed);
-        _error = "Couldn't save the photo. Please take it again.";
+        _error = L10n.current.docPhotoSaveFailed;
         _notify();
         return;
       }

@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/api_config.dart';
+import '../../../l10n/l10n.dart';
 import '../domain/payout.dart';
 import '../domain/ride.dart';
 
-/// Raised when a ride request fails. [message] is safe to show the driver.
+/// Raised when a ride request fails. [message] is safe to show the driver:
+/// the backend's own words, or — when it gave none or couldn't be reached —
+/// the app's, in the app's language.
 class RidesException implements Exception {
   const RidesException(this.message, {this.code, this.statusCode});
 
@@ -155,9 +158,7 @@ class RidesRepository {
     try {
       return read(jsonDecode(body));
     } catch (_) {
-      throw const RidesException(
-        'The server sent an unexpected reply. Please try again.',
-      );
+      throw RidesException(L10n.current.errorUnexpectedReply);
     }
   }
 
@@ -178,9 +179,7 @@ class RidesRepository {
     try {
       response = await http.Response.fromStream(await _client.send(request));
     } catch (_) {
-      throw const RidesException(
-        "Can't reach the server. Check your connection and try again.",
-      );
+      throw RidesException(L10n.current.errorNoConnection);
     }
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return response.body;
@@ -195,7 +194,7 @@ class RidesRepository {
     }
     final message = switch (body['error']) {
       final String m when m.isNotEmpty => _sentence(m),
-      _ => 'Something went wrong. Please try again.',
+      _ => L10n.current.errorGeneric,
     };
     final code = body['code'];
     throw RidesException(

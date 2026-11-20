@@ -2,26 +2,24 @@
 ///
 /// A ride the driver hasn't taken is [requested]; once accepted it moves
 /// strictly forward — [accepted] → [arrived] → [inProgress] → [completed].
+/// Its words for the driver: `RideStatus.labelIn` in `view/ride_labels.dart`.
 enum RideStatus {
-  requested('requested', 'New request'),
-  accepted('accepted', 'Upcoming'),
-  arrived('arrived', 'At pickup'),
-  inProgress('in_progress', 'On trip'),
-  completed('completed', 'Completed'),
-  cancelled('cancelled', 'Cancelled'),
+  requested('requested'),
+  accepted('accepted'),
+  arrived('arrived'),
+  inProgress('in_progress'),
+  completed('completed'),
+  cancelled('cancelled'),
 
   /// A status this app version doesn't know — a newer server's. Such a ride
   /// sits in no tab and offers no actions (the app can't tell what's
   /// allowed next); [Ride.rawStatus] keeps what the server sent.
-  unknown('', 'Status unknown');
+  unknown('');
 
-  const RideStatus(this.wireName, this.label);
+  const RideStatus(this.wireName);
 
   /// The value the backend sends.
   final String wireName;
-
-  /// Short label for status chips.
-  final String label;
 
   /// Parses the backend's status. One this build doesn't know is [unknown]
   /// — never a guess like [requested], which would offer to accept a ride
@@ -40,19 +38,18 @@ enum RideStatus {
 
 /// The three ways a customer books a driver.
 enum TripKind {
-  roundTrip('roundTrip', 'Round trip'),
-  oneWay('oneWay', 'One way'),
-  multiStop('multiStop', 'Multi-stop'),
+  roundTrip('roundTrip'),
+  oneWay('oneWay'),
+  multiStop('multiStop'),
 
   /// A trip type this app version doesn't know — a newer server's. Shown as
   /// a plain booking for its time span rather than as a round trip, whose
   /// hours it may not have.
-  other('', 'Trip');
+  other('');
 
-  const TripKind(this.wireName, this.label);
+  const TripKind(this.wireName);
 
   final String wireName;
-  final String label;
 
   static TripKind fromWire(Object? value) {
     for (final kind in values) {
@@ -120,18 +117,6 @@ class RideCar {
 
   /// manual | automatic.
   final String transmission;
-
-  String get carTypeLabel => switch (carType) {
-    'suv' => 'SUV',
-    '' => 'Car',
-    _ => '${carType[0].toUpperCase()}${carType.substring(1)}',
-  };
-
-  String get transmissionLabel => switch (transmission) {
-    'manual' => 'Manual',
-    'automatic' => 'Automatic',
-    _ => '',
-  };
 
   factory RideCar.fromJson(Map<String, dynamic> json) => RideCar(
     registration: json['registration'] as String? ?? '',
@@ -206,15 +191,6 @@ enum RidePaymentStatus {
     (s) => s != none && s.wireName == value,
     orElse: () => none,
   );
-
-  /// "Awaiting payment", "Paid", "Paid out" — empty when there's nothing to
-  /// pay.
-  String get label => switch (this) {
-    none => '',
-    due => 'Awaiting payment',
-    paid => 'Paid',
-    paidOut => 'Paid out',
-  };
 }
 
 /// A ride as the driver app shows it — an open request, or one of the
@@ -260,16 +236,8 @@ class Ride {
 
   /// The status exactly as the server sent it. Kept for a
   /// [RideStatus.unknown] one, so the driver still sees what a newer server
-  /// calls it.
+  /// calls it (`Ride.statusLabelIn` in `view/ride_labels.dart`).
   final String? rawStatus;
-
-  /// The status chip's text: the known label or, for a status this build
-  /// doesn't know, the server's own word (`on_hold` → "On hold").
-  String get statusLabel {
-    final raw = (rawStatus ?? '').replaceAll(RegExp(r'[_-]+'), ' ').trim();
-    if (status != RideStatus.unknown || raw.isEmpty) return status.label;
-    return '${raw[0].toUpperCase()}${raw.substring(1)}';
-  }
 
   /// An open request as drivers see it before accepting: each place is its
   /// locality (e.g. "Saket, New Delhi") with coordinates rounded to about a
@@ -328,15 +296,6 @@ class Ride {
   /// a no-show ([RideAction.noShow]). The backend sets it 15 minutes after
   /// the later of their arrival and the booked start.
   final DateTime? noShowAt;
-
-  /// "Cancelled by customer" ("Customer cancelled at the pickup" when that
-  /// cost them a fee), "Customer didn't come" or "Cancelled".
-  String get cancelLabel => switch (cancelledBy) {
-    'customer' when hasCancellationFee => 'Customer cancelled at the pickup',
-    'customer' => 'Cancelled by customer',
-    'no_show' => "Customer didn't come",
-    _ => 'Cancelled',
-  };
 
   /// Whether, at [now], the driver may close this ride as a no-show.
   bool canCloseAsNoShowAt(DateTime now) =>

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/payout.dart';
 import '../domain/ride.dart';
 import '../rides_providers.dart';
 import 'ride_detail_screen.dart';
 import 'ride_format.dart';
+import 'ride_labels.dart';
 import 'widgets/ride_widgets.dart';
 
 /// The Earnings tab: today's total up top, the week / month / all-time
@@ -27,10 +29,11 @@ class EarningsPanel extends ConsumerWidget {
     final rides = ref.watch(myRidesViewModelProvider);
     final e = vm.earnings;
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final recent = rides.completed.take(20).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Earnings')),
+      appBar: AppBar(title: Text(l10n.earningsTitle)),
       body: RefreshIndicator(
         onRefresh: () => Future.wait([vm.load(), rides.load()]),
         child: ListView(
@@ -63,9 +66,18 @@ class EarningsPanel extends ConsumerWidget {
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final tiles = [
-                          _PeriodTile(label: 'This week', period: e.week),
-                          _PeriodTile(label: 'This month', period: e.month),
-                          _PeriodTile(label: 'All time', period: e.total),
+                          _PeriodTile(
+                            label: l10n.earningsThisWeek,
+                            period: e.week,
+                          ),
+                          _PeriodTile(
+                            label: l10n.earningsThisMonth,
+                            period: e.month,
+                          ),
+                          _PeriodTile(
+                            label: l10n.earningsAllTime,
+                            period: e.total,
+                          ),
                         ];
                         // Three across when there's room, else a 2 + 1 grid.
                         if (constraints.maxWidth >= 480) {
@@ -99,18 +111,16 @@ class EarningsPanel extends ConsumerWidget {
                     ],
                     if (vm.payoutsLoaded) ...[
                       const SizedBox(height: Skyline.s24),
-                      const SectionHeader(title: 'Payouts'),
+                      SectionHeader(title: l10n.earningsPayoutsHeader),
                       _PayoutsList(payouts: vm.payouts),
                     ],
                     const SizedBox(height: Skyline.s24),
-                    const SectionHeader(title: 'Completed trips'),
+                    SectionHeader(title: l10n.earningsCompletedTrips),
                     if (recent.isEmpty)
-                      const PanelMessage(
+                      PanelMessage(
                         icon: Icons.receipt_long_rounded,
-                        title: 'No trips yet',
-                        body:
-                            'Each trip you complete is listed here with '
-                            'its fare.',
+                        title: l10n.earningsNoTripsTitle,
+                        body: l10n.earningsNoTripsBody,
                       )
                     else
                       SkylineCard(
@@ -155,6 +165,7 @@ class _TodayHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final muted = t.onPrimary.withValues(alpha: 0.75);
     return Container(
       padding: const EdgeInsets.all(Skyline.s24),
@@ -166,7 +177,7 @@ class _TodayHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Today's earnings", style: t.label(size: 14, color: muted)),
+          Text(l10n.earningsToday, style: t.label(size: 14, color: muted)),
           const SizedBox(height: Skyline.s8),
           Text(
             loading ? '—' : RideFormat.rupees(period.rupees),
@@ -174,13 +185,15 @@ class _TodayHero extends StatelessWidget {
           ),
           const SizedBox(height: Skyline.s8),
           Text(
-            '${period.rides} ${period.rides == 1 ? 'trip' : 'trips'} completed',
+            l10n.earningsTripsCompleted(period.rides),
             style: t.body(size: 14, color: muted),
           ),
           if (!loading && period.netRupees != null) ...[
             const SizedBox(height: 2),
             Text(
-              '${RideFormat.rupees(period.netRupees!)} yours after commission',
+              l10n.earningsYoursAfterCommission(
+                RideFormat.rupees(period.netRupees!),
+              ),
               style: t.body(size: 14, color: muted),
             ),
           ],
@@ -199,6 +212,7 @@ class _PeriodTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Column(
@@ -212,13 +226,10 @@ class _PeriodTile extends StatelessWidget {
             child: Text(RideFormat.rupees(period.rupees), style: t.figure(22)),
           ),
           const SizedBox(height: 2),
-          Text(
-            '${period.rides} ${period.rides == 1 ? 'trip' : 'trips'}',
-            style: t.body(size: 12.5),
-          ),
+          Text(l10n.earningsTrips(period.rides), style: t.body(size: 12.5)),
           if (period.netRupees case final net?)
             Text(
-              '${RideFormat.rupees(net)} yours',
+              l10n.earningsYours(RideFormat.rupees(net)),
               style: t.label(size: 12.5, color: t.success),
             ),
         ],
@@ -237,28 +248,28 @@ class _MoneyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final p = payments;
-    String trips(int n) => '$n ${n == 1 ? 'trip' : 'trips'}';
     final lastPayout = p.lastPayoutAt;
     final rows = [
       (
         Icons.hourglass_top_rounded,
-        'Waiting for customers to pay',
-        trips(p.awaitingCustomerRides),
+        l10n.earningsAwaitingCustomers,
+        l10n.earningsTrips(p.awaitingCustomerRides),
         p.awaitingCustomerPaise,
       ),
       (
         Icons.account_balance_wallet_rounded,
-        'Due to you',
-        '${trips(p.dueRides)} · paid to your bank weekly',
+        l10n.earningsDueToYou,
+        l10n.earningsDueDetail(p.dueRides),
         p.duePaise,
       ),
       (
         Icons.check_circle_rounded,
-        'Paid to your bank',
+        l10n.earningsPaidToBank,
         lastPayout == null
-            ? 'No payouts yet'
-            : 'Last on ${RideFormat.when(lastPayout)}',
+            ? l10n.earningsNoPayoutsYet
+            : l10n.earningsLastPayout(RideFormat.when(lastPayout)),
         p.paidOutPaise,
       ),
     ];
@@ -294,13 +305,12 @@ class _PayoutsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (payouts.isEmpty) {
-      return const PanelMessage(
+      return PanelMessage(
         icon: Icons.account_balance_rounded,
-        title: 'No payouts yet',
-        body:
-            'Each transfer MOJUD makes to your bank is listed here with its '
-            'reference.',
+        title: l10n.earningsNoPayoutsYet,
+        body: l10n.earningsNoPayoutsBody,
       );
     }
     final t = SkylineTokens.of(context);
@@ -314,13 +324,15 @@ class _PayoutsList extends StatelessWidget {
             ListTile(
               leading: Icon(Icons.check_circle_rounded, color: t.success),
               title: Text(
-                '${payout.rides} ${payout.rides == 1 ? 'trip' : 'trips'} · '
-                '${RideFormat.when(payout.createdAt)}',
+                l10n.earningsPayoutTitle(
+                  payout.rides,
+                  RideFormat.when(payout.createdAt),
+                ),
               ),
               subtitle: payout.reference.isEmpty
                   ? null
                   : Text(
-                      'Ref ${payout.reference}',
+                      l10n.earningsPayoutReference(payout.reference),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -344,6 +356,7 @@ class _TripRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final at = ride.completedAt ?? ride.scheduledAt;
     return ListTile(
       onTap: () => Navigator.of(
@@ -365,10 +378,10 @@ class _TripRow extends StatelessWidget {
       ),
       subtitle: Text(
         [
-          ride.kind.label,
+          ride.kind.labelIn(l10n),
           RideFormat.when(at),
           if (ride.paymentStatus != RidePaymentStatus.none)
-            ride.paymentStatus.label,
+            ride.paymentStatus.labelIn(l10n),
         ].join(' · '),
       ),
       trailing: Text(RideFormat.rupees(ride.fareRupees), style: t.figure(16)),

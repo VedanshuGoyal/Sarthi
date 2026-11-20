@@ -16,7 +16,11 @@ class SarthiPhoneField extends StatelessWidget {
     this.autofocus = false,
     this.onChanged,
     this.onSubmitted,
+    this.label = 'Mobile number',
   });
+
+  /// The field's heading; an app passes its own language's.
+  final String label;
 
   /// Country dialling code rendered as the immovable prefix.
   static const String countryCode = '+91';
@@ -37,7 +41,7 @@ class SarthiPhoneField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Mobile number',
+          label,
           style: theme.textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w600,
           ),

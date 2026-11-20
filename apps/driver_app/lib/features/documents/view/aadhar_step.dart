@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../l10n/l10n.dart';
 import '../document_providers.dart';
 import '../domain/document_validators.dart';
 import '../widgets/verified_details.dart';
@@ -48,6 +49,7 @@ class _AadharStepState extends ConsumerState<AadharStep> {
 
   Future<void> _verify() async {
     final vm = ref.read(documentRegistrationViewModelProvider);
+    final l10n = context.l10n;
 
     // The number is only re-sent when the driver typed one. Once it's saved
     // the backend keeps just the last 4 digits, so an untouched field means
@@ -82,13 +84,14 @@ class _AadharStepState extends ConsumerState<AadharStep> {
     if (!mounted) return;
     setState(() {
       _waiting = opened;
-      _error = opened ? null : "Couldn't open DigiLocker. Try again.";
+      _error = opened ? null : l10n.aadhaarStepOpenFailed;
     });
   }
 
   Future<void> _complete() async {
     final vm = ref.read(documentRegistrationViewModelProvider);
     if (vm.isSaving) return;
+    final l10n = context.l10n;
 
     final verified = await vm.completeDigiLocker();
     if (!mounted) return;
@@ -102,7 +105,7 @@ class _AadharStepState extends ConsumerState<AadharStep> {
       // and the driver starts a new one.
       final pending = vm.errorCode == 'verification_pending';
       _waiting = pending;
-      _error = pending ? 'Finish the steps in DigiLocker first.' : vm.error;
+      _error = pending ? l10n.aadhaarStepFinishFirst : vm.error;
     });
   }
 
@@ -113,44 +116,47 @@ class _AadharStepState extends ConsumerState<AadharStep> {
     final kyc = vm.kyc;
     final last4 = kyc.aadhaarLast4;
     final dob = kyc.dateOfBirth;
+    final l10n = context.l10n;
 
     final Widget footer;
     if (kyc.isAadhaarVerified) {
       footer = SarthiPrimaryButton(
-        label: 'Continue',
+        label: l10n.commonContinue,
         onPressed: () => Navigator.of(context).pop(),
       );
     } else if (_waiting) {
       footer = SarthiPrimaryButton(
-        label: vm.isSaving ? 'Checking…' : "I've finished in DigiLocker",
+        label: vm.isSaving
+            ? l10n.aadhaarStepChecking
+            : l10n.aadhaarStepFinished,
         onPressed: vm.isSaving ? null : _complete,
       );
     } else {
       footer = SarthiPrimaryButton(
-        label: vm.isSaving ? 'Opening DigiLocker…' : 'Verify with DigiLocker',
+        label: vm.isSaving ? l10n.aadhaarStepOpening : l10n.aadhaarStepVerify,
         onPressed: vm.isSaving ? null : _verify,
       );
     }
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Aadhaar card',
+      title: l10n.aadhaarStepTitle,
       subtitle: kyc.isAadhaarVerified
-          ? 'Your Aadhaar is verified.'
-          : 'Enter your Aadhaar number, then sign in to DigiLocker to verify it.',
+          ? l10n.aadhaarStepVerifiedSubtitle
+          : l10n.aadhaarStepSubtitle,
       fields: [
         if (kyc.isAadhaarVerified)
           VerifiedDetails(
-            title: 'Verified with DigiLocker',
+            title: l10n.aadhaarStepVerifiedTitle,
             lines: [
               kyc.fullName,
-              if (dob != null) 'Born ${formatCardDate(dob)}',
-              if (last4 != null) 'Aadhaar XXXX XXXX $last4',
+              if (dob != null) l10n.aadhaarStepBorn(formatCardDate(dob, l10n)),
+              if (last4 != null) l10n.aadhaarStepMasked(last4),
             ],
           )
         else ...[
           SarthiTextField(
-            label: 'Aadhaar number',
+            label: l10n.aadhaarStepNumberLabel,
             controller: _number,
             readOnly: _waiting,
             hintText: last4 == null ? 'XXXX XXXX XXXX' : 'XXXX XXXX $last4',
@@ -164,19 +170,19 @@ class _AadharStepState extends ConsumerState<AadharStep> {
           if (last4 != null && !_waiting) ...[
             const SizedBox(height: DeepSignalTokens.s8),
             Text(
-              'Saved. Leave this blank unless you need to change it.',
+              l10n.aadhaarStepSavedHint,
               style: t.body(size: 12, color: t.muted),
             ),
           ],
           if (_waiting) ...[
             const SizedBox(height: DeepSignalTokens.s14),
             Text(
-              'Finish in DigiLocker, then come back here.',
+              l10n.aadhaarStepWaiting,
               style: t.body(size: 13, color: t.muted),
             ),
             TextButton(
               onPressed: vm.isSaving ? null : _verify,
-              child: const Text('Open DigiLocker again'),
+              child: Text(l10n.aadhaarStepOpenAgain),
             ),
           ],
         ],

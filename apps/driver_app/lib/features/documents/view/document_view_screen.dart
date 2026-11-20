@@ -7,6 +7,8 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import '../../../core/services/push_service.dart';
 import '../../account/sign_out.dart';
 import '../../account/view/delete_account_button.dart';
+import '../../language/view/language_switch.dart';
+import '../../../l10n/l10n.dart';
 import '../../notifications/notification_providers.dart';
 import '../document_providers.dart';
 import '../domain/document_step.dart';
@@ -120,19 +122,16 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-          'You can sign in again with your phone number. The steps you have '
-          'finished stay saved.',
-        ),
+        title: Text(context.l10n.docViewLogOutTitle),
+        content: Text(context.l10n.docViewLogOutBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Log out'),
+            child: Text(context.l10n.docViewLogOut),
           ),
         ],
       ),
@@ -157,6 +156,7 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
   Widget build(BuildContext context) {
     final vm = ref.watch(documentRegistrationViewModelProvider);
     final t = DeepSignalTokens.of(context);
+    final l10n = context.l10n;
 
     // Only the first answer is waited for; a reload (Check again, a push,
     // coming back to the app) refreshes what's already on screen.
@@ -167,15 +167,16 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
     // Never heard from the backend: there is nothing to show but a way on.
     if (vm.loadFailed) {
       return SarthiFormScaffold(
-        title: "Couldn't load your registration",
+        actions: const [LanguageMenuButton()],
+        title: l10n.docViewLoadFailedTitle,
         subtitle: vm.error,
         fields: const [],
         footer: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SarthiPrimaryButton(label: 'Try again', onPressed: _reload),
+            SarthiPrimaryButton(label: l10n.commonTryAgain, onPressed: _reload),
             const SizedBox(height: DeepSignalTokens.s8),
-            TextButton(onPressed: _logOut, child: const Text('Log out')),
+            TextButton(onPressed: _logOut, child: Text(l10n.docViewLogOut)),
           ],
         ),
       );
@@ -187,30 +188,27 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
     // Waiting on someone else: nothing to submit, only to ask again.
     final waiting =
         status == KycStatus.submitted || status == KycStatus.unknown;
-    final (bannerTitle, bannerLines) = _banner(kyc);
+    final (bannerTitle, bannerLines) = _banner(kyc, l10n);
 
     return SarthiFormScaffold(
+      // Before Account exists: a driver whose phone is in English can
+      // switch to Hindi for the KYC steps.
+      actions: const [LanguageMenuButton()],
       title: switch (status) {
-        KycStatus.verified => "You're verified",
-        KycStatus.submitted => 'Under review',
-        KycStatus.rejected => 'Some details need fixing',
-        KycStatus.unknown => "We can't show your status",
-        KycStatus.incomplete => 'Complete your registration',
+        KycStatus.verified => l10n.docViewTitleVerified,
+        KycStatus.submitted => l10n.docViewTitleSubmitted,
+        KycStatus.rejected => l10n.docViewTitleRejected,
+        KycStatus.unknown => l10n.docViewTitleUnknown,
+        KycStatus.incomplete => l10n.docViewTitleIncomplete,
       },
       subtitle: switch (status) {
-        KycStatus.verified =>
-          "You're cleared to take rides. Open any step to see what you "
-              'sent, or to change it.',
-        KycStatus.submitted =>
-          "We're checking your details. You can go online once they're "
-              'cleared.',
-        KycStatus.rejected => 'Fix the details below and submit again.',
-        KycStatus.unknown =>
-          "Your account has a status this version of the app doesn't "
-              "know, so you can't take rides yet.",
-        KycStatus.incomplete =>
-          'Finish these ${DocumentStep.values.length} steps to start '
-              'accepting rides. Each one unlocks once the last is done.',
+        KycStatus.verified => l10n.docViewSubtitleVerified,
+        KycStatus.submitted => l10n.docViewSubtitleSubmitted,
+        KycStatus.rejected => l10n.docViewSubtitleRejected,
+        KycStatus.unknown => l10n.docViewSubtitleUnknown,
+        KycStatus.incomplete => l10n.docViewSubtitleIncomplete(
+          DocumentStep.values.length,
+        ),
       },
       fields: [
         if (status != KycStatus.incomplete) ...[
@@ -267,7 +265,7 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
             child: TextButton.icon(
               onPressed: _logOut,
               icon: const Icon(Icons.logout_rounded, size: 18),
-              label: const Text('Log out'),
+              label: Text(l10n.docViewLogOut),
             ),
           ),
           const SizedBox(height: DeepSignalTokens.s22),
@@ -281,12 +279,14 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
           ? null
           : waiting
           ? SarthiPrimaryButton(
-              label: vm.isLoading ? 'Checking…' : 'Check again',
+              label: vm.isLoading
+                  ? l10n.docViewChecking
+                  : l10n.docViewCheckAgain,
               onPressed: vm.isLoading ? null : _reload,
             )
           : vm.isAllComplete
           ? SarthiPrimaryButton(
-              label: vm.isSaving ? 'Submitting…' : 'Submit for verification',
+              label: vm.isSaving ? l10n.docViewSubmitting : l10n.docViewSubmit,
               onPressed: vm.isSaving ? null : _submit,
             )
           : null,
@@ -296,38 +296,42 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
   /// The status card's headline and rows: what was checked once cleared,
   /// the reviewer's note and when the details went in while waiting or
   /// sent back.
-  static (String, List<String>) _banner(DriverKyc kyc) {
+  static (String, List<String>) _banner(DriverKyc kyc, AppLocalizations l10n) {
     final note = kyc.reviewNote;
     final sent = kyc.submittedAt;
     return switch (kyc.status) {
       KycStatus.verified => (
-        'Cleared to drive',
+        l10n.kycBannerVerifiedTitle,
         [
           if (kyc.isAadhaarVerified)
-            kyc.aadhaarLast4 == null
-                ? 'Aadhaar verified with DigiLocker'
-                : 'Aadhaar XXXX XXXX ${kyc.aadhaarLast4} · verified with '
-                      'DigiLocker',
+            switch (kyc.aadhaarLast4) {
+              final last4? => l10n.kycBannerAadhaarVerifiedLast4(last4),
+              null => l10n.kycBannerAadhaarVerified,
+            },
           if (kyc.isLicenseVerified)
-            kyc.drivingLicenseNumber == null
-                ? 'Driving licence verified'
-                : 'Driving licence ${kyc.drivingLicenseNumber} · verified',
+            switch (kyc.drivingLicenseNumber) {
+              final number? => l10n.kycBannerLicenseVerifiedNumber(number),
+              null => l10n.kycBannerLicenseVerified,
+            },
           if (kyc.bankAccount case final bank? when bank.isVerified)
-            'Bank account •••• ${bank.accountNumberLast4} · verified with '
-                'your bank',
+            l10n.kycBannerBankVerified(bank.accountNumberLast4),
         ],
       ),
       KycStatus.submitted => (
-        'Waiting on a reviewer',
-        [?note, if (sent != null) 'Sent ${formatCardDate(sent.toLocal())}'],
+        l10n.kycBannerSubmittedTitle,
+        [
+          ?note,
+          if (sent != null)
+            l10n.kycBannerSent(formatCardDate(sent.toLocal(), l10n)),
+        ],
       ),
       KycStatus.rejected => (
-        'Sent back by a reviewer',
-        [note ?? 'Open the steps below to see what to change.'],
+        l10n.kycBannerRejectedTitle,
+        [note ?? l10n.kycBannerRejectedHint],
       ),
       KycStatus.unknown => (
-        'Status not recognised',
-        ['Update the app, or write to team@mojud.life if this stays.'],
+        l10n.kycBannerUnknownTitle,
+        [l10n.kycBannerUnknownHint],
       ),
       KycStatus.incomplete => ('', const []),
     };

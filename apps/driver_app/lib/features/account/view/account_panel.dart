@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../auth/domain/driver.dart';
 import '../../documents/document_providers.dart';
 import '../../documents/domain/driver_kyc.dart';
+import '../../documents/view/document_labels.dart';
 import '../../documents/view/document_view_screen.dart';
+import '../../language/view/language_switch.dart';
 import '../sign_out.dart';
 import '../../rides/rides_providers.dart';
 import '../../rides/view/ride_format.dart';
@@ -38,18 +41,16 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-          "You'll go off duty and stop getting ride requests on this phone.",
-        ),
+        title: Text(context.l10n.accountLogOutConfirmTitle),
+        content: Text(context.l10n.accountLogOutConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.commonCancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Log out'),
+            child: Text(context.l10n.accountLogOut),
           ),
         ],
       ),
@@ -61,17 +62,20 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
     await signOutDriver(ref);
   }
 
+  static const String _supportEmail = 'team@mojud.life';
+
   Future<void> _contactSupport() async {
+    final l10n = context.l10n;
     final ok = await launchUrl(
       Uri(
         scheme: 'mailto',
-        path: 'team@mojud.life',
-        queryParameters: {'subject': 'Driver app help'},
+        path: _supportEmail,
+        queryParameters: {'subject': l10n.accountSupportEmailSubject},
       ),
     );
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Write to us at team@mojud.life')),
+        SnackBar(content: Text(l10n.accountWriteToUs(_supportEmail))),
       );
     }
   }
@@ -80,12 +84,13 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
   Widget build(BuildContext context) {
     final kyc = ref.watch(documentRegistrationViewModelProvider).kyc;
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final driver = widget.driver;
     final name = kyc.fullName.isNotEmpty ? kyc.fullName : driver.name;
     final bank = kyc.bankAccount;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Account')),
+      appBar: AppBar(title: Text(l10n.accountTitle)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
           Skyline.s20,
@@ -132,30 +137,34 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
                     ),
                   ),
                   const SizedBox(height: Skyline.s24),
-                  const SectionHeader(title: 'Driving'),
+                  SectionHeader(title: l10n.accountSectionDriving),
                   _Group(
                     rows: [
                       SkylineRow(
                         icon: Icons.settings_rounded,
-                        title: 'Cars you drive',
-                        subtitle: kyc.transmission?.label ?? 'Not set',
+                        title: l10n.accountCarsYouDrive,
+                        subtitle:
+                            kyc.transmission?.labelIn(l10n) ??
+                            l10n.commonNotSet,
                       ),
                       SkylineRow(
                         icon: Icons.badge_rounded,
-                        title: 'Driving licence',
-                        subtitle: kyc.drivingLicenseNumber ?? 'Not added',
+                        title: l10n.accountDrivingLicence,
+                        subtitle:
+                            kyc.drivingLicenseNumber ?? l10n.commonNotAdded,
                       ),
                       SkylineRow(
                         icon: Icons.fingerprint_rounded,
-                        title: 'Aadhaar',
-                        subtitle: kyc.aadhaarLast4 != null
-                            ? 'XXXX XXXX ${kyc.aadhaarLast4}'
-                            : 'Not added',
+                        title: l10n.accountAadhaar,
+                        subtitle: switch (kyc.aadhaarLast4) {
+                          final last4? => l10n.accountAadhaarMasked(last4),
+                          null => l10n.commonNotAdded,
+                        },
                       ),
                       SkylineRow(
                         icon: Icons.folder_open_rounded,
-                        title: 'Documents',
-                        subtitle: 'View or update what you submitted',
+                        title: l10n.accountDocuments,
+                        subtitle: l10n.accountDocumentsSubtitle,
                         accent: true,
                         trailing: Icon(
                           Icons.chevron_right_rounded,
@@ -170,27 +179,32 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
                     ],
                   ),
                   const SizedBox(height: Skyline.s24),
-                  const SectionHeader(title: 'Payouts'),
+                  SectionHeader(title: l10n.accountSectionPayouts),
                   _Group(
                     rows: [
                       SkylineRow(
                         icon: Icons.account_balance_rounded,
                         title: bank == null
-                            ? 'No bank account added'
-                            : '${bank.accountHolderName} · '
-                                  '•••• ${bank.accountNumberLast4}',
+                            ? l10n.accountNoBankAccount
+                            : l10n.accountBankAccount(
+                                bank.accountHolderName,
+                                bank.accountNumberLast4,
+                              ),
                         subtitle: bank?.ifscCode,
                       ),
                     ],
                   ),
                   const SizedBox(height: Skyline.s24),
-                  const SectionHeader(title: 'Help'),
+                  SectionHeader(title: l10n.languageTitle),
+                  const LanguageSwitch(),
+                  const SizedBox(height: Skyline.s24),
+                  SectionHeader(title: l10n.accountSectionHelp),
                   _Group(
                     rows: [
                       SkylineRow(
                         icon: Icons.support_agent_rounded,
-                        title: 'Contact support',
-                        subtitle: 'team@mojud.life',
+                        title: l10n.accountContactSupport,
+                        subtitle: _supportEmail,
                         accent: true,
                         onTap: _contactSupport,
                       ),
@@ -204,7 +218,7 @@ class _AccountPanelState extends ConsumerState<AccountPanel> {
                       side: BorderSide(color: t.danger.withValues(alpha: 0.4)),
                     ),
                     icon: const Icon(Icons.logout_rounded),
-                    label: const Text('Log out'),
+                    label: Text(l10n.accountLogOut),
                   ),
                   const SizedBox(height: Skyline.s8),
                   const DeleteAccountButton(),
@@ -249,29 +263,30 @@ class _KycBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final (label, icon, color) = switch (status) {
       KycStatus.verified => (
-        'Verified driver',
+        l10n.accountKycVerified,
         Icons.verified_rounded,
         t.success,
       ),
       KycStatus.submitted => (
-        'Documents under review',
+        l10n.accountKycSubmitted,
         Icons.hourglass_top_rounded,
         t.primaryText,
       ),
       KycStatus.rejected => (
-        'Documents need attention',
+        l10n.accountKycRejected,
         Icons.error_outline_rounded,
         t.danger,
       ),
       KycStatus.incomplete => (
-        'Documents incomplete',
+        l10n.accountKycIncomplete,
         Icons.pending_outlined,
         t.inkMuted,
       ),
       KycStatus.unknown => (
-        'Documents status unknown',
+        l10n.accountKycUnknown,
         Icons.help_outline_rounded,
         t.inkMuted,
       ),

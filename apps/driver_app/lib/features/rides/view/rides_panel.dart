@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/ride.dart';
 import '../rides_providers.dart';
 import '../view_model/my_rides_view_model.dart';
@@ -17,43 +18,42 @@ class RidesPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vm = ref.watch(myRidesViewModelProvider);
+    final l10n = context.l10n;
     final tabs = <(String, List<Ride>, PanelMessage)>[
       (
-        'Upcoming',
+        l10n.ridesPanelTabUpcoming,
         vm.upcoming,
-        const PanelMessage(
+        PanelMessage(
           icon: Icons.event_available_rounded,
-          title: 'No upcoming rides',
-          body: 'Rides you accept from the Home tab line up here.',
+          title: l10n.ridesPanelEmptyUpcomingTitle,
+          body: l10n.ridesPanelEmptyUpcomingBody,
         ),
       ),
       (
-        'Ongoing',
+        l10n.ridesPanelTabOngoing,
         vm.ongoing,
-        const PanelMessage(
+        PanelMessage(
           icon: Icons.local_taxi_rounded,
-          title: 'Nothing underway',
-          body:
-              "Tap \"I've arrived\" on an upcoming ride when you reach "
-              'the pickup.',
+          title: l10n.ridesPanelEmptyOngoingTitle,
+          body: l10n.ridesPanelEmptyOngoingBody,
         ),
       ),
       (
-        'Completed',
+        l10n.ridesPanelTabCompleted,
         vm.completed,
-        const PanelMessage(
+        PanelMessage(
           icon: Icons.task_alt_rounded,
-          title: 'No completed rides yet',
-          body: 'Finished trips and their fares show up here.',
+          title: l10n.ridesPanelEmptyCompletedTitle,
+          body: l10n.ridesPanelEmptyCompletedBody,
         ),
       ),
       (
-        'Cancelled',
+        l10n.ridesPanelTabCancelled,
         vm.cancelled,
-        const PanelMessage(
+        PanelMessage(
           icon: Icons.event_busy_rounded,
-          title: 'No cancelled rides',
-          body: 'Rides a customer cancels after you accept them show up here.',
+          title: l10n.ridesPanelEmptyCancelledTitle,
+          body: l10n.ridesPanelEmptyCancelledBody,
         ),
       ),
     ];
@@ -65,7 +65,7 @@ class RidesPanel extends ConsumerWidget {
       initialIndex: vm.ongoing.isNotEmpty ? 1 : 0,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('My rides'),
+          title: Text(l10n.ridesPanelTitle),
           bottom: TabBar(
             tabs: [
               for (final (label, rides, _) in tabs)
@@ -102,11 +102,11 @@ class _RideList extends StatelessWidget {
     } else if (rides.isEmpty && vm.error != null) {
       content = PanelMessage(
         icon: Icons.cloud_off_rounded,
-        title: "Couldn't load your rides",
+        title: context.l10n.ridesPanelLoadFailed,
         body: vm.error!,
         action: OutlinedButton(
           onPressed: vm.load,
-          child: const Text('Try again'),
+          child: Text(context.l10n.commonTryAgain),
         ),
       );
     } else if (rides.isEmpty) {

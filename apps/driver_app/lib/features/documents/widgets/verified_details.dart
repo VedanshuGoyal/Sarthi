@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
+
 /// A green-ticked card naming who checked a detail and what they confirmed,
 /// e.g. "Verified with DigiLocker" over the name and date of birth.
 class VerifiedDetails extends StatelessWidget {
@@ -51,11 +53,13 @@ class VerifiedDetails extends StatelessWidget {
   }
 }
 
-/// Formats a date the way the verification cards show it: `2 Mar 1995`.
-String formatCardDate(DateTime date) {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  return '${date.day} ${months[date.month - 1]} ${date.year}';
+/// Formats a date the way the verification cards show it: `2 Mar 1995`
+/// (`2 मार्च 1995` in Hindi), in [l10n] or else the app's language.
+String formatCardDate(DateTime date, [AppLocalizations? l10n]) {
+  final strings = l10n ?? L10n.current;
+  return strings.docCardDate(
+    '${date.day}',
+    strings.monthShort(date.month),
+    '${date.year}',
+  );
 }

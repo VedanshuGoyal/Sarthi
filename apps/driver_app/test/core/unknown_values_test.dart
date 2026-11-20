@@ -4,7 +4,9 @@ import 'package:driver_app/features/documents/domain/document_kind.dart';
 import 'package:driver_app/features/documents/domain/driver_kyc.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/view/ride_format.dart';
+import 'package:driver_app/features/rides/view/ride_labels.dart';
 import 'package:driver_app/features/rides/view_model/my_rides_view_model.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../rides/fakes.dart';
@@ -19,7 +21,7 @@ void main() {
 
       check(parsed.status).equals(RideStatus.unknown);
       check(parsed.rawStatus).equals('on_hold');
-      check(parsed.statusLabel).equals('On hold');
+      check(parsed.statusLabelIn(L10n.current)).equals('On hold');
       check(parsed.status.isActive).isFalse();
       check(parsed.isTrackableAt(parsed.scheduledAt)).isFalse();
     });
@@ -30,14 +32,16 @@ void main() {
 
       check(Ride.tryParse(missing)!.status).equals(RideStatus.unknown);
       check(Ride.tryParse(mistyped)!.status).equals(RideStatus.unknown);
-      check(Ride.tryParse(mistyped)!.statusLabel).equals('Status unknown');
+      check(
+        Ride.tryParse(mistyped)!.statusLabelIn(L10n.current),
+      ).equals('Status unknown');
     });
 
     test('known statuses keep their own label', () {
       final parsed = Ride.tryParse(rideJson(status: 'in_progress'))!;
 
       check(parsed.status).equals(RideStatus.inProgress);
-      check(parsed.statusLabel).equals('On trip');
+      check(parsed.statusLabelIn(L10n.current)).equals('On trip');
     });
 
     test('an unknown status survives a merge', () {
@@ -67,7 +71,7 @@ void main() {
       final parsed = Ride.tryParse(rideJson(tripType: 'outstation'))!;
 
       check(parsed.kind).equals(TripKind.other);
-      check(parsed.kind.label).equals('Trip');
+      check(parsed.kind.labelIn(L10n.current)).equals('Trip');
       // Booked 09:00–12:00: the span, not "3 h hire" from a round trip's
       // hours.
       check(
@@ -83,7 +87,7 @@ void main() {
       )!;
 
       check(parsed.paymentStatus).equals(RidePaymentStatus.none);
-      check(parsed.paymentStatus.label).equals('');
+      check(parsed.paymentStatus.labelIn(L10n.current)).equals('');
     });
   });
 
