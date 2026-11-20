@@ -14,7 +14,9 @@
 #     "end trip" returns the trip;
 #   - one receipt for a payment that paid several bookings (read-only);
 #   - multi-stop bookings name the car, required only from user app
-#     build 10 (1.6.0 is +9, so released apps are unaffected).
+#     build 10 (1.6.0 is +9, so released apps are unaffected);
+#   - a push FCM couldn't take for a moment (network, 429, 5xx) is tried
+#     again after 1 s and 4 s.
 #
 # Steps (stops at the first failure):
 #   1. local HEAD == origin/main
