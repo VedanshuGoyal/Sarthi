@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../auth/view/registration_screen.dart';
+import '../../language/view/language_switch.dart';
 
 /// The driver app's landing screen — shown to every signed-out driver before
 /// registration. A single CTA ("Start Driving") pushes [RegistrationScreen],
@@ -18,8 +20,10 @@ class StartDrivingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return Scaffold(
-      appBar: AppBar(),
+      // English or Hindi before sign-up, whatever the phone is set to.
+      appBar: AppBar(actions: const [LanguageMenuButton()]),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -37,7 +41,7 @@ class StartDrivingScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 32),
                   Text(
-                    'MOJUD Driver',
+                    l10n.appTitle,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w700,
@@ -45,8 +49,7 @@ class StartDrivingScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Drive customers in their own car, on your schedule. '
-                    'Get matched with nearby trips the moment you go online.',
+                    l10n.startTagline,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
@@ -54,7 +57,7 @@ class StartDrivingScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 40),
                   SarthiPrimaryButton(
-                    label: 'Start Driving',
+                    label: l10n.startDriving,
                     onPressed: () => _startDriving(context),
                   ),
                 ],

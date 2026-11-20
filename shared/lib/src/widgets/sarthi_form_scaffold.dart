@@ -18,6 +18,7 @@ class SarthiFormScaffold extends StatelessWidget {
     this.subtitle,
     this.footer,
     this.leading,
+    this.actions,
     this.header,
     this.maxContentWidth = 480,
   });
@@ -34,6 +35,9 @@ class SarthiFormScaffold extends StatelessWidget {
   /// Optional leading widget in the app bar (e.g. a back button).
   final Widget? leading;
 
+  /// Optional app bar actions (e.g. a language picker).
+  final List<Widget>? actions;
+
   /// Optional widget shown above the title (e.g. a brand header).
   final Widget? header;
   final double maxContentWidth;
@@ -42,7 +46,7 @@ class SarthiFormScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(leading: leading),
+      appBar: AppBar(leading: leading, actions: actions),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(

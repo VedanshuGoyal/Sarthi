@@ -1,5 +1,7 @@
 import 'package:checks/checks.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
+import 'package:driver_app/features/rides/view/ride_labels.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
@@ -46,7 +48,7 @@ void main() {
     test('names who ended a cancelled ride', () {
       String label(String? by) => Ride.tryParse(
         rideJson(status: 'cancelled', cancelledBy: by),
-      )!.cancelLabel;
+      )!.cancelLabelIn(L10n.current);
       check(label('customer')).equals('Cancelled by customer');
       check(label('no_show')).equals("Customer didn't come");
       check(label(null)).equals('Cancelled');
@@ -282,7 +284,7 @@ void main() {
         'sharePaise': 25500,
       })!;
       check(parsed.paymentStatus).equals(RidePaymentStatus.paid);
-      check(parsed.paymentStatus.label).equals('Paid');
+      check(parsed.paymentStatus.labelIn(L10n.current)).equals('Paid');
       check(parsed.paidAt).isNotNull();
       check(parsed.sharePaise).equals(25500);
     });
@@ -308,7 +310,9 @@ void main() {
       check(parsed.hasCancellationFee).isTrue();
       check(parsed.paymentStatus).equals(RidePaymentStatus.paid);
       check(parsed.sharePaise).equals(4350);
-      check(parsed.cancelLabel).equals('Customer cancelled at the pickup');
+      check(
+        parsed.cancelLabelIn(L10n.current),
+      ).equals('Customer cancelled at the pickup');
       check(parsed.endedEarly).isFalse();
     });
 
@@ -319,7 +323,7 @@ void main() {
       check(parsed.cancellationFeePaise).isNull();
       check(parsed.hasCancellationFee).isFalse();
       check(parsed.paymentStatus).equals(RidePaymentStatus.none);
-      check(parsed.cancelLabel).equals('Cancelled by customer');
+      check(parsed.cancelLabelIn(L10n.current)).equals('Cancelled by customer');
       // A zero fee, or a fee on a ride that wasn't cancelled, is no fee.
       check(
         Ride.tryParse(

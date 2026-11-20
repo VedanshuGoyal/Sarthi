@@ -9,6 +9,7 @@ import 'package:driver_app/features/rides/domain/payout.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
 import 'package:driver_app/features/rides/view/earnings_panel.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,9 @@ void main() {
         ],
         child: MaterialApp(
           theme: SkylineTheme.light(),
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: const EarningsPanel(),
         ),
       ),

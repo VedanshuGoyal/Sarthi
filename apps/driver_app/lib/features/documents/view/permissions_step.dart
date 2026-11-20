@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../document_providers.dart';
 
 /// Document step 5 — the three OS permissions the "Go Online" flow depends
@@ -94,17 +95,16 @@ class _PermissionsStepState extends ConsumerState<PermissionsStep> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Permissions',
-      subtitle:
-          "Turn these on so ride offers reach you even when MOJUD Driver "
-          "isn't the app on screen.",
+      title: l10n.docStepPermissionsTitle,
+      subtitle: l10n.permissionsSubtitle,
       fields: [
         _PermissionRow(
           icon: Icons.picture_in_picture_alt_outlined,
-          title: 'Display over other apps',
-          subtitle: 'Shows ride alerts on top of whatever app you\'re using.',
+          title: l10n.permissionsOverlayTitle,
+          subtitle: l10n.permissionsOverlaySubtitle,
           granted: _overlay,
           applicable: _overlayApplicable,
           onTurnOn: _requestOverlay,
@@ -112,8 +112,8 @@ class _PermissionsStepState extends ConsumerState<PermissionsStep> {
         const SizedBox(height: DeepSignalTokens.s8),
         _PermissionRow(
           icon: Icons.location_on_outlined,
-          title: 'Background location',
-          subtitle: 'Streams your GPS to riders and dispatch while online.',
+          title: l10n.permissionsLocationTitle,
+          subtitle: l10n.permissionsLocationSubtitle,
           granted: _backgroundLocation,
           applicable: true,
           onTurnOn: _requestBackgroundLocation,
@@ -121,15 +121,15 @@ class _PermissionsStepState extends ConsumerState<PermissionsStep> {
         const SizedBox(height: DeepSignalTokens.s8),
         _PermissionRow(
           icon: Icons.battery_charging_full_outlined,
-          title: 'Battery usage',
-          subtitle: 'Stops the OS from pausing location updates to save power.',
+          title: l10n.permissionsBatteryTitle,
+          subtitle: l10n.permissionsBatterySubtitle,
           granted: _battery,
           applicable: _batteryApplicable,
           onTurnOn: _requestBattery,
         ),
       ],
       footer: SarthiPrimaryButton(
-        label: 'Finish',
+        label: l10n.permissionsFinish,
         onPressed: _allGranted ? _submit : null,
       ),
     );
@@ -175,7 +175,7 @@ class _PermissionRow extends StatelessWidget {
                 Text(title, style: t.title(15, weight: FontWeight.w600)),
                 const SizedBox(height: 2),
                 Text(
-                  applicable ? subtitle : 'Not required on this device',
+                  applicable ? subtitle : context.l10n.permissionsNotRequired,
                   style: t.body(size: 13, color: t.muted),
                 ),
               ],
@@ -187,7 +187,10 @@ class _PermissionRow extends StatelessWidget {
           else if (granted)
             Icon(Icons.check_circle, color: t.accent, size: 22)
           else
-            TextButton(onPressed: onTurnOn, child: const Text('Turn on')),
+            TextButton(
+              onPressed: onTurnOn,
+              child: Text(context.l10n.permissionsTurnOn),
+            ),
         ],
       ),
     );

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/document_step.dart';
+import '../view/document_labels.dart';
 
 /// One row on the Document View: a numbered KYC step that is locked, open, or
 /// completed. Renders only — [onTap] fires for open/completed rows and is
@@ -24,6 +26,7 @@ class DocumentOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = DeepSignalTokens.of(context);
+    final l10n = context.l10n;
     final dimmed = !isUnlocked;
 
     return Opacity(
@@ -51,12 +54,12 @@ class DocumentOptionTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        step.title,
+                        step.titleIn(l10n),
                         style: t.title(15, weight: FontWeight.w600),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        step.subtitle,
+                        step.subtitleIn(l10n),
                         style: t.body(size: 13, color: t.muted),
                       ),
                     ],

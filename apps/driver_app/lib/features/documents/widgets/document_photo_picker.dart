@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/document_kind.dart';
 import 'local_photo.dart';
 
@@ -18,7 +19,7 @@ class DocumentPhotoPicker extends StatelessWidget {
     required this.photoPath,
     required this.onPhotoTaken,
     this.uploadState = DocumentUploadState.none,
-    this.label = 'Take a photo of the document',
+    this.label,
   });
 
   /// The local capture, or null when nothing was taken on this device.
@@ -29,7 +30,9 @@ class DocumentPhotoPicker extends StatelessWidget {
   /// How the upload of this document is going.
   final DocumentUploadState uploadState;
 
-  final String label;
+  /// What the empty tile asks for; "Take a photo of the document" when
+  /// null.
+  final String? label;
 
   /// Whether the backend has the image, even if the local capture is gone —
   /// captures are deleted once onboarding is submitted.
@@ -47,6 +50,7 @@ class DocumentPhotoPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = DeepSignalTokens.of(context);
+    final l10n = context.l10n;
     final path = photoPath;
     final isUploading = uploadState == DocumentUploadState.uploading;
 
@@ -74,14 +78,14 @@ class DocumentPhotoPicker extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
               ),
-              child: _content(t, path, isUploading),
+              child: _content(t, l10n, path, isUploading),
             ),
           ),
         ),
         if (uploadState == DocumentUploadState.failed) ...[
           const SizedBox(height: DeepSignalTokens.s8),
           Text(
-            "Upload didn't finish — tap to take the photo again.",
+            l10n.photoPickerUploadFailed,
             style: t.body(size: 13, color: Colors.red),
           ),
         ],
@@ -89,7 +93,12 @@ class DocumentPhotoPicker extends StatelessWidget {
     );
   }
 
-  Widget _content(DeepSignalTokens t, String? path, bool isUploading) {
+  Widget _content(
+    DeepSignalTokens t,
+    AppLocalizations l10n,
+    String? path,
+    bool isUploading,
+  ) {
     if (path == null) {
       // No local file. Either nothing taken yet, or the capture was cleaned up
       // after submission and only the server's copy remains.
@@ -104,9 +113,15 @@ class DocumentPhotoPicker extends StatelessWidget {
             size: 28,
           ),
           const SizedBox(height: DeepSignalTokens.s8),
-          Text(
-            _isUploaded ? 'Photo uploaded' : label,
-            style: t.body(size: 13, color: t.muted),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              _isUploaded
+                  ? l10n.photoPickerUploadedNoPreview
+                  : label ?? l10n.photoPickerDefaultLabel,
+              textAlign: TextAlign.center,
+              style: t.body(size: 13, color: t.muted),
+            ),
           ),
         ],
       );
@@ -139,10 +154,10 @@ class DocumentPhotoPicker extends StatelessWidget {
               borderRadius: BorderRadius.circular(DeepSignalTokens.radius),
             ),
             child: Text(switch (uploadState) {
-              DocumentUploadState.uploading => 'Uploading…',
-              DocumentUploadState.uploaded => 'Uploaded',
-              DocumentUploadState.failed => 'Retry',
-              DocumentUploadState.none => 'Retake',
+              DocumentUploadState.uploading => l10n.photoPickerBadgeUploading,
+              DocumentUploadState.uploaded => l10n.photoPickerBadgeUploaded,
+              DocumentUploadState.failed => l10n.photoPickerBadgeRetry,
+              DocumentUploadState.none => l10n.photoPickerBadgeRetake,
             }, style: t.body(size: 12, color: t.invertedFg)),
           ),
         ),

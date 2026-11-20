@@ -5,6 +5,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/app_config_providers.dart';
+import '../../../../l10n/l10n.dart';
 import '../../../auth/driver_auth_controller.dart';
 import '../../domain/ride.dart';
 import '../ride_format.dart';
@@ -28,15 +29,16 @@ Future<void> _copyToClipboard(String text) =>
     Clipboard.setData(ClipboardData(text: text));
 
 /// The texts and links behind the Help & safety row. Pure functions of
-/// their inputs.
+/// their inputs and the app's language ([L10n.current]).
 abstract final class HelpSafety {
   /// India's single emergency number.
   static final Uri emergencyCall = Uri(scheme: 'tel', path: '112');
 
-  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  /// ICU select keys for [DateTime.weekday] and [DateTime.month].
+  static const _weekdays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun', //
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
   ];
 
   /// "Ravi" out of "Ravi Kumar"; empty for a blank name.
@@ -52,20 +54,25 @@ abstract final class HelpSafety {
 
   /// "Mon, 26 Oct 2026, 9:00 AM" — absolute, since whoever reads a shared
   /// trip may read it on another day.
-  static String dateTime(DateTime t) =>
-      '${_weekdays[t.weekday - 1]}, ${t.day} ${_months[t.month - 1]} '
-      '${t.year}, ${RideFormat.time(t)}';
+  static String dateTime(DateTime t) => L10n.current.helpShareDateTime(
+    _weekdays[t.weekday - 1],
+    '${t.day}',
+    _months[t.month - 1],
+    '${t.year}',
+    RideFormat.time(t),
+  );
 
   /// What "Share trip" sends: when, where from, who is driving and the
   /// booking. The driver's first name is left out when unknown.
   static String shareText(Ride ride, {String? driverFirstName}) {
+    final l10n = L10n.current;
     final name = driverFirstName?.trim() ?? '';
     return [
-      "I'm driving a MOJUD trip.",
-      'When: ${dateTime(ride.scheduledAt)}',
-      'Pickup: ${ride.pickup.shortName}',
-      if (name.isNotEmpty) 'Driver: $name',
-      'Booking: ${shortId(ride.id)}',
+      l10n.helpShareIntro,
+      l10n.helpShareWhen(dateTime(ride.scheduledAt)),
+      l10n.helpSharePickup(ride.pickup.shortName),
+      if (name.isNotEmpty) l10n.helpShareDriver(name),
+      l10n.helpShareBooking(shortId(ride.id)),
     ].join('\n');
   }
 
@@ -74,7 +81,8 @@ abstract final class HelpSafety {
       Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
 
   /// A WhatsApp chat with MOJUD support about booking [rideId], or null
-  /// when [supportPhone] has no digits.
+  /// when [supportPhone] has no digits. The prefilled text stays English:
+  /// it's for the support team, not the driver.
   static Uri? supportLink(String? supportPhone, String rideId) {
     final digits = (supportPhone ?? '').replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return null;
@@ -136,7 +144,7 @@ class HelpSafetyRow extends StatelessWidget {
   Future<void> _callEmergency(BuildContext context) async {
     final ok = await launch(HelpSafety.emergencyCall);
     if (!ok && context.mounted) {
-      _say(context, "Couldn't open the dialer. Dial 112.");
+      _say(context, context.l10n.helpDialerFailed);
     }
   }
 
@@ -144,13 +152,13 @@ class HelpSafetyRow extends StatelessWidget {
     final text = HelpSafety.shareText(ride, driverFirstName: driverFirstName);
     if (await launch(HelpSafety.shareLink(text))) return;
     await copy(text);
-    if (context.mounted) _say(context, 'Trip details copied');
+    if (context.mounted) _say(context, context.l10n.helpTripCopied);
   }
 
   Future<void> _contactSupport(BuildContext context, Uri link) async {
     final ok = await launch(link);
     if (!ok && context.mounted) {
-      _say(context, "Couldn't open WhatsApp on this phone.");
+      _say(context, context.l10n.helpWhatsAppFailed);
     }
   }
 
@@ -163,20 +171,21 @@ class HelpSafetyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final support = HelpSafety.supportLink(supportPhone, ride.id);
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SectionHeader(title: 'Help & safety'),
+          SectionHeader(title: l10n.helpTitle),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _HelpAction(
                   icon: Icons.sos_rounded,
-                  label: 'Call 112',
+                  label: l10n.helpCall112,
                   background: t.danger.withValues(alpha: 0.12),
                   foreground: t.danger,
                   onTap: () => _callEmergency(context),
@@ -185,7 +194,7 @@ class HelpSafetyRow extends StatelessWidget {
               Expanded(
                 child: _HelpAction(
                   icon: Icons.share_rounded,
-                  label: 'Share trip',
+                  label: l10n.helpShareTrip,
                   background: t.primarySoft,
                   foreground: t.primaryText,
                   onTap: () => _shareTrip(context),
@@ -195,7 +204,7 @@ class HelpSafetyRow extends StatelessWidget {
                 Expanded(
                   child: _HelpAction(
                     icon: Icons.support_agent_rounded,
-                    label: 'Contact support',
+                    label: l10n.helpContactSupport,
                     background: t.primarySoft,
                     foreground: t.primaryText,
                     onTap: () => _contactSupport(context, support),

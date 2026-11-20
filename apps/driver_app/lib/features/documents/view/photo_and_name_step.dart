@@ -4,11 +4,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
 import '../../auth/domain/auth_validators.dart';
+import '../../../l10n/l10n.dart';
 import '../../auth/driver_auth_controller.dart';
 import '../document_providers.dart';
 import '../domain/document_kind.dart';
 import '../domain/gender.dart';
 import '../widgets/local_photo.dart';
+import 'document_labels.dart';
 
 /// Document step 2 — selfie, full name, date of birth, and gender.
 ///
@@ -81,9 +83,10 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
 
   Future<void> _submit() async {
     final vm = ref.read(documentRegistrationViewModelProvider);
+    final l10n = context.l10n;
 
     if (!vm.kyc.hasUploaded(DocumentKind.selfie)) {
-      setState(() => _error = 'Take a selfie to continue');
+      setState(() => _error = l10n.photoStepSelfieRequired);
       return;
     }
     if (vm.kyc.isAadhaarVerified) {
@@ -96,11 +99,11 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
       return;
     }
     if (_dateOfBirth == null) {
-      setState(() => _error = 'Select your date of birth');
+      setState(() => _error = l10n.photoStepDobRequired);
       return;
     }
     if (_gender == null) {
-      setState(() => _error = 'Select your gender');
+      setState(() => _error = l10n.photoStepGenderRequired);
       return;
     }
 
@@ -125,11 +128,12 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
     final selfiePath = vm.data.capturePathFor(DocumentKind.selfie);
     final selfieState = vm.data.uploadStateFor(DocumentKind.selfie);
     final locked = vm.kyc.isAadhaarVerified;
+    final l10n = context.l10n;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Photo and name',
-      subtitle: 'A clear selfie and your details, as they appear on your ID.',
+      title: l10n.photoStepTitle,
+      subtitle: l10n.photoStepSubtitle,
       fields: [
         Center(
           child: GestureDetector(
@@ -167,12 +171,15 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
         Center(
           child: Text(
             switch (selfieState) {
-              DocumentUploadState.uploading => 'Uploading…',
-              DocumentUploadState.failed => 'Upload failed — tap to retry',
-              DocumentUploadState.uploaded => 'Retake selfie',
+              DocumentUploadState.uploading => l10n.photoStepSelfieUploading,
+              DocumentUploadState.failed => l10n.photoStepSelfieUploadFailed,
+              DocumentUploadState.uploaded => l10n.photoStepRetakeSelfie,
               DocumentUploadState.none =>
-                selfiePath == null ? 'Take a selfie' : 'Retake selfie',
+                selfiePath == null
+                    ? l10n.photoStepTakeSelfie
+                    : l10n.photoStepRetakeSelfie,
             },
+            textAlign: TextAlign.center,
             style: t.body(
               size: 13,
               color: selfieState == DocumentUploadState.failed
@@ -185,27 +192,30 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
           Center(
             child: TextButton(
               onPressed: _pickSelfie,
-              child: const Text('Take a new one instead'),
+              child: Text(l10n.photoStepTakeNewSelfie),
             ),
           ),
         const SizedBox(height: 4),
         Center(
           child: Text(
-            'Customers see this photo when you take their ride.',
+            l10n.photoStepSelfieShownToCustomers,
             textAlign: TextAlign.center,
             style: t.body(size: 12, color: t.muted),
           ),
         ),
         const SizedBox(height: DeepSignalTokens.s22),
         if (locked) ...[
-          Text('From your Aadhaar', style: t.body(size: 12, color: t.muted)),
+          Text(
+            l10n.photoStepFromAadhaar,
+            style: t.body(size: 12, color: t.muted),
+          ),
           const SizedBox(height: DeepSignalTokens.s8),
         ],
         SarthiTextField(
-          label: 'Full name',
+          label: l10n.photoStepFullName,
           controller: _name,
           readOnly: locked,
-          hintText: 'Full name',
+          hintText: l10n.photoStepFullName,
           keyboardType: TextInputType.name,
           textCapitalization: TextCapitalization.words,
           prefixIcon: const Icon(Icons.person_outline),
@@ -227,11 +237,13 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
                 children: [
                   Icon(Icons.cake_outlined, color: t.muted, size: 20),
                   const SizedBox(width: DeepSignalTokens.s14),
-                  Text(
-                    dob == null
-                        ? 'Date of birth'
-                        : '${dob.day}/${dob.month}/${dob.year}',
-                    style: t.body(color: dob == null ? t.muted : t.fg),
+                  Expanded(
+                    child: Text(
+                      dob == null
+                          ? l10n.photoStepDateOfBirth
+                          : '${dob.day}/${dob.month}/${dob.year}',
+                      style: t.body(color: dob == null ? t.muted : t.fg),
+                    ),
                   ),
                 ],
               ),
@@ -244,7 +256,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
           children: [
             for (final g in Gender.values)
               ChoiceChip(
-                label: Text(g.label),
+                label: Text(g.labelIn(l10n)),
                 selected: _gender == g,
                 onSelected: locked ? null : (_) => setState(() => _gender = g),
               ),
@@ -256,7 +268,7 @@ class _PhotoAndNameStepState extends ConsumerState<PhotoAndNameStep> {
         ],
       ],
       footer: SarthiPrimaryButton(
-        label: vm.isSaving ? 'Saving…' : 'Continue',
+        label: vm.isSaving ? l10n.photoStepSaving : l10n.commonContinue,
         onPressed: vm.isSaving ? null : _submit,
       ),
     );

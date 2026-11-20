@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/refresh_throttle.dart';
+import '../../../l10n/l10n.dart';
 import '../data/rides_repository.dart';
 import '../domain/ride.dart';
 
@@ -213,8 +214,8 @@ class MyRidesViewModel extends ChangeNotifier {
       }
       if (action == RideAction.rate) {
         return switch (e.code) {
-          'invalid_rating' => 'Pick 1 to 5 stars for the customer.',
-          'ride_state' => "This ride can't be rated right now.",
+          'invalid_rating' => L10n.current.myRidesInvalidRating,
+          'ride_state' => L10n.current.myRidesCantRate,
           _ => e.message,
         };
       }

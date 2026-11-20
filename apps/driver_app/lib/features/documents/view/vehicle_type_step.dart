@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../document_providers.dart';
 import '../domain/vehicle_type.dart';
+import 'document_labels.dart';
 
 /// Document step 1 — which gearbox(es) the driver can drive.
 class VehicleTypeStep extends ConsumerStatefulWidget {
@@ -43,16 +45,16 @@ class _VehicleTypeStepState extends ConsumerState<VehicleTypeStep> {
   Widget build(BuildContext context) {
     final vm = ref.watch(documentRegistrationViewModelProvider);
     final t = DeepSignalTokens.of(context);
+    final l10n = context.l10n;
 
     return SarthiFormScaffold(
       leading: const BackButton(),
-      title: 'Type of vehicle',
-      subtitle:
-          "Which gearbox can you drive? This decides which rides you're matched with.",
+      title: l10n.vehicleStepTitle,
+      subtitle: l10n.vehicleStepSubtitle,
       fields: [
         for (final type in VehicleType.values) ...[
           _OptionCard(
-            label: type.label,
+            label: type.labelIn(l10n),
             selected: _selected == type,
             onTap: () => setState(() => _selected = type),
             t: t,
@@ -66,7 +68,7 @@ class _VehicleTypeStepState extends ConsumerState<VehicleTypeStep> {
         ],
       ],
       footer: SarthiPrimaryButton(
-        label: vm.isSaving ? 'Saving…' : 'Continue',
+        label: vm.isSaving ? l10n.vehicleStepSaving : l10n.commonContinue,
         onPressed: _selected == null || vm.isSaving ? null : _submit,
       ),
     );

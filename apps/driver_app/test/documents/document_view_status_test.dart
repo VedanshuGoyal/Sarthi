@@ -19,6 +19,7 @@ import 'package:driver_app/features/documents/view/document_view_screen.dart';
 import 'package:driver_app/features/documents/view_model/document_registration_view_model.dart';
 import 'package:driver_app/features/notifications/notification_providers.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -201,6 +202,9 @@ void main() {
           ],
           child: MaterialApp(
             theme: SkylineTheme.light(),
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: const DocumentViewScreen(),
           ),
         ),

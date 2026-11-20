@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/ride.dart';
 import '../ride_format.dart';
+import '../ride_labels.dart';
 
 /// The ride's status as a small coloured pill.
 class RideStatusChip extends StatelessWidget {
@@ -10,8 +12,8 @@ class RideStatusChip extends StatelessWidget {
 
   final RideStatus status;
 
-  /// Overrides [RideStatus.label] — e.g. [Ride.statusLabel], which names a
-  /// status this build doesn't know by the server's own word.
+  /// Overrides the status's own label — e.g. [RideText.statusLabelIn],
+  /// which names a status this build doesn't know by the server's own word.
   final String? label;
 
   @override
@@ -30,7 +32,12 @@ class RideStatusChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label ?? status.label, style: t.label(size: 12, color: fg)),
+      child: Text(
+        label ?? status.labelIn(context.l10n),
+        style: t.label(size: 12, color: fg),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }
@@ -57,7 +64,14 @@ class TripKindBadge extends StatelessWidget {
           child: Icon(tripKindIcon(kind), size: 18, color: t.primaryText),
         ),
         const SizedBox(width: Skyline.s8),
-        Text(kind.label, style: t.title(14)),
+        Flexible(
+          child: Text(
+            kind.labelIn(context.l10n),
+            style: t.title(14),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -104,10 +118,14 @@ class RouteTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    String by(DateTime? departBy) => departBy == null
+        ? ''
+        : ' · ${l10n.ridesLeaveBy(RideFormat.time(departBy))}';
     final rows = <_RouteRow>[
       _RouteRow(
         place: ride.pickup,
-        caption: 'Pickup · ${RideFormat.time(ride.scheduledAt)}',
+        caption: l10n.ridesPickupAt(RideFormat.time(ride.scheduledAt)),
         marker: _Marker.start,
       ),
     ];
@@ -117,8 +135,8 @@ class RouteTimeline extends StatelessWidget {
           _RouteRow(
             place: ride.stops.last.place,
             caption:
-                'Last of ${ride.stops.length} stops'
-                '${_by(ride.stops.last.departBy)}',
+                l10n.ridesLastOfStops(ride.stops.length) +
+                by(ride.stops.last.departBy),
             marker: _Marker.end,
           ),
         );
@@ -130,10 +148,10 @@ class RouteTimeline extends StatelessWidget {
               place: stop.place,
               caption:
                   [
-                    'Stop ${i + 1}',
+                    l10n.ridesStopNumber(i + 1),
                     if (stop.task.isNotEmpty) stop.task,
                   ].join(' · ') +
-                  _by(stop.departBy),
+                  by(stop.departBy),
               marker: last ? _Marker.end : _Marker.stop,
             ),
           );
@@ -143,7 +161,7 @@ class RouteTimeline extends StatelessWidget {
       rows.add(
         _RouteRow(
           place: ride.destination!,
-          caption: 'Drop · ~${RideFormat.time(ride.endsAt)}',
+          caption: l10n.ridesDropAt(RideFormat.time(ride.endsAt)),
           marker: _Marker.end,
         ),
       );
@@ -151,7 +169,7 @@ class RouteTimeline extends StatelessWidget {
       rows.add(
         _RouteRow(
           place: ride.pickup,
-          caption: 'Back at pickup · ~${RideFormat.time(ride.endsAt)}',
+          caption: l10n.ridesBackAtPickup(RideFormat.time(ride.endsAt)),
           marker: _Marker.end,
         ),
       );
@@ -191,7 +209,7 @@ class RouteTimeline extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _name(row.place),
+                          _name(row.place, l10n),
                           style: t.title(compact ? 14 : 15),
                           maxLines: compact ? 1 : 3,
                           overflow: TextOverflow.ellipsis,
@@ -212,17 +230,14 @@ class RouteTimeline extends StatelessWidget {
   /// A request's places are already just their area ("Saket, New Delhi"),
   /// shown whole; an accepted ride's full address is cut to its first part
   /// on compact cards.
-  String _name(RidePlace place) {
+  String _name(RidePlace place, AppLocalizations l10n) {
     if (ride.approximate) {
       return place.address.isEmpty
-          ? 'Exact place after you accept'
+          ? l10n.ridesExactPlaceAfterAccept
           : place.address;
     }
     return compact ? place.shortName : place.address;
   }
-
-  static String _by(DateTime? departBy) =>
-      departBy == null ? '' : ' · leave by ${RideFormat.time(departBy)}';
 }
 
 enum _Marker {
@@ -291,6 +306,7 @@ class RideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final car = ride.car;
     final distance = ride.distanceM;
     return SkylineCard(
@@ -301,10 +317,21 @@ class RideCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              TripKindBadge(kind: ride.kind),
-              const Spacer(),
-              if (showStatus)
-                RideStatusChip(status: ride.status, label: ride.statusLabel),
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TripKindBadge(kind: ride.kind),
+                ),
+              ),
+              if (showStatus) ...[
+                const SizedBox(width: Skyline.s8),
+                Flexible(
+                  child: RideStatusChip(
+                    status: ride.status,
+                    label: ride.statusLabelIn(l10n),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: Skyline.s12),
@@ -329,7 +356,7 @@ class RideCard extends StatelessWidget {
                 children: [
                   Text(RideFormat.rupees(ride.fareRupees), style: t.figure(22)),
                   if (ride.fareEstimated)
-                    Text('estimate', style: t.body(size: 11.5)),
+                    Text(l10n.ridesFareEstimate, style: t.body(size: 11.5)),
                 ],
               ),
             ],
@@ -345,19 +372,20 @@ class RideCard extends StatelessWidget {
                 RideFact(
                   icon: Icons.directions_car_filled_rounded,
                   text: [
-                    car.carTypeLabel,
-                    if (car.transmissionLabel.isNotEmpty) car.transmissionLabel,
+                    car.carTypeLabelIn(l10n),
+                    if (car.transmissionLabelIn(l10n).isNotEmpty)
+                      car.transmissionLabelIn(l10n),
                   ].join(' · '),
                 ),
               if (distance != null)
                 RideFact(
                   icon: Icons.near_me_rounded,
-                  text: '${RideFormat.distance(distance)} away',
+                  text: l10n.ridesDistanceAway(RideFormat.distance(distance)),
                 ),
               if (ride.approximate)
-                const RideFact(
+                RideFact(
                   icon: Icons.lock_outline_rounded,
-                  text: 'Exact address after you accept',
+                  text: l10n.ridesExactAddressAfterAccept,
                 ),
             ],
           ),
@@ -366,7 +394,7 @@ class RideCard extends StatelessWidget {
             _CardNote(
               icon: Icons.cancel_rounded,
               text: [
-                ride.cancelLabel,
+                ride.cancelLabelIn(l10n),
                 if (ride.cancelReason?.isNotEmpty ?? false) ride.cancelReason!,
               ].join(' · '),
               color: t.danger,
@@ -384,17 +412,13 @@ class RideCard extends StatelessWidget {
               const SizedBox(height: Skyline.s12),
               _CardNote(
                 icon: Icons.timer_off_rounded,
-                text:
-                    'Customer ended the trip early · '
-                    '${RideFormat.endedEarly(ride)}',
+                text: l10n.ridesEndedEarlyNote(RideFormat.endedEarly(ride)),
               ),
             ] else if (ride.ranOverTime) ...[
               const SizedBox(height: Skyline.s12),
               _CardNote(
                 icon: Icons.more_time_rounded,
-                text:
-                    'Trip ran past the booked time · '
-                    '${RideFormat.ranOver(ride)}',
+                text: l10n.ridesRanOverNote(RideFormat.ranOver(ride)),
               ),
             ],
             if (footer != null) ...[

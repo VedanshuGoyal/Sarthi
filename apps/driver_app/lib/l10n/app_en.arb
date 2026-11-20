@@ -1,0 +1,2263 @@
+{
+  "@@locale": "en",
+  "appTitle": "MOJUD Driver",
+  "@appTitle": {
+    "description": "App name in the OS task switcher. Brand name: never translated."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button that dismisses a dialog without doing anything."
+  },
+  "commonOk": "OK",
+  "@commonOk": {
+    "description": "Button that acknowledges a dialog."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button or tooltip that closes a sheet or screen."
+  },
+  "commonContinue": "Continue",
+  "@commonContinue": {
+    "description": "Button that moves on to the next step."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Button that retries a failed load or action."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Button that saves a form."
+  },
+  "commonNotAdded": "Not added",
+  "@commonNotAdded": {
+    "description": "Shown in place of a detail (licence, Aadhaar) the driver hasn't given yet."
+  },
+  "commonNotSet": "Not set",
+  "@commonNotSet": {
+    "description": "Shown in place of a setting the driver hasn't chosen yet."
+  },
+  "errorNoConnection": "Can't reach the server. Check your connection and try again.",
+  "@errorNoConnection": {
+    "description": "Shown when the phone can't reach the backend (no internet, timeout)."
+  },
+  "errorUnexpectedReply": "The server sent an unexpected reply. Please try again.",
+  "@errorUnexpectedReply": {
+    "description": "Shown when the backend's reply can't be read."
+  },
+  "errorGeneric": "Something went wrong. Please try again.",
+  "@errorGeneric": {
+    "description": "Fallback error when the backend gives no reason."
+  },
+  "languageTitle": "Language · भाषा",
+  "@languageTitle": {
+    "description": "Heading of the app-language setting. Bilingual on purpose, so a driver can find it in either language: put the current language first."
+  },
+  "languageFollowsPhone": "Same as your phone. Pick one to change it.",
+  "@languageFollowsPhone": {
+    "description": "Under the language switch while the app follows the phone language."
+  },
+  "languageEnglish": "English",
+  "@languageEnglish": {
+    "description": "Language option. Always shown in English, whatever the app language."
+  },
+  "languageHindi": "हिंदी",
+  "@languageHindi": {
+    "description": "Language option. Always shown in Hindi script, whatever the app language."
+  },
+  "rideStatusRequested": "New request",
+  "@rideStatusRequested": {
+    "description": "Ride status chip: an open ride the driver can take."
+  },
+  "rideStatusAccepted": "Upcoming",
+  "@rideStatusAccepted": {
+    "description": "Ride status chip: the driver's ride, not started yet."
+  },
+  "rideStatusArrived": "At pickup",
+  "@rideStatusArrived": {
+    "description": "Ride status chip: the driver is waiting at the pickup."
+  },
+  "rideStatusInProgress": "On trip",
+  "@rideStatusInProgress": {
+    "description": "Ride status chip: the trip is underway."
+  },
+  "rideStatusCompleted": "Completed",
+  "@rideStatusCompleted": {
+    "description": "Ride status chip: the trip is done."
+  },
+  "rideStatusCancelled": "Cancelled",
+  "@rideStatusCancelled": {
+    "description": "Ride status chip / cancel reason: the ride was cancelled."
+  },
+  "rideStatusUnknown": "Status unknown",
+  "@rideStatusUnknown": {
+    "description": "Ride status chip for a status this app version doesn't know."
+  },
+  "tripKindRoundTrip": "Round trip",
+  "@tripKindRoundTrip": {
+    "description": "Trip type: driver hired by the hour, ends back at the pickup. Same words as the customer app."
+  },
+  "tripKindOneWay": "One way",
+  "@tripKindOneWay": {
+    "description": "Trip type: pickup to a destination."
+  },
+  "tripKindMultiStop": "Multi-stop",
+  "@tripKindMultiStop": {
+    "description": "Trip type: a trip with several errands/stops."
+  },
+  "tripKindOther": "Trip",
+  "@tripKindOther": {
+    "description": "Trip type this app version doesn't know."
+  },
+  "ridePaymentDue": "Awaiting payment",
+  "@ridePaymentDue": {
+    "description": "The customer hasn't paid for the ride yet."
+  },
+  "ridePaymentPaid": "Paid",
+  "@ridePaymentPaid": {
+    "description": "The customer paid MOJUD; the driver's share comes in the next payout."
+  },
+  "ridePaymentPaidOut": "Paid out",
+  "@ridePaymentPaidOut": {
+    "description": "The driver's share has been sent to their bank."
+  },
+  "rideCancelledAtPickup": "Customer cancelled at the pickup",
+  "@rideCancelledAtPickup": {
+    "description": "Cancel reason: the customer cancelled after the driver reached the pickup (a fee applies)."
+  },
+  "rideCancelledByCustomer": "Cancelled by customer",
+  "@rideCancelledByCustomer": {
+    "description": "Cancel reason."
+  },
+  "rideCancelledNoShow": "Customer didn't come",
+  "@rideCancelledNoShow": {
+    "description": "Cancel reason: the driver closed the ride because the customer never came to the pickup."
+  },
+  "carTypeHatchback": "Hatchback",
+  "@carTypeHatchback": {
+    "description": "Customer's car type."
+  },
+  "carTypeSedan": "Sedan",
+  "@carTypeSedan": {
+    "description": "Customer's car type."
+  },
+  "carTypeSuv": "SUV",
+  "@carTypeSuv": {
+    "description": "Customer's car type."
+  },
+  "carTypeLuxury": "Luxury",
+  "@carTypeLuxury": {
+    "description": "Customer's car type."
+  },
+  "carTypeUnknown": "Car",
+  "@carTypeUnknown": {
+    "description": "Customer's car when its type isn't known."
+  },
+  "transmissionManual": "Manual",
+  "@transmissionManual": {
+    "description": "Gearbox: manual (stick shift)."
+  },
+  "transmissionAutomatic": "Automatic",
+  "@transmissionAutomatic": {
+    "description": "Gearbox: automatic."
+  },
+  "transmissionBoth": "Manual and Automatic Both",
+  "@transmissionBoth": {
+    "description": "The driver drives both manual and automatic cars."
+  },
+  "genderMale": "Male",
+  "@genderMale": {
+    "description": "Gender option."
+  },
+  "genderFemale": "Female",
+  "@genderFemale": {
+    "description": "Gender option."
+  },
+  "genderOther": "Other",
+  "@genderOther": {
+    "description": "Gender option."
+  },
+  "docStepVehicleTypeTitle": "Type of Vehicle",
+  "@docStepVehicleTypeTitle": {
+    "description": "KYC step title: which gearbox(es) the driver can drive."
+  },
+  "docStepVehicleTypeSubtitle": "Manual, automatic, or both",
+  "@docStepVehicleTypeSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepPhotoAndNameTitle": "Photo and Name",
+  "@docStepPhotoAndNameTitle": {
+    "description": "KYC step title."
+  },
+  "docStepPhotoAndNameSubtitle": "Selfie, full name, date of birth, gender",
+  "@docStepPhotoAndNameSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepAadhaarTitle": "Aadhaar Card",
+  "@docStepAadhaarTitle": {
+    "description": "KYC step title."
+  },
+  "docStepAadhaarSubtitle": "Verify with DigiLocker",
+  "@docStepAadhaarSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepLicenseTitle": "Driving License",
+  "@docStepLicenseTitle": {
+    "description": "KYC step title."
+  },
+  "docStepLicenseSubtitle": "License number, checked instantly",
+  "@docStepLicenseSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepPermissionsTitle": "Permissions",
+  "@docStepPermissionsTitle": {
+    "description": "KYC step title: phone permissions the app needs."
+  },
+  "docStepPermissionsSubtitle": "Display over other apps, background location, battery usage",
+  "@docStepPermissionsSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepBankTitle": "Bank Details",
+  "@docStepBankTitle": {
+    "description": "KYC step title."
+  },
+  "docStepBankSubtitle": "Where your earnings are paid, verified with your bank",
+  "@docStepBankSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "accountTitle": "Account",
+  "@accountTitle": {
+    "description": "Account tab: app bar title."
+  },
+  "accountLogOutConfirmTitle": "Log out?",
+  "@accountLogOutConfirmTitle": {
+    "description": "Account tab: title of the log-out confirmation dialog."
+  },
+  "accountLogOutConfirmBody": "You'll go off duty and stop getting ride requests on this phone.",
+  "@accountLogOutConfirmBody": {
+    "description": "Account tab: body of the log-out confirmation dialog."
+  },
+  "accountLogOut": "Log out",
+  "@accountLogOut": {
+    "description": "Account tab: log-out button and its confirm action."
+  },
+  "accountSupportEmailSubject": "Driver app help",
+  "@accountSupportEmailSubject": {
+    "description": "Subject line pre-filled in the support email the driver sends."
+  },
+  "accountWriteToUs": "Write to us at {email}",
+  "@accountWriteToUs": {
+    "description": "Snackbar when no email app could open; shows the support address.",
+    "placeholders": {
+      "email": {
+        "type": "String",
+        "example": "team@mojud.life"
+      }
+    }
+  },
+  "accountSectionDriving": "Driving",
+  "@accountSectionDriving": {
+    "description": "Account tab: section header for driving details."
+  },
+  "accountCarsYouDrive": "Cars you drive",
+  "@accountCarsYouDrive": {
+    "description": "Account tab row: gearbox types the driver drives (manual/automatic)."
+  },
+  "accountDrivingLicence": "Driving licence",
+  "@accountDrivingLicence": {
+    "description": "Account tab row: the driver's licence number."
+  },
+  "accountAadhaar": "Aadhaar",
+  "@accountAadhaar": {
+    "description": "Account tab row: the driver's Aadhaar (masked)."
+  },
+  "accountAadhaarMasked": "XXXX XXXX {last4}",
+  "@accountAadhaarMasked": {
+    "description": "Masked Aadhaar number showing only its last four digits.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "9012"
+      }
+    }
+  },
+  "accountDocuments": "Documents",
+  "@accountDocuments": {
+    "description": "Account tab row that opens the KYC documents screen."
+  },
+  "accountDocumentsSubtitle": "View or update what you submitted",
+  "@accountDocumentsSubtitle": {
+    "description": "Account tab: subtitle of the Documents row."
+  },
+  "accountSectionPayouts": "Payouts",
+  "@accountSectionPayouts": {
+    "description": "Account tab: section header for the bank account earnings are paid to."
+  },
+  "accountNoBankAccount": "No bank account added",
+  "@accountNoBankAccount": {
+    "description": "Account tab: shown when the driver has no bank account on file."
+  },
+  "accountBankAccount": "{holder} · •••• {last4}",
+  "@accountBankAccount": {
+    "description": "Account tab: bank account holder name and the account number's last four digits.",
+    "placeholders": {
+      "holder": {
+        "type": "String",
+        "example": "Ramesh Kumar"
+      },
+      "last4": {
+        "type": "String",
+        "example": "2345"
+      }
+    }
+  },
+  "accountSectionHelp": "Help",
+  "@accountSectionHelp": {
+    "description": "Account tab: section header for support."
+  },
+  "accountContactSupport": "Contact support",
+  "@accountContactSupport": {
+    "description": "Account tab row that opens an email to MOJUD support."
+  },
+  "accountKycVerified": "Verified driver",
+  "@accountKycVerified": {
+    "description": "Account tab badge: KYC cleared."
+  },
+  "accountKycSubmitted": "Documents under review",
+  "@accountKycSubmitted": {
+    "description": "Account tab badge: KYC sent, waiting on a reviewer."
+  },
+  "accountKycRejected": "Documents need attention",
+  "@accountKycRejected": {
+    "description": "Account tab badge: a reviewer sent the KYC back."
+  },
+  "accountKycIncomplete": "Documents incomplete",
+  "@accountKycIncomplete": {
+    "description": "Account tab badge: KYC steps not all done."
+  },
+  "accountKycUnknown": "Documents status unknown",
+  "@accountKycUnknown": {
+    "description": "Account tab badge: a KYC status this app version doesn't know."
+  },
+  "accountDelete": "Delete account",
+  "@accountDelete": {
+    "description": "Button that deletes the driver's account, and the dialog's confirm action."
+  },
+  "accountDeleteConfirmTitle": "Delete your account?",
+  "@accountDeleteConfirmTitle": {
+    "description": "Title of the delete-account confirmation dialog."
+  },
+  "accountDeleteExplanation": "We'll delete your selfie, identity and licence checks, bank details and phone number, and sign you out on every device.\n\nRecords of rides you drove and payments are kept, without your details, because the law requires us to keep them.\n\nEarnings not yet paid out are still owed to you: MOJUD pays them out, so contact support before you delete if any are due.\n\nThis can't be undone.",
+  "@accountDeleteExplanation": {
+    "description": "Body of the delete-account confirmation dialog: what is deleted, what is kept and why."
+  },
+  "accountDeleteFailed": "Couldn't delete your account. Please try again.",
+  "@accountDeleteFailed": {
+    "description": "Snackbar when deleting the account failed for an unexpected reason."
+  },
+  "startTagline": "Drive customers in their own car, on your schedule. Get matched with nearby trips the moment you go online.",
+  "@startTagline": {
+    "description": "Start screen: one-line pitch under the app name."
+  },
+  "startDriving": "Start Driving",
+  "@startDriving": {
+    "description": "Start screen: the button that begins sign-up / sign-in."
+  },
+  "rideDetailTitleRequest": "Ride request",
+  "@rideDetailTitleRequest": {
+    "description": "Ride screen title for an open ride the driver hasn't taken yet."
+  },
+  "rideDetailTitle": "Ride details",
+  "@rideDetailTitle": {
+    "description": "Ride screen title for one of the driver's own rides."
+  },
+  "rideDetailApproxNote": "Places show their area for now. The exact address, the car's number plate and the customer's name and number appear once you accept.",
+  "@rideDetailApproxNote": {
+    "description": "Under an open request whose places are approximate."
+  },
+  "rideDetailCustomerAfterAccept": "The customer's name and number appear once you accept.",
+  "@rideDetailCustomerAfterAccept": {
+    "description": "Under an open request."
+  },
+  "rideDetailAtPickupSince": "At pickup since {time}",
+  "@rideDetailAtPickupSince": {
+    "description": "Ride header note while the driver waits at the pickup.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "9:05 AM"
+      }
+    }
+  },
+  "rideDetailStartedAt": "Started {time}",
+  "@rideDetailStartedAt": {
+    "description": "Ride header note while the trip is underway.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "9:05 AM"
+      }
+    }
+  },
+  "rideDetailDoneAt": "Done {when}",
+  "@rideDetailDoneAt": {
+    "description": "Ride header note on a completed trip.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Today · 11:30 AM"
+      }
+    }
+  },
+  "rideDetailSpanUntil": "{span} · until ~{time}",
+  "@rideDetailSpanUntil": {
+    "description": "Under the ride's start time: how long it books the driver for, and roughly when they're free.",
+    "placeholders": {
+      "span": {
+        "type": "String",
+        "example": "3 h hire"
+      },
+      "time": {
+        "type": "String",
+        "example": "12:00 PM"
+      }
+    }
+  },
+  "rideDetailFareEstimated": "estimated fare",
+  "@rideDetailFareEstimated": {
+    "description": "Small text next to the fare when it was estimated from the trip's length. Lower case in English."
+  },
+  "rideDetailFareTrip": "trip fare",
+  "@rideDetailFareTrip": {
+    "description": "Small text next to the fare. Lower case in English."
+  },
+  "rideDetailStepAccepted": "Accepted",
+  "@rideDetailStepAccepted": {
+    "description": "Ride progress step: the driver took the ride. Keep short."
+  },
+  "rideDetailStepDone": "Done",
+  "@rideDetailStepDone": {
+    "description": "Ride progress step: the trip is finished. Keep short."
+  },
+  "rideDetailRoute": "Route",
+  "@rideDetailRoute": {
+    "description": "Section header over the ride's pickup/stops/drop."
+  },
+  "rideDetailDistanceAway": "{distance} away",
+  "@rideDetailDistanceAway": {
+    "description": "How far the pickup is from the driver.",
+    "placeholders": {
+      "distance": {
+        "type": "String",
+        "example": "7.7 km"
+      }
+    }
+  },
+  "rideDetailNavigateDrop": "Navigate to drop",
+  "@rideDetailNavigateDrop": {
+    "description": "Button: open Google Maps directions to where the trip ends."
+  },
+  "rideDetailNavigatePickup": "Navigate to pickup",
+  "@rideDetailNavigatePickup": {
+    "description": "Button: open Google Maps directions to the pickup."
+  },
+  "rideDetailCarHandover": "The customer will hand over their car at the pickup.",
+  "@rideDetailCarHandover": {
+    "description": "On a multi-stop ride whose car details aren't known."
+  },
+  "rideDetailMapsFailed": "Couldn't open Maps on this phone.",
+  "@rideDetailMapsFailed": {
+    "description": "Snackbar when no maps app could be opened."
+  },
+  "rideDetailCancelReason": "Reason: {reason}",
+  "@rideDetailCancelReason": {
+    "description": "Why the customer cancelled. The reason is the customer's own words, not translated.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Plans changed"
+      }
+    }
+  },
+  "rideDetailCancellationFee": "{fee} cancellation fee",
+  "@rideDetailCancellationFee": {
+    "description": "The fee the customer owes for cancelling at the pickup.",
+    "placeholders": {
+      "fee": {
+        "type": "String",
+        "example": "₹50"
+      }
+    }
+  },
+  "rideDetailRanOverTitle": "Trip ran past the booked time",
+  "@rideDetailRanOverTitle": {
+    "description": "Notice title on a completed trip charged for extra time."
+  },
+  "rideDetailEndedEarlyTitle": "Customer ended the trip early",
+  "@rideDetailEndedEarlyTitle": {
+    "description": "Notice title on a completed trip the customer ended before the booked time."
+  },
+  "rideDetailPastBookedTime": "Past the booked time — extra time is charged to the customer by the hour.",
+  "@rideDetailPastBookedTime": {
+    "description": "Note on a trip underway that has run past its booked hours."
+  },
+  "rideDetailNoShowDialogTitle": "Customer didn't come?",
+  "@rideDetailNoShowDialogTitle": {
+    "description": "Dialog title before closing a ride as a no-show."
+  },
+  "rideDetailNoShowDialogBody": "This closes the ride as a no-show. The customer is told you waited at the pickup, and it isn't counted as you cancelling.",
+  "@rideDetailNoShowDialogBody": {
+    "description": "Dialog body before closing a ride as a no-show."
+  },
+  "rideDetailKeepWaiting": "Keep waiting",
+  "@rideDetailKeepWaiting": {
+    "description": "Dialog button: don't close the ride, keep waiting for the customer."
+  },
+  "rideDetailCloseRide": "Close ride",
+  "@rideDetailCloseRide": {
+    "description": "Dialog button: close the ride as a no-show."
+  },
+  "rideDetailNoShowClosed": "Ride closed as a no-show.",
+  "@rideDetailNoShowClosed": {
+    "description": "Snackbar after closing a ride as a no-show."
+  },
+  "rideDetailNoShowTitle": "Customer not here?",
+  "@rideDetailNoShowTitle": {
+    "description": "Card title while the driver waits at the pickup."
+  },
+  "rideDetailNoShowOpen": "You can close the ride as a no-show.",
+  "@rideDetailNoShowOpen": {
+    "description": "No-show card: the driver may close the ride now."
+  },
+  "rideDetailNoShowFrom": "If they still haven't come by {time}, you can close the ride as a no-show.",
+  "@rideDetailNoShowFrom": {
+    "description": "No-show card: when the driver may close the ride.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "9:20 AM"
+      }
+    }
+  },
+  "rideDetailNoShowButton": "No-show",
+  "@rideDetailNoShowButton": {
+    "description": "Button that closes the ride because the customer never came."
+  },
+  "rideDetailSharingLocation": "Sharing your live location with the customer",
+  "@rideDetailSharingLocation": {
+    "description": "Note on an active ride while the driver's location is sent to the customer."
+  },
+  "rideDetailNumberHidden": "Number hidden after the ride",
+  "@rideDetailNumberHidden": {
+    "description": "In place of the customer's phone number, which is hidden two hours after the ride."
+  },
+  "rideDetailCallCustomer": "Call customer",
+  "@rideDetailCallCustomer": {
+    "description": "Tooltip of the call button on the customer card."
+  },
+  "rideDetailCallFailed": "Couldn't start a call.",
+  "@rideDetailCallFailed": {
+    "description": "Snackbar when the dialer couldn't be opened."
+  },
+  "rideDetailCustomerCar": "Customer's car",
+  "@rideDetailCustomerCar": {
+    "description": "Label over the customer's car type (the driver drives the customer's own car)."
+  },
+  "rideDetailRateTitle": "Rate your customer",
+  "@rideDetailRateTitle": {
+    "description": "Card title on a completed ride the driver hasn't rated."
+  },
+  "rideDetailRateNoteHint": "Add a note for your records (optional)",
+  "@rideDetailRateNoteHint": {
+    "description": "Hint in the optional note field of the rating card."
+  },
+  "rideDetailRateSubmit": "Submit rating",
+  "@rideDetailRateSubmit": {
+    "description": "Button that sends the driver's rating of the customer."
+  },
+  "rideDetailYouRated": "You rated {stars}★",
+  "@rideDetailYouRated": {
+    "description": "The rating the driver gave the customer.",
+    "placeholders": {
+      "stars": {
+        "type": "int",
+        "example": "4"
+      }
+    }
+  },
+  "rideDetailActionAccept": "Accept ride",
+  "@rideDetailActionAccept": {
+    "description": "Main button on an open request: take the ride."
+  },
+  "rideDetailActionArrive": "I've arrived at pickup",
+  "@rideDetailActionArrive": {
+    "description": "Main button on an upcoming ride: the driver has reached the pickup."
+  },
+  "rideDetailActionStart": "Start trip",
+  "@rideDetailActionStart": {
+    "description": "Main button at the pickup, and the start-code dialog's confirm button."
+  },
+  "rideDetailActionComplete": "Complete trip",
+  "@rideDetailActionComplete": {
+    "description": "Main button while the trip is underway."
+  },
+  "rideDetailActionDecline": "Decline",
+  "@rideDetailActionDecline": {
+    "description": "Secondary button on an open request: hide it."
+  },
+  "rideDetailActionRelease": "Can't make it",
+  "@rideDetailActionRelease": {
+    "description": "Secondary button before the trip starts: give the ride back."
+  },
+  "rideDetailAccepted": "Ride accepted — it's in your upcoming rides.",
+  "@rideDetailAccepted": {
+    "description": "Snackbar after accepting a ride."
+  },
+  "rideDetailDeclined": "Request hidden.",
+  "@rideDetailDeclined": {
+    "description": "Snackbar after declining an open request."
+  },
+  "rideDetailReleased": "Ride handed back.",
+  "@rideDetailReleased": {
+    "description": "Snackbar after giving a ride back."
+  },
+  "rideDetailStarted": "Trip started. Drive safe!",
+  "@rideDetailStarted": {
+    "description": "Snackbar after starting the trip."
+  },
+  "rideDetailCompletedEndedEarly": "The customer ended the trip early. They can now pay {amount} by UPI in their app.",
+  "@rideDetailCompletedEndedEarly": {
+    "description": "Snackbar after Complete when the customer had already ended the trip early.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "₹200"
+      }
+    }
+  },
+  "rideDetailCompletedRanOver": "Trip complete. It ran past the booked time, so the customer can now pay {charge} by UPI in their app.",
+  "@rideDetailCompletedRanOver": {
+    "description": "Snackbar after completing a trip that ran past its booked time.",
+    "placeholders": {
+      "charge": {
+        "type": "String",
+        "example": "₹510 for the time used (booked ₹340)"
+      }
+    }
+  },
+  "rideDetailCompleted": "Trip complete. The customer can now pay {amount} by UPI in their app.",
+  "@rideDetailCompleted": {
+    "description": "Snackbar after completing a trip.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "₹340"
+      }
+    }
+  },
+  "rideDetailConfirmCompleteTitle": "Complete the trip?",
+  "@rideDetailConfirmCompleteTitle": {
+    "description": "Confirm dialog title before completing a trip."
+  },
+  "rideDetailConfirmCompleteBody": "Confirm the trip is over and the car is back with the customer.",
+  "@rideDetailConfirmCompleteBody": {
+    "description": "Confirm dialog body before completing a trip."
+  },
+  "rideDetailConfirmCompleteYes": "Complete",
+  "@rideDetailConfirmCompleteYes": {
+    "description": "Confirm dialog button: complete the trip."
+  },
+  "rideDetailConfirmReleaseTitle": "Hand this ride back?",
+  "@rideDetailConfirmReleaseTitle": {
+    "description": "Confirm dialog title before giving a ride back."
+  },
+  "rideDetailConfirmReleaseBody": "It goes back to other drivers nearby, and leaves your list.",
+  "@rideDetailConfirmReleaseBody": {
+    "description": "Confirm dialog body before giving a ride back."
+  },
+  "rideDetailConfirmReleaseYes": "Hand back",
+  "@rideDetailConfirmReleaseYes": {
+    "description": "Confirm dialog button: give the ride back."
+  },
+  "rideDetailNotNow": "Not now",
+  "@rideDetailNotNow": {
+    "description": "Confirm dialog button: do nothing."
+  },
+  "rideDetailStartCodeTitle": "Enter start code",
+  "@rideDetailStartCodeTitle": {
+    "description": "Dialog title: the 4-digit code the customer reads out to start the trip."
+  },
+  "rideDetailStartCodeBody": "Ask the customer for the 4-digit code shown in their MOJUD app.",
+  "@rideDetailStartCodeBody": {
+    "description": "Start-code dialog body. MOJUD is the brand name."
+  },
+  "helpTitle": "Help & safety",
+  "@helpTitle": {
+    "description": "Section header of the help card on a ride."
+  },
+  "helpCall112": "Call 112",
+  "@helpCall112": {
+    "description": "Button: call India's emergency number 112."
+  },
+  "helpShareTrip": "Share trip",
+  "@helpShareTrip": {
+    "description": "Button: share the trip's details on WhatsApp (e.g. with family)."
+  },
+  "helpContactSupport": "Contact support",
+  "@helpContactSupport": {
+    "description": "Button: message MOJUD support on WhatsApp."
+  },
+  "helpDialerFailed": "Couldn't open the dialer. Dial 112.",
+  "@helpDialerFailed": {
+    "description": "Snackbar when the phone dialer couldn't be opened."
+  },
+  "helpTripCopied": "Trip details copied",
+  "@helpTripCopied": {
+    "description": "Snackbar when WhatsApp is missing and the trip text was copied instead."
+  },
+  "helpWhatsAppFailed": "Couldn't open WhatsApp on this phone.",
+  "@helpWhatsAppFailed": {
+    "description": "Snackbar when WhatsApp couldn't be opened."
+  },
+  "helpShareIntro": "I'm driving a MOJUD trip.",
+  "@helpShareIntro": {
+    "description": "First line of the trip text the driver shares (e.g. with family) on WhatsApp."
+  },
+  "helpShareWhen": "When: {when}",
+  "@helpShareWhen": {
+    "description": "Line of the shared trip text.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Mon, 26 Oct 2026, 9:00 AM"
+      }
+    }
+  },
+  "helpSharePickup": "Pickup: {place}",
+  "@helpSharePickup": {
+    "description": "Line of the shared trip text. The place is an address, not translated.",
+    "placeholders": {
+      "place": {
+        "type": "String",
+        "example": "Connaught Place"
+      }
+    }
+  },
+  "helpShareDriver": "Driver: {name}",
+  "@helpShareDriver": {
+    "description": "Line of the shared trip text: the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ravi"
+      }
+    }
+  },
+  "helpShareBooking": "Booking: {id}",
+  "@helpShareBooking": {
+    "description": "Line of the shared trip text: a short booking id.",
+    "placeholders": {
+      "id": {
+        "type": "String",
+        "example": "3F2A9C41"
+      }
+    }
+  },
+  "helpShareDateTime": "{weekday, select, mon{Mon} tue{Tue} wed{Wed} thu{Thu} fri{Fri} sat{Sat} sun{Sun} other{}}, {day} {month, select, jan{Jan} feb{Feb} mar{Mar} apr{Apr} may{May} jun{Jun} jul{Jul} aug{Aug} sep{Sep} oct{Oct} nov{Nov} dec{Dec} other{}} {year}, {time}",
+  "@helpShareDateTime": {
+    "description": "Absolute date and time in the shared trip text (read later, maybe on another day). Translate the weekday and month names only.",
+    "placeholders": {
+      "weekday": {
+        "type": "String",
+        "example": "mon"
+      },
+      "day": {
+        "type": "String",
+        "example": "26"
+      },
+      "month": {
+        "type": "String",
+        "example": "oct"
+      },
+      "year": {
+        "type": "String",
+        "example": "2026"
+      },
+      "time": {
+        "type": "String",
+        "example": "9:00 AM"
+      }
+    }
+  },
+  "ridesPanelTitle": "My rides",
+  "@ridesPanelTitle": {
+    "description": "Rides tab title."
+  },
+  "ridesPanelTabUpcoming": "Upcoming",
+  "@ridesPanelTabUpcoming": {
+    "description": "Rides tab: accepted rides not reached yet. Keep short (4 tabs side by side)."
+  },
+  "ridesPanelTabOngoing": "Ongoing",
+  "@ridesPanelTabOngoing": {
+    "description": "Rides tab: at the pickup or driving. Keep short."
+  },
+  "ridesPanelTabCompleted": "Completed",
+  "@ridesPanelTabCompleted": {
+    "description": "Rides tab: finished trips. Keep short."
+  },
+  "ridesPanelTabCancelled": "Cancelled",
+  "@ridesPanelTabCancelled": {
+    "description": "Rides tab: rides the customer cancelled. Keep short."
+  },
+  "ridesPanelEmptyUpcomingTitle": "No upcoming rides",
+  "@ridesPanelEmptyUpcomingTitle": {
+    "description": "Empty Upcoming tab."
+  },
+  "ridesPanelEmptyUpcomingBody": "Rides you accept from the Home tab line up here.",
+  "@ridesPanelEmptyUpcomingBody": {
+    "description": "Empty Upcoming tab."
+  },
+  "ridesPanelEmptyOngoingTitle": "Nothing underway",
+  "@ridesPanelEmptyOngoingTitle": {
+    "description": "Empty Ongoing tab."
+  },
+  "ridesPanelEmptyOngoingBody": "Tap \"I've arrived\" on an upcoming ride when you reach the pickup.",
+  "@ridesPanelEmptyOngoingBody": {
+    "description": "Empty Ongoing tab. Refers to the ride screen's \"I've arrived at pickup\" button."
+  },
+  "ridesPanelEmptyCompletedTitle": "No completed rides yet",
+  "@ridesPanelEmptyCompletedTitle": {
+    "description": "Empty Completed tab."
+  },
+  "ridesPanelEmptyCompletedBody": "Finished trips and their fares show up here.",
+  "@ridesPanelEmptyCompletedBody": {
+    "description": "Empty Completed tab."
+  },
+  "ridesPanelEmptyCancelledTitle": "No cancelled rides",
+  "@ridesPanelEmptyCancelledTitle": {
+    "description": "Empty Cancelled tab."
+  },
+  "ridesPanelEmptyCancelledBody": "Rides a customer cancels after you accept them show up here.",
+  "@ridesPanelEmptyCancelledBody": {
+    "description": "Empty Cancelled tab."
+  },
+  "ridesPanelLoadFailed": "Couldn't load your rides",
+  "@ridesPanelLoadFailed": {
+    "description": "Title when the rides list failed to load; the reason follows."
+  },
+  "myRidesInvalidRating": "Pick 1 to 5 stars for the customer.",
+  "@myRidesInvalidRating": {
+    "description": "Error when the rating sent was out of range."
+  },
+  "myRidesCantRate": "This ride can't be rated right now.",
+  "@myRidesCantRate": {
+    "description": "Error when the ride can't be rated (not completed, or rated already)."
+  },
+  "fmtToday": "Today",
+  "@fmtToday": {
+    "description": "Day label for a ride or payout today."
+  },
+  "fmtTomorrow": "Tomorrow",
+  "@fmtTomorrow": {
+    "description": "Day label for a ride tomorrow."
+  },
+  "fmtYesterday": "Yesterday",
+  "@fmtYesterday": {
+    "description": "Day label for a ride or payout yesterday."
+  },
+  "fmtWeekdayShort": "{weekday, select, mon{Mon} tue{Tue} wed{Wed} thu{Thu} fri{Fri} sat{Sat} sun{Sun} other{}}",
+  "@fmtWeekdayShort": {
+    "description": "Short weekday name used in dates like 'Wed, 28 Oct'.",
+    "placeholders": {
+      "weekday": {
+        "type": "String",
+        "example": "wed"
+      }
+    }
+  },
+  "fmtMonthShort": "{month, select, jan{Jan} feb{Feb} mar{Mar} apr{Apr} may{May} jun{Jun} jul{Jul} aug{Aug} sep{Sep} oct{Oct} nov{Nov} dec{Dec} other{}}",
+  "@fmtMonthShort": {
+    "description": "Month name used in dates like 'Wed, 28 Oct'.",
+    "placeholders": {
+      "month": {
+        "type": "String",
+        "example": "oct"
+      }
+    }
+  },
+  "fmtDate": "{weekday}, {day} {month}",
+  "@fmtDate": {
+    "description": "A date further than a day away: weekday, day of month, month. weekday and month come from fmtWeekdayShort / fmtMonthShort.",
+    "placeholders": {
+      "weekday": {
+        "type": "String",
+        "example": "Wed"
+      },
+      "day": {
+        "type": "int",
+        "example": "28"
+      },
+      "month": {
+        "type": "String",
+        "example": "Oct"
+      }
+    }
+  },
+  "fmtMinutes": "{minutes} min",
+  "@fmtMinutes": {
+    "description": "A duration under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "fmtHours": "{hours} h",
+  "@fmtHours": {
+    "description": "A duration of whole hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "fmtHoursMinutes": "{hours} h {minutes} min",
+  "@fmtHoursMinutes": {
+    "description": "A duration of hours and minutes.",
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "example": "1"
+      },
+      "minutes": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "fmtMeters": "{meters} m",
+  "@fmtMeters": {
+    "description": "A distance under a kilometre, rounded to 50 m.",
+    "placeholders": {
+      "meters": {
+        "type": "int",
+        "example": "700"
+      }
+    }
+  },
+  "fmtKilometers": "{km} km",
+  "@fmtKilometers": {
+    "description": "A distance in kilometres (already formatted, e.g. 7.7 or 24).",
+    "placeholders": {
+      "km": {
+        "type": "String",
+        "example": "7.7"
+      }
+    }
+  },
+  "fmtNow": "now",
+  "@fmtNow": {
+    "description": "Relative time: less than a minute away."
+  },
+  "fmtTimeAgo": "{duration} ago",
+  "@fmtTimeAgo": {
+    "description": "Relative time in the past, e.g. '25 min ago'.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "25 min"
+      }
+    }
+  },
+  "fmtTimeIn": "in {duration}",
+  "@fmtTimeIn": {
+    "description": "Relative time in the future, e.g. 'in 25 min'.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "25 min"
+      }
+    }
+  },
+  "fmtSpanHire": "{hours} h hire",
+  "@fmtSpanHire": {
+    "description": "What a round trip books the driver for: hired by the hour.",
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "fmtSpanDrive": "~{duration} drive",
+  "@fmtSpanDrive": {
+    "description": "What a one-way trip books the driver for: the predicted drive time.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "45 min"
+      }
+    }
+  },
+  "fmtSpanStops": "{count, plural, =1{1 stop} other{{count} stops}} · {duration}",
+  "@fmtSpanStops": {
+    "description": "What a multi-stop trip books the driver for: number of stops and the booked span.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      },
+      "duration": {
+        "type": "String",
+        "example": "1 h 45 min"
+      }
+    }
+  },
+  "fmtPaidYourShare": "Paid · your share {share} after commission",
+  "@fmtPaidYourShare": {
+    "description": "The customer paid; the driver's share after MOJUD's commission.",
+    "placeholders": {
+      "share": {
+        "type": "String",
+        "example": "₹44"
+      }
+    }
+  },
+  "fmtCancellationFee": "{fee} cancellation fee",
+  "@fmtCancellationFee": {
+    "description": "Fee the customer pays for cancelling after the driver reached the pickup.",
+    "placeholders": {
+      "fee": {
+        "type": "String",
+        "example": "₹50"
+      }
+    }
+  },
+  "fmtEndedEarlyCharge": "Charged {fare} for the time used (booked {booked})",
+  "@fmtEndedEarlyCharge": {
+    "description": "The customer ended the trip early and is charged only for the time used.",
+    "placeholders": {
+      "fare": {
+        "type": "String",
+        "example": "₹200"
+      },
+      "booked": {
+        "type": "String",
+        "example": "₹340"
+      }
+    }
+  },
+  "fmtRanOverCharge": "{fare} for the time used (booked {booked})",
+  "@fmtRanOverCharge": {
+    "description": "The trip ran past its booked time; the customer pays for the time used.",
+    "placeholders": {
+      "fare": {
+        "type": "String",
+        "example": "₹510"
+      },
+      "booked": {
+        "type": "String",
+        "example": "₹340"
+      }
+    }
+  },
+  "fmtNewCustomer": "New customer",
+  "@fmtNewCustomer": {
+    "description": "A customer no driver has rated yet."
+  },
+  "fmtCustomerRating": "★ {rating} · {count, plural, =1{1 rating} other{{count} ratings}}",
+  "@fmtCustomerRating": {
+    "description": "The customer's average rating from drivers and how many ratings it's from.",
+    "placeholders": {
+      "rating": {
+        "type": "String",
+        "example": "4.9"
+      },
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "fmtNoRatingsYet": "No ratings yet",
+  "@fmtNoRatingsYet": {
+    "description": "Earnings tab: the driver has no ratings from customers yet."
+  },
+  "fmtDriverRating": "Your rating ★ {rating} from {count, plural, =1{1 trip} other{{count} trips}}",
+  "@fmtDriverRating": {
+    "description": "Earnings tab: the driver's average rating from customers.",
+    "placeholders": {
+      "rating": {
+        "type": "String",
+        "example": "4.8"
+      },
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "ridesPickupAt": "Pickup · {time}",
+  "@ridesPickupAt": {
+    "description": "Route timeline caption under the pickup place.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "9:00 AM"
+      }
+    }
+  },
+  "ridesLastOfStops": "Last of {count} stops",
+  "@ridesLastOfStops": {
+    "description": "Compact route timeline: the final stop of a multi-stop trip.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "ridesStopNumber": "Stop {number}",
+  "@ridesStopNumber": {
+    "description": "Route timeline caption: the stop's position on the route.",
+    "placeholders": {
+      "number": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "ridesLeaveBy": "leave by {time}",
+  "@ridesLeaveBy": {
+    "description": "Route timeline: when the driver should leave this stop.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "11:30 AM"
+      }
+    }
+  },
+  "ridesDropAt": "Drop · ~{time}",
+  "@ridesDropAt": {
+    "description": "Route timeline caption under a one-way trip's destination: the expected arrival time.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "10:15 AM"
+      }
+    }
+  },
+  "ridesBackAtPickup": "Back at pickup · ~{time}",
+  "@ridesBackAtPickup": {
+    "description": "Route timeline caption: a round trip ends back at the pickup around this time.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "1:00 PM"
+      }
+    }
+  },
+  "ridesExactPlaceAfterAccept": "Exact place after you accept",
+  "@ridesExactPlaceAfterAccept": {
+    "description": "Route timeline: an open request without its address yet."
+  },
+  "ridesFareEstimate": "estimate",
+  "@ridesFareEstimate": {
+    "description": "Under a fare the server estimated from the trip's length."
+  },
+  "ridesDistanceAway": "{distance} away",
+  "@ridesDistanceAway": {
+    "description": "How far the pickup is from the driver.",
+    "placeholders": {
+      "distance": {
+        "type": "String",
+        "example": "7.7 km"
+      }
+    }
+  },
+  "ridesExactAddressAfterAccept": "Exact address after you accept",
+  "@ridesExactAddressAfterAccept": {
+    "description": "On an open request: the full address, number plate and customer come once the driver takes the ride."
+  },
+  "ridesEndedEarlyNote": "Customer ended the trip early · {charge}",
+  "@ridesEndedEarlyNote": {
+    "description": "Ride card note; charge is fmtEndedEarlyCharge.",
+    "placeholders": {
+      "charge": {
+        "type": "String",
+        "example": "Charged ₹200 for the time used (booked ₹340)"
+      }
+    }
+  },
+  "ridesRanOverNote": "Trip ran past the booked time · {charge}",
+  "@ridesRanOverNote": {
+    "description": "Ride card note; charge is fmtRanOverCharge.",
+    "placeholders": {
+      "charge": {
+        "type": "String",
+        "example": "₹510 for the time used (booked ₹340)"
+      }
+    }
+  },
+  "earningsTitle": "Earnings",
+  "@earningsTitle": {
+    "description": "Earnings tab app bar title."
+  },
+  "earningsToday": "Today's earnings",
+  "@earningsToday": {
+    "description": "Earnings tab: heading of today's total."
+  },
+  "earningsTripsCompleted": "{count, plural, =1{1 trip completed} other{{count} trips completed}}",
+  "@earningsTripsCompleted": {
+    "description": "Earnings tab: trips completed today.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "earningsYoursAfterCommission": "{amount} yours after commission",
+  "@earningsYoursAfterCommission": {
+    "description": "Earnings tab: the driver's share of today's fares after MOJUD's commission.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "₹296"
+      }
+    }
+  },
+  "earningsThisWeek": "This week",
+  "@earningsThisWeek": {
+    "description": "Earnings tile label."
+  },
+  "earningsThisMonth": "This month",
+  "@earningsThisMonth": {
+    "description": "Earnings tile label."
+  },
+  "earningsAllTime": "All time",
+  "@earningsAllTime": {
+    "description": "Earnings tile label: since the driver joined."
+  },
+  "earningsTrips": "{count, plural, =1{1 trip} other{{count} trips}}",
+  "@earningsTrips": {
+    "description": "A number of trips.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "earningsYours": "{amount} yours",
+  "@earningsYours": {
+    "description": "Earnings tile: the driver's share of the window's fares.",
+    "placeholders": {
+      "amount": {
+        "type": "String",
+        "example": "₹2,088"
+      }
+    }
+  },
+  "earningsAwaitingCustomers": "Waiting for customers to pay",
+  "@earningsAwaitingCustomers": {
+    "description": "Money card row: completed trips the customers haven't paid for yet."
+  },
+  "earningsDueToYou": "Due to you",
+  "@earningsDueToYou": {
+    "description": "Money card row: customers paid MOJUD; the driver's share isn't in their bank yet."
+  },
+  "earningsDueDetail": "{count, plural, =1{1 trip} other{{count} trips}} · paid to your bank weekly",
+  "@earningsDueDetail": {
+    "description": "Money card row detail under 'Due to you'.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "4"
+      }
+    }
+  },
+  "earningsPaidToBank": "Paid to your bank",
+  "@earningsPaidToBank": {
+    "description": "Money card row: what MOJUD has transferred to the driver's bank."
+  },
+  "earningsNoPayoutsYet": "No payouts yet",
+  "@earningsNoPayoutsYet": {
+    "description": "No bank transfer to the driver yet."
+  },
+  "earningsLastPayout": "Last on {when}",
+  "@earningsLastPayout": {
+    "description": "Money card: when the last bank transfer was made.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Yesterday · 6:00 PM"
+      }
+    }
+  },
+  "earningsPayoutsHeader": "Payouts",
+  "@earningsPayoutsHeader": {
+    "description": "Section heading: bank transfers MOJUD made to the driver."
+  },
+  "earningsNoPayoutsBody": "Each transfer MOJUD makes to your bank is listed here with its reference.",
+  "@earningsNoPayoutsBody": {
+    "description": "Empty payouts list."
+  },
+  "earningsPayoutTitle": "{count, plural, =1{1 trip} other{{count} trips}} · {when}",
+  "@earningsPayoutTitle": {
+    "description": "A payout row: how many trips it covers and when it was made.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      },
+      "when": {
+        "type": "String",
+        "example": "Mon, 16 Nov · 6:00 PM"
+      }
+    }
+  },
+  "earningsPayoutReference": "Ref {reference}",
+  "@earningsPayoutReference": {
+    "description": "A payout's bank reference (UTR), to find it on a bank statement.",
+    "placeholders": {
+      "reference": {
+        "type": "String",
+        "example": "UTR123"
+      }
+    }
+  },
+  "earningsCompletedTrips": "Completed trips",
+  "@earningsCompletedTrips": {
+    "description": "Section heading: the driver's completed trips."
+  },
+  "earningsNoTripsTitle": "No trips yet",
+  "@earningsNoTripsTitle": {
+    "description": "Empty completed-trips list title."
+  },
+  "earningsNoTripsBody": "Each trip you complete is listed here with its fare.",
+  "@earningsNoTripsBody": {
+    "description": "Empty completed-trips list body."
+  },
+  "dutyHello": "Hello, {name}",
+  "@dutyHello": {
+    "description": "Home tab greeting with the driver's first name.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ravi"
+      }
+    }
+  },
+  "dutyOnDutyHeadline": "You're on duty",
+  "@dutyOnDutyHeadline": {
+    "description": "Home tab headline while on duty."
+  },
+  "dutyReadyHeadline": "Ready to drive?",
+  "@dutyReadyHeadline": {
+    "description": "Home tab headline while off duty."
+  },
+  "dutyNextRide": "Your next ride",
+  "@dutyNextRide": {
+    "description": "Home tab heading over the driver's next accepted ride."
+  },
+  "dutyRideInProgress": "Ride in progress",
+  "@dutyRideInProgress": {
+    "description": "Home tab heading over the ride underway."
+  },
+  "dutyRideRequests": "Ride requests",
+  "@dutyRideRequests": {
+    "description": "Home tab heading over open rides near the driver."
+  },
+  "dutyOpenCount": "{count} open",
+  "@dutyOpenCount": {
+    "description": "Number of open ride requests, beside the heading.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "dutyOfflineTitle": "You're offline",
+  "@dutyOfflineTitle": {
+    "description": "Home tab: shown instead of requests while off duty."
+  },
+  "dutyOfflineBody": "Go on duty to see rides booked near you.",
+  "@dutyOfflineBody": {
+    "description": "Home tab: shown instead of requests while off duty."
+  },
+  "dutyRequestsErrorTitle": "Couldn't load requests",
+  "@dutyRequestsErrorTitle": {
+    "description": "Home tab: the request feed failed to load."
+  },
+  "dutyNoRequestsTitle": "No requests right now",
+  "@dutyNoRequestsTitle": {
+    "description": "Home tab: on duty, no open rides nearby."
+  },
+  "dutyNoRequestsBody": "New bookings near you show up here. We check every {seconds} seconds while you're on duty.",
+  "@dutyNoRequestsBody": {
+    "description": "Home tab: on duty, no open rides nearby.",
+    "placeholders": {
+      "seconds": {
+        "type": "int",
+        "example": "20"
+      }
+    }
+  },
+  "dutyLocationOffNote": "Turn on location to see how far each pickup is. Showing all open rides.",
+  "@dutyLocationOffNote": {
+    "description": "Home tab: the app doesn't have the driver's position, so requests show without distances."
+  },
+  "dutyRideAccepted": "Ride accepted for {when}.",
+  "@dutyRideAccepted": {
+    "description": "Snackbar after the driver takes a ride.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Tomorrow · 9:00 AM"
+      }
+    }
+  },
+  "dutyOnline": "Online",
+  "@dutyOnline": {
+    "description": "App bar pill: the driver is on duty."
+  },
+  "dutyOffline": "Offline",
+  "@dutyOffline": {
+    "description": "App bar pill: the driver is off duty."
+  },
+  "dutyOnDuty": "On duty",
+  "@dutyOnDuty": {
+    "description": "Duty card title while on duty; also the switch's accessibility label."
+  },
+  "dutyOffDuty": "Off duty",
+  "@dutyOffDuty": {
+    "description": "Duty card title while off duty."
+  },
+  "dutyGettingRequests": "Getting ride requests near you",
+  "@dutyGettingRequests": {
+    "description": "Duty card subtitle while on duty."
+  },
+  "dutyTapToStart": "Tap to start getting ride requests",
+  "@dutyTapToStart": {
+    "description": "Duty card subtitle while off duty."
+  },
+  "dutyStripToday": "Today",
+  "@dutyStripToday": {
+    "description": "Home tab strip: today's earnings."
+  },
+  "dutyStripTripsToday": "Trips today",
+  "@dutyStripTripsToday": {
+    "description": "Home tab strip: trips completed today."
+  },
+  "dutyStripBooked": "Booked",
+  "@dutyStripBooked": {
+    "description": "Home tab strip: rides the driver holds (upcoming and underway)."
+  },
+  "dutyDecline": "Decline",
+  "@dutyDecline": {
+    "description": "Button under a ride request: hide it, don't take it."
+  },
+  "dutyAcceptRide": "Accept ride",
+  "@dutyAcceptRide": {
+    "description": "Button under a ride request: take the ride."
+  },
+  "homeNavHome": "Home",
+  "@homeNavHome": {
+    "description": "Bottom navigation tab."
+  },
+  "homeNavRides": "Rides",
+  "@homeNavRides": {
+    "description": "Bottom navigation tab: the driver's own rides."
+  },
+  "homeNavEarnings": "Earnings",
+  "@homeNavEarnings": {
+    "description": "Bottom navigation tab."
+  },
+  "homeNavAccount": "Account",
+  "@homeNavAccount": {
+    "description": "Bottom navigation tab."
+  },
+  "locationSharingTitle": "Sharing your location",
+  "@locationSharingTitle": {
+    "description": "Android ongoing notification while live location is shared with the customer."
+  },
+  "locationSharingText": "Your customer can see you on the way.",
+  "@locationSharingText": {
+    "description": "Android ongoing notification body while live location is shared."
+  },
+  "locationChannelName": "Live location",
+  "@locationChannelName": {
+    "description": "Android notification channel name (system settings) for live-location sharing."
+  },
+  "docViewLogOut": "Log out",
+  "@docViewLogOut": {
+    "description": "Document View (KYC gate): button and dialog action that signs the driver out of this phone."
+  },
+  "docViewLogOutTitle": "Log out?",
+  "@docViewLogOutTitle": {
+    "description": "Document View: title of the log-out confirmation dialog."
+  },
+  "docViewLogOutBody": "You can sign in again with your phone number. The steps you have finished stay saved.",
+  "@docViewLogOutBody": {
+    "description": "Document View: body of the log-out confirmation dialog."
+  },
+  "docViewLoadFailedTitle": "Couldn't load your registration",
+  "@docViewLoadFailedTitle": {
+    "description": "Document View: headline when the KYC record could not be loaded at all."
+  },
+  "docViewTitleVerified": "You're verified",
+  "@docViewTitleVerified": {
+    "description": "Document View headline: the driver's KYC is cleared."
+  },
+  "docViewTitleSubmitted": "Under review",
+  "@docViewTitleSubmitted": {
+    "description": "Document View headline: a person is checking the driver's details."
+  },
+  "docViewTitleRejected": "Some details need fixing",
+  "@docViewTitleRejected": {
+    "description": "Document View headline: a reviewer sent the details back."
+  },
+  "docViewTitleUnknown": "We can't show your status",
+  "@docViewTitleUnknown": {
+    "description": "Document View headline: the backend sent a KYC status this app version doesn't know."
+  },
+  "docViewTitleIncomplete": "Complete your registration",
+  "@docViewTitleIncomplete": {
+    "description": "Document View headline: KYC steps still to do."
+  },
+  "docViewSubtitleVerified": "You're cleared to take rides. Open any step to see what you sent, or to change it.",
+  "@docViewSubtitleVerified": {
+    "description": "Document View subtitle for a verified driver."
+  },
+  "docViewSubtitleSubmitted": "We're checking your details. You can go online once they're cleared.",
+  "@docViewSubtitleSubmitted": {
+    "description": "Document View subtitle while under review."
+  },
+  "docViewSubtitleRejected": "Fix the details below and submit again.",
+  "@docViewSubtitleRejected": {
+    "description": "Document View subtitle after a reviewer sent the details back."
+  },
+  "docViewSubtitleUnknown": "Your account has a status this version of the app doesn't know, so you can't take rides yet.",
+  "@docViewSubtitleUnknown": {
+    "description": "Document View subtitle for an unknown KYC status."
+  },
+  "docViewSubtitleIncomplete": "{count, plural, =1{Finish this step to start accepting rides.} other{Finish these {count} steps to start accepting rides. Each one unlocks once the last is done.}}",
+  "@docViewSubtitleIncomplete": {
+    "description": "Document View subtitle while KYC steps remain. count = number of steps (6).",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "6"
+      }
+    }
+  },
+  "docViewCheckAgain": "Check again",
+  "@docViewCheckAgain": {
+    "description": "Document View button: re-read the KYC status while waiting on a reviewer."
+  },
+  "docViewChecking": "Checking…",
+  "@docViewChecking": {
+    "description": "Document View button while the KYC status is being re-read."
+  },
+  "docViewSubmit": "Submit for verification",
+  "@docViewSubmit": {
+    "description": "Document View button: send all six finished steps for verification."
+  },
+  "docViewSubmitting": "Submitting…",
+  "@docViewSubmitting": {
+    "description": "Document View button while the steps are being submitted."
+  },
+  "kycBannerVerifiedTitle": "Cleared to drive",
+  "@kycBannerVerifiedTitle": {
+    "description": "KYC status card title once the driver is verified."
+  },
+  "kycBannerAadhaarVerified": "Aadhaar verified with DigiLocker",
+  "@kycBannerAadhaarVerified": {
+    "description": "KYC status card line: the Aadhaar check passed (number not known)."
+  },
+  "kycBannerAadhaarVerifiedLast4": "Aadhaar XXXX XXXX {last4} · verified with DigiLocker",
+  "@kycBannerAadhaarVerifiedLast4": {
+    "description": "KYC status card line: the Aadhaar check passed; last4 = last four digits of the Aadhaar number.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "9012"
+      }
+    }
+  },
+  "kycBannerLicenseVerified": "Driving licence verified",
+  "@kycBannerLicenseVerified": {
+    "description": "KYC status card line: the driving licence check passed (number not known)."
+  },
+  "kycBannerLicenseVerifiedNumber": "Driving licence {number} · verified",
+  "@kycBannerLicenseVerifiedNumber": {
+    "description": "KYC status card line: the driving licence check passed.",
+    "placeholders": {
+      "number": {
+        "type": "String",
+        "example": "DL0120190012345"
+      }
+    }
+  },
+  "kycBannerBankVerified": "Bank account •••• {last4} · verified with your bank",
+  "@kycBannerBankVerified": {
+    "description": "KYC status card line: the bank account check passed; last4 = last four digits of the account.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "2345"
+      }
+    }
+  },
+  "kycBannerSubmittedTitle": "Waiting on a reviewer",
+  "@kycBannerSubmittedTitle": {
+    "description": "KYC status card title while a person reviews the details."
+  },
+  "kycBannerSent": "Sent {date}",
+  "@kycBannerSent": {
+    "description": "KYC status card line: when the details were submitted.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "20 Nov 2026"
+      }
+    }
+  },
+  "kycBannerRejectedTitle": "Sent back by a reviewer",
+  "@kycBannerRejectedTitle": {
+    "description": "KYC status card title after a reviewer sent the details back."
+  },
+  "kycBannerRejectedHint": "Open the steps below to see what to change.",
+  "@kycBannerRejectedHint": {
+    "description": "KYC status card line when the reviewer left no note."
+  },
+  "kycBannerUnknownTitle": "Status not recognised",
+  "@kycBannerUnknownTitle": {
+    "description": "KYC status card title for a status this app version doesn't know."
+  },
+  "kycBannerUnknownHint": "Update the app, or write to team@mojud.life if this stays.",
+  "@kycBannerUnknownHint": {
+    "description": "KYC status card line for an unknown status. Keep the email address as is."
+  },
+  "docCardDate": "{day} {month} {year}",
+  "@docCardDate": {
+    "description": "A date on the verification cards, e.g. 2 Mar 1995. month comes from fmtMonthShort.",
+    "placeholders": {
+      "day": {
+        "type": "String",
+        "example": "2"
+      },
+      "month": {
+        "type": "String",
+        "example": "Mar"
+      },
+      "year": {
+        "type": "String",
+        "example": "1995"
+      }
+    }
+  },
+  "docPhotoSaveFailed": "Couldn't save the photo. Please take it again.",
+  "@docPhotoSaveFailed": {
+    "description": "Error: a KYC photo couldn't be stored on the phone."
+  },
+  "docPhotoReadFailed": "Couldn't read the photo. Please take it again.",
+  "@docPhotoReadFailed": {
+    "description": "Error: a KYC photo couldn't be read for upload (e.g. the file is gone)."
+  },
+  "permissionsSubtitle": "Turn these on so ride offers reach you even when MOJUD Driver isn't the app on screen.",
+  "@permissionsSubtitle": {
+    "description": "Permissions KYC step: why the three permissions are needed."
+  },
+  "permissionsOverlayTitle": "Display over other apps",
+  "@permissionsOverlayTitle": {
+    "description": "Permissions step: Android 'display over other apps' permission."
+  },
+  "permissionsOverlaySubtitle": "Shows ride alerts on top of whatever app you're using.",
+  "@permissionsOverlaySubtitle": {
+    "description": "Permissions step: what the overlay permission does."
+  },
+  "permissionsLocationTitle": "Background location",
+  "@permissionsLocationTitle": {
+    "description": "Permissions step: location access while the app is in the background."
+  },
+  "permissionsLocationSubtitle": "Streams your GPS to riders and dispatch while online.",
+  "@permissionsLocationSubtitle": {
+    "description": "Permissions step: what background location is used for."
+  },
+  "permissionsBatteryTitle": "Battery usage",
+  "@permissionsBatteryTitle": {
+    "description": "Permissions step: unrestricted battery usage (no battery optimisation)."
+  },
+  "permissionsBatterySubtitle": "Stops the OS from pausing location updates to save power.",
+  "@permissionsBatterySubtitle": {
+    "description": "Permissions step: why battery usage must be unrestricted."
+  },
+  "permissionsNotRequired": "Not required on this device",
+  "@permissionsNotRequired": {
+    "description": "Permissions step: shown for a permission that doesn't exist on this phone (e.g. iPhone)."
+  },
+  "permissionsTurnOn": "Turn on",
+  "@permissionsTurnOn": {
+    "description": "Permissions step: button that asks the OS for a permission."
+  },
+  "permissionsFinish": "Finish",
+  "@permissionsFinish": {
+    "description": "Permissions step: button that completes the step."
+  },
+  "validationAadhaarEmpty": "Enter your Aadhaar number",
+  "@validationAadhaarEmpty": {
+    "description": "Field error: the Aadhaar number is empty."
+  },
+  "validationAadhaarInvalid": "Enter a valid 12-digit Aadhaar number",
+  "@validationAadhaarInvalid": {
+    "description": "Field error: the Aadhaar number isn't 12 digits."
+  },
+  "validationLicenseEmpty": "Enter your driving license number",
+  "@validationLicenseEmpty": {
+    "description": "Field error: the driving licence number is empty."
+  },
+  "validationLicenseInvalid": "Enter a valid license number",
+  "@validationLicenseInvalid": {
+    "description": "Field error: the driving licence number is too short."
+  },
+  "validationHolderNameEmpty": "Enter the account holder's name",
+  "@validationHolderNameEmpty": {
+    "description": "Field error: the bank account holder's name is empty."
+  },
+  "validationNameTooShort": "Name is too short",
+  "@validationNameTooShort": {
+    "description": "Field error: the account holder's name is too short."
+  },
+  "validationAccountEmpty": "Enter your account number",
+  "@validationAccountEmpty": {
+    "description": "Field error: the bank account number is empty."
+  },
+  "validationAccountInvalid": "Enter a valid account number",
+  "@validationAccountInvalid": {
+    "description": "Field error: the bank account number isn't 9-18 digits."
+  },
+  "validationAccountConfirmEmpty": "Re-enter your account number",
+  "@validationAccountConfirmEmpty": {
+    "description": "Field error: the confirm-account-number field is empty."
+  },
+  "validationAccountMismatch": "Account numbers don't match",
+  "@validationAccountMismatch": {
+    "description": "Field error: the two bank account numbers differ."
+  },
+  "validationIfscEmpty": "Enter the IFSC code",
+  "@validationIfscEmpty": {
+    "description": "Field error: the IFSC code is empty."
+  },
+  "validationIfscInvalid": "Enter a valid IFSC code",
+  "@validationIfscInvalid": {
+    "description": "Field error: the IFSC code has the wrong format."
+  },
+  "vehicleStepTitle": "Type of vehicle",
+  "@vehicleStepTitle": {
+    "description": "KYC step 1 screen title: which gearbox(es) the driver can drive."
+  },
+  "vehicleStepSubtitle": "Which gearbox can you drive? This decides which rides you're matched with.",
+  "@vehicleStepSubtitle": {
+    "description": "KYC step 1 screen subtitle."
+  },
+  "vehicleStepSaving": "Saving…",
+  "@vehicleStepSaving": {
+    "description": "Button label while the choice is being saved."
+  },
+  "photoPickerDefaultLabel": "Take a photo of the document",
+  "@photoPickerDefaultLabel": {
+    "description": "Empty document photo tile: tap to open the camera."
+  },
+  "photoPickerUploadFailed": "Upload didn't finish — tap to take the photo again.",
+  "@photoPickerUploadFailed": {
+    "description": "Under a document photo whose upload failed."
+  },
+  "photoPickerUploadedNoPreview": "Photo uploaded",
+  "@photoPickerUploadedNoPreview": {
+    "description": "Document photo tile when the server has the photo but this phone no longer has a copy."
+  },
+  "photoPickerBadgeUploading": "Uploading…",
+  "@photoPickerBadgeUploading": {
+    "description": "Small badge on a document photo while it uploads."
+  },
+  "photoPickerBadgeUploaded": "Uploaded",
+  "@photoPickerBadgeUploaded": {
+    "description": "Small badge on a document photo once uploaded."
+  },
+  "photoPickerBadgeRetry": "Retry",
+  "@photoPickerBadgeRetry": {
+    "description": "Small badge on a document photo whose upload failed; tapping retakes it."
+  },
+  "photoPickerBadgeRetake": "Retake",
+  "@photoPickerBadgeRetake": {
+    "description": "Small badge on a document photo: tap to take it again."
+  },
+  "photoStepTitle": "Photo and name",
+  "@photoStepTitle": {
+    "description": "KYC step 2 screen title."
+  },
+  "photoStepSubtitle": "A clear selfie and your details, as they appear on your ID.",
+  "@photoStepSubtitle": {
+    "description": "KYC step 2 screen subtitle."
+  },
+  "photoStepSelfieRequired": "Take a selfie to continue",
+  "@photoStepSelfieRequired": {
+    "description": "Error: the driver tapped Continue without a selfie."
+  },
+  "photoStepDobRequired": "Select your date of birth",
+  "@photoStepDobRequired": {
+    "description": "Error: no date of birth chosen."
+  },
+  "photoStepGenderRequired": "Select your gender",
+  "@photoStepGenderRequired": {
+    "description": "Error: no gender chosen."
+  },
+  "photoStepSelfieUploading": "Uploading…",
+  "@photoStepSelfieUploading": {
+    "description": "Under the selfie circle while it uploads."
+  },
+  "photoStepSelfieUploadFailed": "Upload failed — tap to retry",
+  "@photoStepSelfieUploadFailed": {
+    "description": "Under the selfie circle when its upload failed."
+  },
+  "photoStepRetakeSelfie": "Retake selfie",
+  "@photoStepRetakeSelfie": {
+    "description": "Under the selfie circle once a selfie is taken."
+  },
+  "photoStepTakeSelfie": "Take a selfie",
+  "@photoStepTakeSelfie": {
+    "description": "Under the empty selfie circle."
+  },
+  "photoStepTakeNewSelfie": "Take a new one instead",
+  "@photoStepTakeNewSelfie": {
+    "description": "Button under a failed selfie upload: take a fresh selfie instead of retrying."
+  },
+  "photoStepSelfieShownToCustomers": "Customers see this photo when you take their ride.",
+  "@photoStepSelfieShownToCustomers": {
+    "description": "Note under the selfie."
+  },
+  "photoStepFromAadhaar": "From your Aadhaar",
+  "@photoStepFromAadhaar": {
+    "description": "Above the name/date of birth/gender once they come from the verified Aadhaar (read-only)."
+  },
+  "photoStepFullName": "Full name",
+  "@photoStepFullName": {
+    "description": "Label and hint of the full-name field."
+  },
+  "photoStepDateOfBirth": "Date of birth",
+  "@photoStepDateOfBirth": {
+    "description": "Placeholder of the date-of-birth picker before a date is chosen."
+  },
+  "photoStepSaving": "Saving…",
+  "@photoStepSaving": {
+    "description": "Button label while the details are being saved."
+  },
+  "aadhaarStepTitle": "Aadhaar card",
+  "@aadhaarStepTitle": {
+    "description": "KYC step 3 screen title."
+  },
+  "aadhaarStepVerifiedSubtitle": "Your Aadhaar is verified.",
+  "@aadhaarStepVerifiedSubtitle": {
+    "description": "KYC step 3 subtitle once verified."
+  },
+  "aadhaarStepSubtitle": "Enter your Aadhaar number, then sign in to DigiLocker to verify it.",
+  "@aadhaarStepSubtitle": {
+    "description": "KYC step 3 subtitle before verification."
+  },
+  "aadhaarStepOpenFailed": "Couldn't open DigiLocker. Try again.",
+  "@aadhaarStepOpenFailed": {
+    "description": "Error: the DigiLocker page couldn't be opened in the browser."
+  },
+  "aadhaarStepFinishFirst": "Finish the steps in DigiLocker first.",
+  "@aadhaarStepFinishFirst": {
+    "description": "Error: the driver came back before finishing in DigiLocker."
+  },
+  "aadhaarStepChecking": "Checking…",
+  "@aadhaarStepChecking": {
+    "description": "Button label while the DigiLocker result is read."
+  },
+  "aadhaarStepFinished": "I've finished in DigiLocker",
+  "@aadhaarStepFinished": {
+    "description": "Button: the driver says they're done in DigiLocker; the app reads the result."
+  },
+  "aadhaarStepOpening": "Opening DigiLocker…",
+  "@aadhaarStepOpening": {
+    "description": "Button label while DigiLocker is being opened."
+  },
+  "aadhaarStepVerify": "Verify with DigiLocker",
+  "@aadhaarStepVerify": {
+    "description": "Button that opens DigiLocker to verify the Aadhaar."
+  },
+  "aadhaarStepVerifiedTitle": "Verified with DigiLocker",
+  "@aadhaarStepVerifiedTitle": {
+    "description": "Heading of the green card showing the verified Aadhaar details."
+  },
+  "aadhaarStepBorn": "Born {date}",
+  "@aadhaarStepBorn": {
+    "description": "Line on the verified Aadhaar card: date of birth.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "2 Mar 1995"
+      }
+    }
+  },
+  "aadhaarStepMasked": "Aadhaar XXXX XXXX {last4}",
+  "@aadhaarStepMasked": {
+    "description": "Line on the verified Aadhaar card: the Aadhaar number with all but the last 4 digits hidden. Keep XXXX XXXX as is.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "9012"
+      }
+    }
+  },
+  "aadhaarStepNumberLabel": "Aadhaar number",
+  "@aadhaarStepNumberLabel": {
+    "description": "Label of the Aadhaar number field."
+  },
+  "aadhaarStepSavedHint": "Saved. Leave this blank unless you need to change it.",
+  "@aadhaarStepSavedHint": {
+    "description": "Under the Aadhaar field when a number is already saved."
+  },
+  "aadhaarStepWaiting": "Finish in DigiLocker, then come back here.",
+  "@aadhaarStepWaiting": {
+    "description": "Shown while DigiLocker is open in the browser."
+  },
+  "aadhaarStepOpenAgain": "Open DigiLocker again",
+  "@aadhaarStepOpenAgain": {
+    "description": "Button that reopens DigiLocker."
+  },
+  "licenseStepTitle": "Driving license",
+  "@licenseStepTitle": {
+    "description": "KYC step 4 screen title."
+  },
+  "licenseStepSubtitle": "We check your license number with the transport department.",
+  "@licenseStepSubtitle": {
+    "description": "KYC step 4 screen subtitle."
+  },
+  "licenseStepNumberLabel": "License number",
+  "@licenseStepNumberLabel": {
+    "description": "Label of the driving licence number field."
+  },
+  "licenseStepNumberHint": "e.g. MP0920190012345",
+  "@licenseStepNumberHint": {
+    "description": "Hint of the licence number field. Keep the example number as is."
+  },
+  "licenseStepVerifiedTitle": "License verified",
+  "@licenseStepVerifiedTitle": {
+    "description": "Heading of the green card showing the verified licence details."
+  },
+  "licenseStepValidTill": "Valid till {date}",
+  "@licenseStepValidTill": {
+    "description": "Line on the verified licence card: expiry date.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "2 Mar 2035"
+      }
+    }
+  },
+  "licenseStepCovers": "Covers {classes}",
+  "@licenseStepCovers": {
+    "description": "Line on the verified licence card: the vehicle classes the licence allows (e.g. LMV · MCWG).",
+    "placeholders": {
+      "classes": {
+        "type": "String",
+        "example": "LMV · MCWG"
+      }
+    }
+  },
+  "licenseStepChecking": "Checking…",
+  "@licenseStepChecking": {
+    "description": "Button label while the licence is being checked."
+  },
+  "licenseStepVerify": "Verify license",
+  "@licenseStepVerify": {
+    "description": "Button that checks the licence number."
+  },
+  "bankStepTitle": "Bank details",
+  "@bankStepTitle": {
+    "description": "KYC step 6 screen title."
+  },
+  "bankStepSubtitle": "Your earnings are paid to this account. We check it with your bank.",
+  "@bankStepSubtitle": {
+    "description": "KYC step 6 screen subtitle."
+  },
+  "bankStepVerifiedTitle": "Verified with your bank",
+  "@bankStepVerifiedTitle": {
+    "description": "Heading of the green card showing the verified bank account."
+  },
+  "bankStepAccountEnding": "Account ending {last4} · {ifsc}",
+  "@bankStepAccountEnding": {
+    "description": "Line on the verified bank card: the account's last 4 digits and IFSC code.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "2345"
+      },
+      "ifsc": {
+        "type": "String",
+        "example": "HDFC0001234"
+      }
+    }
+  },
+  "bankStepHolderLabel": "Account holder name",
+  "@bankStepHolderLabel": {
+    "description": "Label of the account holder name field."
+  },
+  "bankStepHolderHint": "As it appears on the bank account",
+  "@bankStepHolderHint": {
+    "description": "Hint of the account holder name field."
+  },
+  "bankStepAccountNumber": "Account number",
+  "@bankStepAccountNumber": {
+    "description": "Label and hint of the bank account number field."
+  },
+  "bankStepCurrentAccount": "Currently paying out to the account ending {last4}. Re-enter the number to change it.",
+  "@bankStepCurrentAccount": {
+    "description": "Under the account number field when an account is already saved.",
+    "placeholders": {
+      "last4": {
+        "type": "String",
+        "example": "2345"
+      }
+    }
+  },
+  "bankStepConfirmLabel": "Confirm account number",
+  "@bankStepConfirmLabel": {
+    "description": "Label of the field where the account number is typed a second time."
+  },
+  "bankStepConfirmHint": "Re-enter account number",
+  "@bankStepConfirmHint": {
+    "description": "Hint of the confirm-account-number field."
+  },
+  "bankStepIfscLabel": "IFSC code",
+  "@bankStepIfscLabel": {
+    "description": "Label of the IFSC code field."
+  },
+  "bankStepIfscHint": "e.g. HDFC0001234",
+  "@bankStepIfscHint": {
+    "description": "Hint of the IFSC field. Keep the example code as is."
+  },
+  "bankStepChecking": "Checking with your bank…",
+  "@bankStepChecking": {
+    "description": "Button label while the bank checks the account."
+  },
+  "bankStepFinish": "Finish",
+  "@bankStepFinish": {
+    "description": "Button that saves the bank details (last KYC step)."
+  },
+  "authPhoneTitle": "Enter your mobile number",
+  "@authPhoneTitle": {
+    "description": "Sign-up step 1 heading: the driver types their mobile number."
+  },
+  "authPhoneSubtitle": "We'll text you a one-time code to verify it's you.",
+  "@authPhoneSubtitle": {
+    "description": "Sign-up step 1: explains an OTP will be sent by SMS."
+  },
+  "authMobileNumberLabel": "Mobile number",
+  "@authMobileNumberLabel": {
+    "description": "Label above the +91 mobile number field."
+  },
+  "authPhoneRequired": "Enter your mobile number",
+  "@authPhoneRequired": {
+    "description": "Error under the number field when it's empty."
+  },
+  "authPhoneInvalid": "Enter a valid 10-digit mobile number",
+  "@authPhoneInvalid": {
+    "description": "Error under the number field when it isn't a valid Indian mobile number."
+  },
+  "authNameTitle": "What's your name?",
+  "@authNameTitle": {
+    "description": "Sign-up step 3 heading."
+  },
+  "authNameSubtitle": "This is how riders will see you once you're on a trip.",
+  "@authNameSubtitle": {
+    "description": "Sign-up step 3: customers see this name on their trip."
+  },
+  "authFullName": "Full name",
+  "@authFullName": {
+    "description": "Label and hint of the name field."
+  },
+  "authNameRequired": "Enter your name",
+  "@authNameRequired": {
+    "description": "Error under the name field when it's empty."
+  },
+  "authNameTooShort": "Name is too short",
+  "@authNameTooShort": {
+    "description": "Error under the name field when it's one letter."
+  },
+  "authCreateAccount": "Create account",
+  "@authCreateAccount": {
+    "description": "Button that finishes sign-up."
+  },
+  "authConsentRequired": "Agree to the Terms and Privacy Policy to create your account.",
+  "@authConsentRequired": {
+    "description": "Error when the driver tries to sign up without ticking the consent box."
+  },
+  "authSessionEnded": "Your session has ended. Please sign in again.",
+  "@authSessionEnded": {
+    "description": "The server no longer accepts the driver's login; they must sign in again."
+  },
+  "consentAgree": "I agree to the {terms} and {privacy}",
+  "@consentAgree": {
+    "description": "Consent line beside the sign-up checkbox. {terms} and {privacy} become links (consentTerms, consentPrivacy); the rest toggles the box.",
+    "placeholders": {
+      "terms": {
+        "type": "String",
+        "example": "Terms"
+      },
+      "privacy": {
+        "type": "String",
+        "example": "Privacy Policy"
+      }
+    }
+  },
+  "consentTerms": "Terms",
+  "@consentTerms": {
+    "description": "Link text inside consentAgree; opens the Terms page (English)."
+  },
+  "consentPrivacy": "Privacy Policy",
+  "@consentPrivacy": {
+    "description": "Link text inside consentAgree; opens the Privacy Policy page (English)."
+  },
+  "consentOpenInBrowser": "Open {address} in a browser",
+  "@consentOpenInBrowser": {
+    "description": "Snackbar when no browser could open a legal page.",
+    "placeholders": {
+      "address": {
+        "type": "String",
+        "example": "apps.mojud.life/terms"
+      }
+    }
+  },
+  "otpTitle": "Verify your number",
+  "@otpTitle": {
+    "description": "Sign-up step 2 heading: enter the OTP."
+  },
+  "otpSubtitle": "Enter the {length}-digit code sent to {phone}.",
+  "@otpSubtitle": {
+    "description": "Sign-up step 2: where the OTP was sent.",
+    "placeholders": {
+      "length": {
+        "type": "int",
+        "example": "6"
+      },
+      "phone": {
+        "type": "String",
+        "example": "+919876543210"
+      }
+    }
+  },
+  "otpFieldLabel": "Verification code",
+  "@otpFieldLabel": {
+    "description": "Label of the OTP field."
+  },
+  "otpVerify": "Verify",
+  "@otpVerify": {
+    "description": "Button that checks the OTP."
+  },
+  "otpInvalidated": "That code is no longer valid. Request a new one to continue.",
+  "@otpInvalidated": {
+    "description": "Too many wrong codes: this OTP is dead."
+  },
+  "otpStartOver": "Start over",
+  "@otpStartOver": {
+    "description": "Button that goes back to the number step for a fresh OTP."
+  },
+  "otpResendLocked": "Too many code requests. Try again in {time}, or start over.",
+  "@otpResendLocked": {
+    "description": "Resend cap reached; {time} is a m:ss countdown.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "29:59"
+      }
+    }
+  },
+  "otpDidntGetIt": "Didn't get it?",
+  "@otpDidntGetIt": {
+    "description": "Before the resend button/countdown."
+  },
+  "otpResend": "Resend code",
+  "@otpResend": {
+    "description": "Button that sends the OTP again."
+  },
+  "otpResendIn": "Resend code in {time}",
+  "@otpResendIn": {
+    "description": "Countdown until the OTP can be resent; {time} is m:ss.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "0:45"
+      }
+    }
+  },
+  "otpWrongLength": "Enter the {length}-digit code",
+  "@otpWrongLength": {
+    "description": "Error under the OTP field when too few digits were typed.",
+    "placeholders": {
+      "length": {
+        "type": "int",
+        "example": "6"
+      }
+    }
+  },
+  "otpDigitsOnly": "Code must be digits only",
+  "@otpDigitsOnly": {
+    "description": "Error under the OTP field."
+  },
+  "updateTitle": "Update MOJUD Driver",
+  "@updateTitle": {
+    "description": "Full-screen block when this app build is too old. MOJUD Driver is the brand: keep it."
+  },
+  "updateBody": "This version of the app is out of date. Install the latest one to keep getting rides. Your account, documents and earnings are safe.",
+  "@updateBody": {
+    "description": "Update screen explanation."
+  },
+  "updateGetLatest": "Get the latest version",
+  "@updateGetLatest": {
+    "description": "Update screen button: opens the download page."
+  },
+  "updateDownloadFrom": "Download it from {site}",
+  "@updateDownloadFrom": {
+    "description": "Under the update button.",
+    "placeholders": {
+      "site": {
+        "type": "String",
+        "example": "apps.mojud.life"
+      }
+    }
+  },
+  "updateOpenFailed": "Couldn't open a browser. Copy the link and open it in one: {site}",
+  "@updateOpenFailed": {
+    "description": "Shown when no browser opened the download page.",
+    "placeholders": {
+      "site": {
+        "type": "String",
+        "example": "apps.mojud.life"
+      }
+    }
+  },
+  "updateCopyLink": "Copy link",
+  "@updateCopyLink": {
+    "description": "Copies the download link."
+  },
+  "updateLinkCopied": "Link copied",
+  "@updateLinkCopied": {
+    "description": "After the download link was copied."
+  },
+  "notifChannelName": "Ride requests",
+  "@notifChannelName": {
+    "description": "Android notification channel name, shown in the phone's notification settings."
+  },
+  "notifChannelDescription": "New rides booked near you while you are on duty.",
+  "@notifChannelDescription": {
+    "description": "Android notification channel description, shown in the phone's notification settings."
+  }
+}

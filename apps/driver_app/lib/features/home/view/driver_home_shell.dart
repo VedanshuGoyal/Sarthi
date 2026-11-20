@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../account/view/account_panel.dart';
 import '../../auth/domain/driver.dart';
 import '../../../core/services/push_service.dart';
@@ -49,15 +50,21 @@ class DriverHomeShell extends ConsumerStatefulWidget {
 class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   static const double _railBreakpoint = 840;
 
-  static const _destinations = <(IconData, IconData, String)>[
-    (Icons.home_outlined, Icons.home_rounded, 'Home'),
-    (Icons.receipt_long_outlined, Icons.receipt_long_rounded, 'Rides'),
+  static List<(IconData, IconData, String)> _destinations(
+    AppLocalizations l10n,
+  ) => [
+    (Icons.home_outlined, Icons.home_rounded, l10n.homeNavHome),
+    (
+      Icons.receipt_long_outlined,
+      Icons.receipt_long_rounded,
+      l10n.homeNavRides,
+    ),
     (
       Icons.account_balance_wallet_outlined,
       Icons.account_balance_wallet_rounded,
-      'Earnings',
+      l10n.homeNavEarnings,
     ),
-    (Icons.person_outline_rounded, Icons.person_rounded, 'Account'),
+    (Icons.person_outline_rounded, Icons.person_rounded, l10n.homeNavAccount),
   ];
 
   static const int _homeTab = 0;
@@ -224,6 +231,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final destinations = _destinations(context.l10n);
     final ongoing = ref.watch(
       myRidesViewModelProvider.select((vm) => vm.ongoing.length),
     );
@@ -242,7 +250,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
     );
 
     Widget icon(int i, {required bool selected}) {
-      final (outline, filled, _) = _destinations[i];
+      final (outline, filled, _) = destinations[i];
       final badge = switch (i) {
         0 => requests,
         1 => ongoing,
@@ -269,7 +277,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
                   backgroundColor: t.surface,
                   indicatorColor: t.primarySoft,
                   destinations: [
-                    for (final (i, (_, _, label)) in _destinations.indexed)
+                    for (final (i, (_, _, label)) in destinations.indexed)
                       NavigationRailDestination(
                         icon: icon(i, selected: false),
                         selectedIcon: icon(i, selected: true),
@@ -292,7 +300,7 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
             indicatorColor: t.primarySoft,
             surfaceTintColor: Colors.transparent,
             destinations: [
-              for (final (i, (_, _, label)) in _destinations.indexed)
+              for (final (i, (_, _, label)) in destinations.indexed)
                 NavigationDestination(
                   icon: icon(i, selected: false),
                   selectedIcon: icon(i, selected: true),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../driver_auth_providers.dart';
 
 /// Step 1 — collect the driver's +91 mobile number.
@@ -32,11 +33,13 @@ class _PhoneStepState extends ConsumerState<PhoneStep> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(driverRegistrationViewModelProvider);
+    final l10n = context.l10n;
     return SarthiFormScaffold(
-      title: 'Enter your mobile number',
-      subtitle: "We'll text you a one-time code to verify it's you.",
+      title: l10n.authPhoneTitle,
+      subtitle: l10n.authPhoneSubtitle,
       fields: [
         SarthiPhoneField(
+          label: l10n.authMobileNumberLabel,
           controller: _controller,
           autofocus: true,
           errorText: vm.errorText,
@@ -45,7 +48,7 @@ class _PhoneStepState extends ConsumerState<PhoneStep> {
         ),
       ],
       footer: SarthiPrimaryButton(
-        label: 'Continue',
+        label: l10n.commonContinue,
         isLoading: vm.isLoading,
         onPressed: vm.submitPhone,
       ),

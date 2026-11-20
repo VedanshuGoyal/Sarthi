@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../auth/data/driver_auth_repository.dart';
 
 /// Deleting the driver's account from the Account tab.
@@ -43,7 +44,7 @@ class AccountDeletionViewModel extends ChangeNotifier {
       _notify();
       return false;
     } catch (_) {
-      _error = "Couldn't delete your account. Please try again.";
+      _error = L10n.current.accountDeleteFailed;
       _isDeleting = false;
       _notify();
       return false;

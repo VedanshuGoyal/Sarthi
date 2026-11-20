@@ -2,17 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../account_providers.dart';
-
-/// What deleting the account removes and what MOJUD has to keep.
-const String deleteAccountExplanation =
-    "We'll delete your selfie, identity and licence checks, bank details "
-    'and phone number, and sign you out on every device.\n\n'
-    'Records of rides you drove and payments are kept, without your '
-    'details, because the law requires us to keep them.\n\n'
-    'Earnings not yet paid out are still owed to you: MOJUD pays them out, '
-    'so contact support before you delete if any are due.\n\n'
-    "This can't be undone.";
 
 /// "Delete account" under Log out: asks first, then has the server erase
 /// the account and signs out. A refusal (a ride underway, an unpaid ride)
@@ -50,7 +41,7 @@ class DeleteAccountButton extends ConsumerWidget {
               child: CircularProgressIndicator(strokeWidth: 2, color: t.danger),
             )
           : const Icon(Icons.delete_forever_rounded),
-      label: const Text('Delete account'),
+      label: Text(context.l10n.accountDelete),
     );
   }
 }
@@ -62,20 +53,22 @@ class DeleteAccountDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    // What deleting the account removes and what MOJUD has to keep.
     return AlertDialog(
-      title: const Text('Delete your account?'),
+      title: Text(l10n.accountDeleteConfirmTitle),
       content: SingleChildScrollView(
-        child: Text(deleteAccountExplanation, style: t.body(size: 14.5)),
+        child: Text(l10n.accountDeleteExplanation, style: t.body(size: 14.5)),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
           style: TextButton.styleFrom(foregroundColor: t.danger),
-          child: const Text('Delete account'),
+          child: Text(l10n.accountDelete),
         ),
       ],
     );

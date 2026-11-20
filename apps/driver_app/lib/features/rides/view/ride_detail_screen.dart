@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/ride.dart';
 import '../rides_providers.dart';
 import 'ride_format.dart';
+import 'ride_labels.dart';
 import 'widgets/help_safety_row.dart';
 import 'widgets/ride_widgets.dart';
 
@@ -36,17 +38,20 @@ class RideDetailScreen extends ConsumerWidget {
         ? duty.isBusy(current.id)
         : rides.busyRideId == current.id;
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isRequest ? 'Ride request' : 'Ride details'),
+        title: Text(
+          isRequest ? l10n.rideDetailTitleRequest : l10n.rideDetailTitle,
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: Skyline.s16),
             child: Center(
               child: RideStatusChip(
                 status: current.status,
-                label: current.statusLabel,
+                label: current.statusLabelIn(l10n),
               ),
             ),
           ),
@@ -111,11 +116,8 @@ class RideDetailScreen extends ConsumerWidget {
                 const SizedBox(height: Skyline.s16),
                 Text(
                   current.approximate
-                      ? 'Places show their area for now. The exact address, '
-                            "the car's number plate and the customer's name "
-                            'and number appear once you accept.'
-                      : "The customer's name and number appear once you "
-                            'accept.',
+                      ? l10n.rideDetailApproxNote
+                      : l10n.rideDetailCustomerAfterAccept,
                   style: t.body(size: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -137,19 +139,24 @@ class _Summary extends StatelessWidget {
 
   /// The header's time note: how soon the ride starts, or — once the driver
   /// is on it — what has happened.
-  static String _timing(Ride ride) => switch (ride.status) {
-    RideStatus.arrived =>
-      'At pickup since ${RideFormat.time(ride.arrivedAt ?? ride.scheduledAt)}',
-    RideStatus.inProgress =>
-      'Started ${RideFormat.time(ride.startedAt ?? ride.scheduledAt)}',
-    RideStatus.completed =>
-      'Done ${RideFormat.when(ride.completedAt ?? ride.endsAt)}',
-    _ => RideFormat.relative(ride.scheduledAt),
-  };
+  static String _timing(AppLocalizations l10n, Ride ride) =>
+      switch (ride.status) {
+        RideStatus.arrived => l10n.rideDetailAtPickupSince(
+          RideFormat.time(ride.arrivedAt ?? ride.scheduledAt),
+        ),
+        RideStatus.inProgress => l10n.rideDetailStartedAt(
+          RideFormat.time(ride.startedAt ?? ride.scheduledAt),
+        ),
+        RideStatus.completed => l10n.rideDetailDoneAt(
+          RideFormat.when(ride.completedAt ?? ride.endsAt),
+        ),
+        _ => RideFormat.relative(ride.scheduledAt),
+      };
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.all(Skyline.s20),
       decoration: BoxDecoration(
@@ -165,15 +172,18 @@ class _Summary extends StatelessWidget {
               Icon(tripKindIcon(ride.kind), color: t.onPrimary, size: 20),
               const SizedBox(width: Skyline.s8),
               Text(
-                ride.kind.label,
+                ride.kind.labelIn(l10n),
                 style: t.label(size: 14, color: t.onPrimary),
               ),
-              const Spacer(),
-              Text(
-                _timing(ride),
-                style: t.label(
-                  size: 13,
-                  color: t.onPrimary.withValues(alpha: 0.75),
+              const SizedBox(width: Skyline.s8),
+              Expanded(
+                child: Text(
+                  _timing(l10n, ride),
+                  textAlign: TextAlign.end,
+                  style: t.label(
+                    size: 13,
+                    color: t.onPrimary.withValues(alpha: 0.75),
+                  ),
                 ),
               ),
             ],
@@ -185,7 +195,10 @@ class _Summary extends StatelessWidget {
           ),
           const SizedBox(height: Skyline.s4),
           Text(
-            '${RideFormat.span(ride)} · until ~${RideFormat.time(ride.endsAt)}',
+            l10n.rideDetailSpanUntil(
+              RideFormat.span(ride),
+              RideFormat.time(ride.endsAt),
+            ),
             style: t.body(size: 14, color: t.onPrimary.withValues(alpha: 0.8)),
           ),
           const SizedBox(height: Skyline.s20),
@@ -197,20 +210,24 @@ class _Summary extends StatelessWidget {
                 style: t.figure(30, color: t.onPrimary),
               ),
               const SizedBox(width: Skyline.s8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  [
-                    ride.fareEstimated ? 'estimated fare' : 'trip fare',
-                    // On a cancelled ride the payment is the fee's, shown
-                    // with the cancellation.
-                    if (ride.status == RideStatus.completed &&
-                        ride.paymentStatus != RidePaymentStatus.none)
-                      ride.paymentStatus.label.toLowerCase(),
-                  ].join(' · '),
-                  style: t.body(
-                    size: 13,
-                    color: t.onPrimary.withValues(alpha: 0.75),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    [
+                      ride.fareEstimated
+                          ? l10n.rideDetailFareEstimated
+                          : l10n.rideDetailFareTrip,
+                      // On a cancelled ride the payment is the fee's, shown
+                      // with the cancellation.
+                      if (ride.status == RideStatus.completed &&
+                          ride.paymentStatus != RidePaymentStatus.none)
+                        ride.paymentStatus.labelIn(l10n).toLowerCase(),
+                    ].join(' · '),
+                    style: t.body(
+                      size: 13,
+                      color: t.onPrimary.withValues(alpha: 0.75),
+                    ),
                   ),
                 ),
               ),
@@ -231,52 +248,75 @@ class _Progress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final steps = <(String, DateTime?)>[
-      ('Accepted', ride.acceptedAt),
-      ('At pickup', ride.arrivedAt),
-      ('On trip', ride.startedAt),
-      ('Done', ride.completedAt),
+      (l10n.rideDetailStepAccepted, ride.acceptedAt),
+      (l10n.rideStatusArrived, ride.arrivedAt),
+      (l10n.rideStatusInProgress, ride.startedAt),
+      (l10n.rideDetailStepDone, ride.completedAt),
     ];
+    // Each step gets an equal share of the width, so a long label wraps
+    // under its own dot instead of pushing the row past the card. The line
+    // into a step is coloured once that step has happened.
+    Widget line(bool visible, DateTime? reached) => Expanded(
+      child: Container(
+        height: 2,
+        color: !visible
+            ? Colors.transparent
+            : (reached != null ? t.signal : t.hairline),
+      ),
+    );
     return SkylineCard(
-      padding: const EdgeInsets.all(Skyline.s16),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Skyline.s4,
+        vertical: Skyline.s16,
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final (i, (label, at)) in steps.indexed) ...[
-            if (i > 0)
-              Expanded(
-                child: Container(
-                  height: 2,
-                  margin: const EdgeInsets.only(bottom: 30),
-                  color: at != null ? t.signal : t.hairline,
-                ),
+          for (final (i, (label, at)) in steps.indexed)
+            Expanded(
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      line(i > 0, at),
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: at != null ? t.signal : t.sunken,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          at != null ? Icons.check_rounded : Icons.circle,
+                          size: at != null ? 16 : 6,
+                          color: at != null ? t.onPrimary : t.outline,
+                        ),
+                      ),
+                      line(
+                        i < steps.length - 1,
+                        i < steps.length - 1 ? steps[i + 1].$2 : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: t.label(
+                      size: 11.5,
+                      color: at != null ? t.ink : null,
+                    ),
+                  ),
+                  Text(
+                    at != null ? RideFormat.time(at) : ' ',
+                    textAlign: TextAlign.center,
+                    style: t.body(size: 11),
+                  ),
+                ],
               ),
-            Column(
-              children: [
-                Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: at != null ? t.signal : t.sunken,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    at != null ? Icons.check_rounded : Icons.circle,
-                    size: at != null ? 16 : 6,
-                    color: at != null ? t.onPrimary : t.outline,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  style: t.label(size: 11.5, color: at != null ? t.ink : null),
-                ),
-                Text(
-                  at != null ? RideFormat.time(at) : ' ',
-                  style: t.body(size: 11),
-                ),
-              ],
             ),
-          ],
         ],
       ),
     );
@@ -297,17 +337,20 @@ class _RouteCard extends StatelessWidget {
         ? ride.finalPlace
         : ride.pickup;
     final distance = ride.distanceM;
+    final l10n = context.l10n;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
-            title: 'Route',
+            title: l10n.rideDetailRoute,
             trailing: distance != null
                 ? RideFact(
                     icon: Icons.near_me_rounded,
-                    text: '${RideFormat.distance(distance)} away',
+                    text: l10n.rideDetailDistanceAway(
+                      RideFormat.distance(distance),
+                    ),
                   )
                 : null,
           ),
@@ -319,17 +362,14 @@ class _RouteCard extends StatelessWidget {
               icon: const Icon(Icons.navigation_rounded),
               label: Text(
                 ride.status == RideStatus.inProgress
-                    ? 'Navigate to drop'
-                    : 'Navigate to pickup',
+                    ? l10n.rideDetailNavigateDrop
+                    : l10n.rideDetailNavigatePickup,
               ),
             ),
           ],
           if (ride.kind == TripKind.multiStop && ride.car == null) ...[
             const SizedBox(height: Skyline.s12),
-            Text(
-              "The customer will hand over their car at the pickup.",
-              style: t.body(size: 12.5),
-            ),
+            Text(l10n.rideDetailCarHandover, style: t.body(size: 12.5)),
           ],
         ],
       ),
@@ -345,7 +385,7 @@ class _RouteCard extends StatelessWidget {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't open Maps on this phone.")),
+        SnackBar(content: Text(context.l10n.rideDetailMapsFailed)),
       );
     }
   }
@@ -363,6 +403,7 @@ class _CancelledNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final reason = ride.cancelReason;
     final payment = RideFormat.payment(ride);
     return SkylineCard(
@@ -376,11 +417,16 @@ class _CancelledNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(ride.cancelLabel, style: t.title(15, color: t.danger)),
+                Text(
+                  ride.cancelLabelIn(l10n),
+                  style: t.title(15, color: t.danger),
+                ),
                 if (reason != null && reason.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
-                    ride.cancelledBy == 'no_show' ? reason : 'Reason: $reason',
+                    ride.cancelledBy == 'no_show'
+                        ? reason
+                        : l10n.rideDetailCancelReason(reason),
                     style: t.body(size: 13),
                   ),
                 ],
@@ -394,8 +440,9 @@ class _CancelledNotice extends StatelessWidget {
                 if (ride.hasCancellationFee) ...[
                   const SizedBox(height: Skyline.s12),
                   Text(
-                    '${RideFormat.paise(ride.cancellationFeePaise!)} '
-                    'cancellation fee',
+                    l10n.rideDetailCancellationFee(
+                      RideFormat.paise(ride.cancellationFeePaise!),
+                    ),
                     style: t.title(15),
                   ),
                   if (payment.isNotEmpty) ...[
@@ -424,15 +471,16 @@ class _FareChangedNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final (icon, title, body) = ride.ranOverTime
         ? (
             Icons.more_time_rounded,
-            'Trip ran past the booked time',
+            l10n.rideDetailRanOverTitle,
             RideFormat.ranOver(ride),
           )
         : (
             Icons.timer_off_rounded,
-            'Customer ended the trip early',
+            l10n.rideDetailEndedEarlyTitle,
             RideFormat.endedEarly(ride),
           );
     return SkylineCard(
@@ -519,8 +567,7 @@ class _PastBookedTimeNoteState extends State<_PastBookedTimeNote> {
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              'Past the booked time — extra time is charged to the customer '
-              'by the hour.',
+              context.l10n.rideDetailPastBookedTime,
               style: t.body(size: 12.5),
             ),
           ),
@@ -581,23 +628,23 @@ class _NoShowCardState extends ConsumerState<_NoShowCard> {
   Future<void> _closeAsNoShow() async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Customer didn't come?"),
-        content: const Text(
-          'This closes the ride as a no-show. The customer is told you '
-          "waited at the pickup, and it isn't counted as you cancelling.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Keep waiting'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Close ride'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        final l10n = context.l10n;
+        return AlertDialog(
+          title: Text(l10n.rideDetailNoShowDialogTitle),
+          content: Text(l10n.rideDetailNoShowDialogBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(l10n.rideDetailKeepWaiting),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(l10n.rideDetailCloseRide),
+            ),
+          ],
+        );
+      },
     );
     if (yes != true || !mounted) return;
     final error = await ref
@@ -605,13 +652,14 @@ class _NoShowCardState extends ConsumerState<_NoShowCard> {
         .act(widget.ride, RideAction.noShow);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(error ?? 'Ride closed as a no-show.')),
+      SnackBar(content: Text(error ?? context.l10n.rideDetailNoShowClosed)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final open = widget.ride.canCloseAsNoShowAt(DateTime.now());
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
@@ -627,14 +675,14 @@ class _NoShowCardState extends ConsumerState<_NoShowCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Customer not here?', style: t.title(15)),
+                    Text(l10n.rideDetailNoShowTitle, style: t.title(15)),
                     const SizedBox(height: 2),
                     Text(
                       open
-                          ? 'You can close the ride as a no-show.'
-                          : "If they still haven't come by "
-                                '${RideFormat.time(widget.ride.noShowAt!)}, '
-                                'you can close the ride as a no-show.',
+                          ? l10n.rideDetailNoShowOpen
+                          : l10n.rideDetailNoShowFrom(
+                              RideFormat.time(widget.ride.noShowAt!),
+                            ),
                       style: t.body(size: 12.5),
                     ),
                   ],
@@ -645,7 +693,7 @@ class _NoShowCardState extends ConsumerState<_NoShowCard> {
           const SizedBox(height: Skyline.s12),
           OutlinedButton(
             onPressed: open && !widget.busy ? _closeAsNoShow : null,
-            child: const Text('No-show'),
+            child: Text(l10n.rideDetailNoShowButton),
           ),
         ],
       ),
@@ -667,7 +715,7 @@ class _LocationSharingNote extends StatelessWidget {
         const SizedBox(width: 6),
         Flexible(
           child: Text(
-            'Sharing your live location with the customer',
+            context.l10n.rideDetailSharingLocation,
             style: t.body(size: 12.5),
           ),
         ),
@@ -684,6 +732,7 @@ class _CustomerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final initial = customer.name.isEmpty ? '?' : customer.name[0];
     // The backend blanks the number two hours after the ride ends.
     final hasPhone = customer.phoneE164.isNotEmpty;
@@ -708,7 +757,7 @@ class _CustomerCard extends StatelessWidget {
                 Text(
                   hasPhone
                       ? RideFormat.phone(customer.phoneE164)
-                      : 'Number hidden after the ride',
+                      : l10n.rideDetailNumberHidden,
                   style: t.body(size: 13),
                 ),
                 Text(
@@ -723,7 +772,7 @@ class _CustomerCard extends StatelessWidget {
           ),
           if (hasPhone)
             IconButton.filled(
-              tooltip: 'Call customer',
+              tooltip: l10n.rideDetailCallCustomer,
               style: IconButton.styleFrom(
                 backgroundColor: t.primarySoft,
                 foregroundColor: t.primaryText,
@@ -734,7 +783,7 @@ class _CustomerCard extends StatelessWidget {
                 );
                 if (!ok && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Couldn't start a call.")),
+                    SnackBar(content: Text(l10n.rideDetailCallFailed)),
                   );
                 }
               },
@@ -754,6 +803,8 @@ class _CarCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
+    final transmission = car.transmissionLabelIn(l10n);
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Row(
@@ -772,11 +823,11 @@ class _CarCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Customer's car", style: t.body(size: 12.5)),
+                Text(l10n.rideDetailCustomerCar, style: t.body(size: 12.5)),
                 Text(
                   [
-                    car.carTypeLabel,
-                    if (car.transmissionLabel.isNotEmpty) car.transmissionLabel,
+                    car.carTypeLabelIn(l10n),
+                    if (transmission.isNotEmpty) transmission,
                   ].join(' · '),
                   style: t.title(15),
                 ),
@@ -849,12 +900,13 @@ class _RateCustomerCardState extends ConsumerState<_RateCustomerCard> {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return SkylineCard(
       padding: const EdgeInsets.all(Skyline.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Rate your customer', style: t.title(15)),
+          Text(l10n.rideDetailRateTitle, style: t.title(15)),
           const SizedBox(height: Skyline.s12),
           Center(
             child: StarPicker(
@@ -867,9 +919,7 @@ class _RateCustomerCardState extends ConsumerState<_RateCustomerCard> {
             controller: _noteController,
             maxLength: 500,
             maxLines: 3,
-            decoration: const InputDecoration(
-              hintText: 'Add a note for your records (optional)',
-            ),
+            decoration: InputDecoration(hintText: l10n.rideDetailRateNoteHint),
           ),
           const SizedBox(height: Skyline.s8),
           SizedBox(
@@ -884,7 +934,7 @@ class _RateCustomerCardState extends ConsumerState<_RateCustomerCard> {
                         color: t.inkFaint,
                       ),
                     )
-                  : const Text('Submit rating'),
+                  : Text(l10n.rideDetailRateSubmit),
             ),
           ),
         ],
@@ -913,7 +963,10 @@ class _MyRatingCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('You rated ${rating.stars}★', style: t.title(14)),
+                Text(
+                  context.l10n.rideDetailYouRated(rating.stars),
+                  style: t.title(14),
+                ),
                 if (note != null && note.isNotEmpty)
                   Text(note, style: t.body(size: 12.5)),
               ],
@@ -935,19 +988,26 @@ class _ActionBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     final (label, action) = switch (ride.status) {
-      RideStatus.requested => ('Accept ride', RideAction.accept),
-      RideStatus.accepted => ("I've arrived at pickup", RideAction.arrive),
-      RideStatus.arrived => ('Start trip', RideAction.start),
-      RideStatus.inProgress => ('Complete trip', RideAction.complete),
+      RideStatus.requested => (l10n.rideDetailActionAccept, RideAction.accept),
+      RideStatus.accepted => (l10n.rideDetailActionArrive, RideAction.arrive),
+      RideStatus.arrived => (l10n.rideDetailActionStart, RideAction.start),
+      RideStatus.inProgress => (
+        l10n.rideDetailActionComplete,
+        RideAction.complete,
+      ),
       _ => (null, null),
     };
     if (label == null || action == null) return const SizedBox.shrink();
 
     final secondary = switch (ride.status) {
-      RideStatus.requested => ('Decline', RideAction.decline),
+      RideStatus.requested => (
+        l10n.rideDetailActionDecline,
+        RideAction.decline,
+      ),
       RideStatus.accepted ||
-      RideStatus.arrived => ("Can't make it", RideAction.release),
+      RideStatus.arrived => (l10n.rideDetailActionRelease, RideAction.release),
       _ => null,
     };
 
@@ -986,7 +1046,7 @@ class _ActionBar extends ConsumerWidget {
                             Skyline.controlHeight,
                           ),
                         ),
-                        child: Text(secondary.$1),
+                        child: Text(secondary.$1, textAlign: TextAlign.center),
                       ),
                     ),
                     const SizedBox(width: Skyline.s12),
@@ -1068,20 +1128,21 @@ class _ActionBar extends ConsumerWidget {
     // its booked time, is charged for the time used, not the fare this
     // screen was built with.
     final latest = rides.byId(ride.id) ?? ride;
+    final l10n = context.l10n;
     final done = switch (action) {
-      RideAction.accept => 'Ride accepted — it\'s in your upcoming rides.',
-      RideAction.decline => 'Request hidden.',
-      RideAction.release => 'Ride handed back.',
-      RideAction.start => 'Trip started. Drive safe!',
+      RideAction.accept => l10n.rideDetailAccepted,
+      RideAction.decline => l10n.rideDetailDeclined,
+      RideAction.release => l10n.rideDetailReleased,
+      RideAction.start => l10n.rideDetailStarted,
       RideAction.complete when latest.endedEarly =>
-        'The customer ended the trip early. They can now pay '
-            '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',
+        l10n.rideDetailCompletedEndedEarly(
+          RideFormat.rupees(latest.fareRupees),
+        ),
       RideAction.complete when latest.ranOverTime =>
-        'Trip complete. It ran past the booked time, so the customer can now '
-            'pay ${RideFormat.ranOver(latest)} by UPI in their app.',
-      RideAction.complete =>
-        'Trip complete. The customer can now pay '
-            '${RideFormat.rupees(latest.fareRupees)} by UPI in their app.',
+        l10n.rideDetailCompletedRanOver(RideFormat.ranOver(latest)),
+      RideAction.complete => l10n.rideDetailCompleted(
+        RideFormat.rupees(latest.fareRupees),
+      ),
       _ => null,
     };
     if (done != null) messenger.showSnackBar(SnackBar(content: Text(done)));
@@ -1092,16 +1153,17 @@ class _ActionBar extends ConsumerWidget {
 
   /// Steps that are hard to undo ask first.
   Future<bool> _confirm(BuildContext context, RideAction action) async {
+    final l10n = context.l10n;
     final (title, body, yes) = switch (action) {
       RideAction.complete => (
-        'Complete the trip?',
-        'Confirm the trip is over and the car is back with the customer.',
-        'Complete',
+        l10n.rideDetailConfirmCompleteTitle,
+        l10n.rideDetailConfirmCompleteBody,
+        l10n.rideDetailConfirmCompleteYes,
       ),
       RideAction.release => (
-        'Hand this ride back?',
-        'It goes back to other drivers nearby, and leaves your list.',
-        'Hand back',
+        l10n.rideDetailConfirmReleaseTitle,
+        l10n.rideDetailConfirmReleaseBody,
+        l10n.rideDetailConfirmReleaseYes,
       ),
       _ => (null, null, null),
     };
@@ -1114,7 +1176,7 @@ class _ActionBar extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Not now'),
+            child: Text(l10n.rideDetailNotNow),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -1155,16 +1217,14 @@ class _StartCodeDialogState extends State<_StartCodeDialog> {
   @override
   Widget build(BuildContext context) {
     final t = SkylineTokens.of(context);
+    final l10n = context.l10n;
     return AlertDialog(
-      title: const Text('Enter start code'),
+      title: Text(l10n.rideDetailStartCodeTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Ask the customer for the 4-digit code shown in their MOJUD app.',
-            style: t.body(size: 15),
-          ),
+          Text(l10n.rideDetailStartCodeBody, style: t.body(size: 15)),
           const SizedBox(height: Skyline.s16),
           TextField(
             controller: _controller,
@@ -1186,11 +1246,11 @@ class _StartCodeDialogState extends State<_StartCodeDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.commonCancel),
         ),
         TextButton(
           onPressed: _complete ? _submit : null,
-          child: const Text('Start trip'),
+          child: Text(l10n.rideDetailActionStart),
         ),
       ],
     );

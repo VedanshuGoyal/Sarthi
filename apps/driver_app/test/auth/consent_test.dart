@@ -7,6 +7,7 @@ import 'package:driver_app/features/auth/driver_auth_providers.dart';
 import 'package:driver_app/features/auth/view/consent_checkbox.dart';
 import 'package:driver_app/features/auth/view/name_step.dart';
 import 'package:driver_app/features/auth/view_model/driver_registration_view_model.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +108,9 @@ void main() {
           ],
           child: MaterialApp(
             theme: SkylineTheme.light(),
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: const NameStep(),
           ),
         ),
@@ -131,6 +135,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: SkylineTheme.light(),
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: ConsentCheckbox(
               value: false,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../driver_auth_providers.dart';
 import 'consent_checkbox.dart';
 
@@ -32,17 +33,18 @@ class _NameStepState extends ConsumerState<NameStep> {
   @override
   Widget build(BuildContext context) {
     final vm = ref.watch(driverRegistrationViewModelProvider);
+    final l10n = context.l10n;
 
     return SarthiFormScaffold(
       leading: BackButton(onPressed: vm.isLoading ? null : vm.back),
-      title: "What's your name?",
-      subtitle: "This is how riders will see you once you're on a trip.",
+      title: l10n.authNameTitle,
+      subtitle: l10n.authNameSubtitle,
       fields: [
         SarthiTextField(
-          label: 'Full name',
+          label: l10n.authFullName,
           controller: _name,
           autofocus: true,
-          hintText: 'Full name',
+          hintText: l10n.authFullName,
           keyboardType: TextInputType.name,
           textCapitalization: TextCapitalization.words,
           textInputAction: TextInputAction.done,
@@ -58,7 +60,7 @@ class _NameStepState extends ConsumerState<NameStep> {
         ),
       ],
       footer: SarthiPrimaryButton(
-        label: 'Create account',
+        label: l10n.authCreateAccount,
         isLoading: vm.isLoading,
         // Disabled until the driver agrees to the Terms and Privacy Policy.
         onPressed: vm.hasConsented ? _submit : null,

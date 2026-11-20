@@ -3,6 +3,8 @@ import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../l10n/l10n.dart';
+
 /// Outcome of an app-launch location permission request.
 enum LocationPermissionResult {
   granted,
@@ -105,6 +107,9 @@ class LocationService {
   ///  * the monochrome status-bar icon the push notifications use (the
   ///    launcher icon draws as a blank square there), on a channel named
   ///    for what it is in system settings.
+  ///
+  /// The notification's words are in the app's language ([L10n.current])
+  /// at the time sharing starts.
   @visibleForTesting
   static LocationSettings streamSettings(TargetPlatform platform) {
     if (platform != TargetPlatform.android) {
@@ -113,16 +118,17 @@ class LocationService {
         distanceFilter: 10,
       );
     }
+    final l10n = L10n.current;
     return AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
       intervalDuration: const Duration(seconds: 10),
-      foregroundNotificationConfig: const ForegroundNotificationConfig(
-        notificationTitle: 'Sharing your location',
-        notificationText: 'Your customer can see you on the way.',
-        notificationChannelName: 'Live location',
-        notificationIcon: AndroidResource(name: 'ic_stat_sarthi'),
-        color: Color(0xFF2A93BE),
+      foregroundNotificationConfig: ForegroundNotificationConfig(
+        notificationTitle: l10n.locationSharingTitle,
+        notificationText: l10n.locationSharingText,
+        notificationChannelName: l10n.locationChannelName,
+        notificationIcon: const AndroidResource(name: 'ic_stat_sarthi'),
+        color: const Color(0xFF2A93BE),
         enableWakeLock: true,
         setOngoing: true,
       ),
