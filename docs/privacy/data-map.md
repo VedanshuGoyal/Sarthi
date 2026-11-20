@@ -41,6 +41,7 @@ with counsel.
   - Surepass: Aadhaar through DigiLocker, licence, bank penny-drop.
   - PhonePe: payments.
   - Google FCM: push.
+  - Firebase Crashlytics (both apps, release builds only): crash stack traces, app build, device model, a Firebase installation ID. No user id, phone, name or email is set (`lib/core/services/crash_reporting.dart`).
   - Fast2SMS: OTP SMS, so phone numbers.
   - Ola and Google: map searches and coordinates.
 

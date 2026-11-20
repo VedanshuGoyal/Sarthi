@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Crash reports only from release builds: off before the Dart side
+         runs too, so a native crash in a debug or profile run isn't sent. -->
+    <application>
+        <meta-data android:name="firebase_crashlytics_collection_enabled" android:value="false"/>
+    </application>
 </manifest>
