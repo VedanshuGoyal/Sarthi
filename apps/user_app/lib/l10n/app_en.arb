@@ -1,0 +1,465 @@
+{
+  "@@locale": "en",
+  "appTitle": "MOJUD",
+  "@appTitle": {
+    "description": "App name in the OS task switcher. Brand name: never translated."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button that dismisses a dialog or sheet without doing anything."
+  },
+  "commonOk": "OK",
+  "@commonOk": {
+    "description": "Button that acknowledges a dialog."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button or tooltip that closes a sheet or screen."
+  },
+  "commonContinue": "Continue",
+  "@commonContinue": {
+    "description": "Button that moves on to the next step."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Button that retries a failed load or action."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Button that saves a form."
+  },
+  "commonBack": "Back",
+  "@commonBack": {
+    "description": "Button or tooltip that goes back a step."
+  },
+  "errorNoConnection": "Can't reach the server. Check your connection and try again.",
+  "@errorNoConnection": {
+    "description": "Shown when the phone can't reach the backend (no internet, timeout)."
+  },
+  "errorNoConnectionShort": "Can't reach the server.",
+  "@errorNoConnectionShort": {
+    "description": "Shorter form of errorNoConnection, for a booking or ride action that couldn't reach the backend."
+  },
+  "errorUnexpectedReply": "The server sent an unexpected reply.",
+  "@errorUnexpectedReply": {
+    "description": "Shown when the backend's reply can't be read."
+  },
+  "errorGeneric": "Something went wrong. Please try again.",
+  "@errorGeneric": {
+    "description": "Fallback error when the backend gives no reason."
+  },
+  "errorGenericStatus": "Something went wrong ({status}).",
+  "@errorGenericStatus": {
+    "description": "Fallback error for a ride action the backend refused without a reason; status is the HTTP status code.",
+    "placeholders": {
+      "status": {
+        "type": "int"
+      }
+    }
+  },
+  "languageTitle": "Language · भाषा",
+  "@languageTitle": {
+    "description": "Heading of the app-language setting. Bilingual on purpose, so a customer can find it in either language: put the current language first."
+  },
+  "languageFollowsPhone": "Same as your phone. Pick one to change it.",
+  "@languageFollowsPhone": {
+    "description": "Under the language switch while the app follows the phone language."
+  },
+  "languageEnglish": "English",
+  "@languageEnglish": {
+    "description": "Language option. Always shown in English, whatever the app language."
+  },
+  "languageHindi": "हिंदी",
+  "@languageHindi": {
+    "description": "Language option. Always shown in Hindi script, whatever the app language."
+  },
+  "fmtToday": "Today",
+  "@fmtToday": {
+    "description": "A date that is today."
+  },
+  "fmtTomorrow": "Tomorrow",
+  "@fmtTomorrow": {
+    "description": "A date that is tomorrow."
+  },
+  "fmtYesterday": "Yesterday",
+  "@fmtYesterday": {
+    "description": "A date that was yesterday."
+  },
+  "fmtWeekdayShort": "{weekday, select, mon{Mon} tue{Tue} wed{Wed} thu{Thu} fri{Fri} sat{Sat} sun{Sun} other{}}",
+  "@fmtWeekdayShort": {
+    "description": "Short weekday name, used inside dates.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtMonthShort": "{month, select, jan{Jan} feb{Feb} mar{Mar} apr{Apr} may{May} jun{Jun} jul{Jul} aug{Aug} sep{Sep} oct{Oct} nov{Nov} dec{Dec} other{}}",
+  "@fmtMonthShort": {
+    "description": "Short month name, used inside dates.",
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtDate": "{weekday}, {month} {day}",
+  "@fmtDate": {
+    "description": "A date further than a day away, e.g. Mon, Oct 26. weekday and month come from fmtWeekdayShort / fmtMonthShort.",
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      },
+      "day": {
+        "type": "int"
+      },
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtDateWithYear": "{day} {month} {year}",
+  "@fmtDateWithYear": {
+    "description": "A date with its year, e.g. a date of birth: 12 Jan 2000. month comes from fmtMonthShort.",
+    "placeholders": {
+      "day": {
+        "type": "int"
+      },
+      "month": {
+        "type": "String"
+      },
+      "year": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtDayAndTime": "{day}, {time}",
+  "@fmtDayAndTime": {
+    "description": "A day and a time, e.g. Today, 9:30 AM. day is fmtToday/fmtTomorrow/fmtYesterday/fmtDate; time stays like 9:30 AM in every language.",
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtMinutes": "{minutes} min",
+  "@fmtMinutes": {
+    "description": "A duration under an hour.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtHours": "{hours} h",
+  "@fmtHours": {
+    "description": "A duration of whole hours.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtHoursMinutes": "{hours} h {minutes} min",
+  "@fmtHoursMinutes": {
+    "description": "A duration of hours and minutes.",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtEndedEarly": "Charged {fare} for the time used (booked {booked}).",
+  "@fmtEndedEarly": {
+    "description": "On a trip the customer ended early: what they were charged and what they had booked. Amounts are like ₹320.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtRanOverHours": "Ran past the booked time. Charged {fare} for {hours} h (booked {booked}).",
+  "@fmtRanOverHours": {
+    "description": "On a trip that ran past its booked hours: what it was charged, for how many hours, and what was booked.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "hours": {
+        "type": "int"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtRanOver": "Ran past the booked time. Charged {fare} (booked {booked}).",
+  "@fmtRanOver": {
+    "description": "As fmtRanOverHours, when the hours used aren't known.",
+    "placeholders": {
+      "fare": {
+        "type": "String"
+      },
+      "booked": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtPastBookedTime": "You're past your booked time. Extra time is charged by the hour.",
+  "@fmtPastBookedTime": {
+    "description": "Note on the ride screen while a trip is past its booked time."
+  },
+  "fmtCarriedNote": "{amount} unpaid from {rides, select, one{an earlier ride} other{earlier rides}} will be added when you pay for this trip.",
+  "@fmtCarriedNote": {
+    "description": "On an upcoming ride while the customer still owes for earlier rides. rides is 'one' when it's all one earlier ride, else 'other'.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "rides": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtCarriedIncluded": "Includes {amount} from {rides, select, one{another ride} other{other rides}}.",
+  "@fmtCarriedIncluded": {
+    "description": "By the Pay button, when the payment also clears what is owed on other rides. rides is 'one' or 'other'.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "rides": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtPaidTogether": "Paid {amount} together with {others}.",
+  "@fmtPaidTogether": {
+    "description": "On a receipt whose payment also paid other bookings. others is built from fmtOtherRides / fmtRideCount / fmtOtherCancellationFees / fmtCancellationFeeCount, joined with fmtListAnd.",
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "others": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtOtherRides": "{count, plural, =1{1 other ride} other{{count} other rides}}",
+  "@fmtOtherRides": {
+    "description": "Part of fmtPaidTogether: other rides paid together with this ride.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtRideCount": "{count, plural, =1{1 ride} other{{count} rides}}",
+  "@fmtRideCount": {
+    "description": "Part of fmtPaidTogether: rides paid together with this cancellation fee.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtOtherCancellationFees": "{count, plural, =1{1 other cancellation fee} other{{count} other cancellation fees}}",
+  "@fmtOtherCancellationFees": {
+    "description": "Part of fmtPaidTogether: other cancellation fees paid together with this cancellation fee.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtCancellationFeeCount": "{count, plural, =1{1 cancellation fee} other{{count} cancellation fees}}",
+  "@fmtCancellationFeeCount": {
+    "description": "Part of fmtPaidTogether: cancellation fees paid together with this ride.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "fmtListAnd": "{first} and {second}",
+  "@fmtListAnd": {
+    "description": "Two items of a list joined by 'and'.",
+    "placeholders": {
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "fmtNewDriver": "New driver",
+  "@fmtNewDriver": {
+    "description": "In place of a driver's rating before anyone has rated them."
+  },
+  "fmtDriverRating": "★ {rating} · {count, plural, =1{1 rating} other{{count} ratings}}",
+  "@fmtDriverRating": {
+    "description": "A driver's average rating and how many ratings it's from. rating is like 4.7.",
+    "placeholders": {
+      "rating": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "tripTypeRoundTrip": "Round Trip",
+  "@tripTypeRoundTrip": {
+    "description": "Trip type: a driver hired by the hour, ending back at the pickup. Same words as the driver app."
+  },
+  "tripTypeOneWay": "One-Way",
+  "@tripTypeOneWay": {
+    "description": "Trip type: pickup to one destination."
+  },
+  "tripTypeMultiStop": "Multi-Stop",
+  "@tripTypeMultiStop": {
+    "description": "Trip type: a trip with several stops/errands."
+  },
+  "bookingStatusRequested": "Finding a driver",
+  "@bookingStatusRequested": {
+    "description": "Ride status pill: booked, no driver has taken it yet."
+  },
+  "bookingStatusAccepted": "Driver assigned",
+  "@bookingStatusAccepted": {
+    "description": "Ride status pill: a driver has taken the ride."
+  },
+  "bookingStatusArrived": "Driver at pickup",
+  "@bookingStatusArrived": {
+    "description": "Ride status pill: the driver is waiting at the pickup."
+  },
+  "bookingStatusInProgress": "On trip",
+  "@bookingStatusInProgress": {
+    "description": "Ride status pill: the trip is underway."
+  },
+  "bookingStatusCompleted": "Completed",
+  "@bookingStatusCompleted": {
+    "description": "Ride status pill: the trip is done."
+  },
+  "bookingStatusCancelled": "Cancelled",
+  "@bookingStatusCancelled": {
+    "description": "Ride status pill: the ride was cancelled."
+  },
+  "bookingStatusExpired": "No driver found",
+  "@bookingStatusExpired": {
+    "description": "Ride status pill: no driver took the ride before it closed."
+  },
+  "bookingCancelledByYou": "Cancelled by you",
+  "@bookingCancelledByYou": {
+    "description": "Who cancelled: the customer."
+  },
+  "bookingCancelledByDriver": "Cancelled by your driver",
+  "@bookingCancelledByDriver": {
+    "description": "Who cancelled: the driver."
+  },
+  "bookingCancelledNoShow": "Closed as a no-show",
+  "@bookingCancelledNoShow": {
+    "description": "The driver waited at the pickup and the customer never came, so the driver closed the ride."
+  },
+  "bookingCancelledSummary": "{who} · {reason}",
+  "@bookingCancelledSummary": {
+    "description": "Who cancelled and why, on one line. who is bookingCancelledBy…; reason is the reason given (a cancelReason… label, or the customer's own words as typed).",
+    "placeholders": {
+      "who": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelReasonPlansChanged": "Plans changed",
+  "@cancelReasonPlansChanged": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonBookedByMistake": "Booked by mistake",
+  "@cancelReasonBookedByMistake": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonDriverAsked": "Driver asked me to cancel",
+  "@cancelReasonDriverAsked": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonDriverNotResponding": "Driver is not responding",
+  "@cancelReasonDriverNotResponding": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonFoundAnotherOption": "Found another option",
+  "@cancelReasonFoundAnotherOption": {
+    "description": "Cancel reason the customer can pick."
+  },
+  "cancelReasonOther": "Other",
+  "@cancelReasonOther": {
+    "description": "Cancel reason that lets the customer type their own."
+  },
+  "carTypeHatchback": "Hatchback",
+  "@carTypeHatchback": {
+    "description": "Car type."
+  },
+  "carTypeSedan": "Sedan",
+  "@carTypeSedan": {
+    "description": "Car type."
+  },
+  "carTypeSuv": "SUV",
+  "@carTypeSuv": {
+    "description": "Car type."
+  },
+  "carTypeLuxury": "Luxury",
+  "@carTypeLuxury": {
+    "description": "Car type: premium/executive car."
+  },
+  "transmissionAutomatic": "Automatic",
+  "@transmissionAutomatic": {
+    "description": "Gearbox: automatic."
+  },
+  "transmissionManual": "Manual",
+  "@transmissionManual": {
+    "description": "Gearbox: manual (stick shift)."
+  },
+  "carOptionsCarType": "Car type",
+  "@carOptionsCarType": {
+    "description": "Label of the car-type dropdown when adding a car."
+  },
+  "carOptionsSelectCarType": "Select car type",
+  "@carOptionsSelectCarType": {
+    "description": "Hint in the car-type dropdown before one is picked."
+  },
+  "carOptionsTransmission": "Transmission",
+  "@carOptionsTransmission": {
+    "description": "Label of the gearbox dropdown when adding a car."
+  },
+  "paymentModeUpi": "UPI",
+  "@paymentModeUpi": {
+    "description": "How a ride was paid: UPI. Keep 'UPI'."
+  },
+  "paymentModeCash": "Cash",
+  "@paymentModeCash": {
+    "description": "How a ride was paid: cash, settled by MOJUD by hand."
+  },
+  "paymentModeWaived": "Waived by MOJUD",
+  "@paymentModeWaived": {
+    "description": "How a ride was paid: MOJUD waived the charge."
+  },
+  "paymentLineRide": "Ride",
+  "@paymentLineRide": {
+    "description": "Receipt line for another ride paid in the same payment, when the server sent no label."
+  },
+  "paymentLineCancellationFee": "Cancellation fee",
+  "@paymentLineCancellationFee": {
+    "description": "Receipt line for a cancellation fee paid in the same payment, when the server sent no label."
+  }
+}

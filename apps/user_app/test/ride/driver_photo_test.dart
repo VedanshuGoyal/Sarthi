@@ -9,6 +9,7 @@ import 'package:user_app/features/ride/data/booking_repository.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/view/widgets/driver_row.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -55,6 +56,9 @@ void main() {
   Future<void> pumpAvatar(WidgetTester tester, ImageProvider? photo) =>
       tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: SkylineTheme.light(),
           home: Scaffold(
             body: DriverAvatar(name: 'ravi', photo: photo),

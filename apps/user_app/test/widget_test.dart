@@ -6,6 +6,7 @@ import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/features/auth/auth_providers.dart';
 import 'package:user_app/features/auth/data/auth_repository.dart';
 import 'package:user_app/features/auth/view/registration_screen.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import 'support/fake_backend.dart';
 
@@ -18,7 +19,12 @@ Future<void> _pumpRegistration(WidgetTester tester) async {
           AuthRepository(client: fakeBackendClient()),
         ),
       ],
-      child: const MaterialApp(home: RegistrationScreen()),
+      child: const MaterialApp(
+        locale: Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: RegistrationScreen(),
+      ),
     ),
   );
 }

@@ -4,7 +4,9 @@ import 'package:user_app/features/ride/domain/car_type.dart';
 import 'package:user_app/features/ride/domain/my_booking.dart';
 import 'package:user_app/features/ride/domain/transmission.dart';
 import 'package:user_app/features/ride/domain/trip_type.dart';
+import 'package:user_app/features/ride/ride_labels.dart';
 import 'package:user_app/features/ride/view_model/ride_details_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -49,7 +51,9 @@ void main() {
     )!;
     check(b.cancelledBy).equals('customer');
     check(b.cancelledAt).isNotNull();
-    check(b.cancellationSummary).equals('Cancelled by you · Plans changed');
+    check(
+      b.cancellationSummaryIn(L10n.current),
+    ).equals('Cancelled by you · Plans changed');
     check(b.canCancel).isFalse();
   });
 
@@ -61,7 +65,7 @@ void main() {
         cancelReason: 'The driver waited at the pickup until 10:15 AM',
       ),
     )!;
-    check(b.cancellationSummary).equals(
+    check(b.cancellationSummaryIn(L10n.current)).equals(
       'Closed as a no-show · The driver waited at the pickup until 10:15 AM',
     );
     final steps = rideTimeline(b);
@@ -122,7 +126,7 @@ void main() {
       )!;
       final p = b.payment!;
       check(p.mode).equals('UPI_INTENT');
-      check(p.modeLabel).equals('UPI');
+      check(p.modeLabelIn(L10n.current)).equals('UPI');
       check(p.utr).equals('412345678901');
       check(p.reference).equals('412345678901');
       check(p.merchantOrderId).equals('MOJUD_b1_m3k9');
@@ -133,7 +137,8 @@ void main() {
     });
 
     test('names every way a ride can be paid', () {
-      String label(String mode) => RidePayment(mode: mode).modeLabel;
+      String label(String mode) =>
+          RidePayment(mode: mode).modeLabelIn(L10n.current);
       check(label('UPI_QR')).equals('UPI');
       check(label('')).equals('UPI');
       check(label('CASH')).equals('Cash');
@@ -204,7 +209,9 @@ void main() {
       check(p.paidPaise).equals(69000);
       check(p.lines.length).equals(2);
       check(p.lines.first.kind).equals(PaymentLineKind.cancellationFee);
-      check(p.lines.first.label).equals('Cancellation fee · Sun 15 Nov');
+      check(
+        p.lines.first.labelIn(L10n.current),
+      ).equals('Cancellation fee · Sun 15 Nov');
       check(p.lines.last.kind).equals(PaymentLineKind.ride);
       // What else it paid: not this booking itself.
       check(b.paidTogetherWith.length).equals(1);
@@ -228,7 +235,7 @@ void main() {
         ),
       )!;
       check(alone.paidTogetherWith).isEmpty();
-      check(alone.payment!.lines.single.label).equals('Ride');
+      check(alone.payment!.lines.single.labelIn(L10n.current)).equals('Ride');
 
       final old = MyBooking.tryParse(
         bookingJson(
@@ -260,7 +267,7 @@ void main() {
       check(p.totalPaise).isNull();
       check(p.lines.map((l) => l.bookingId).toList()).deepEquals(['b5', 'b6']);
       check(p.lines.first.kind).equals(PaymentLineKind.ride);
-      check(p.lines.last.label).equals('Cancellation fee');
+      check(p.lines.last.labelIn(L10n.current)).equals('Cancellation fee');
       // No total sent: the lines add up to it.
       check(p.paidPaise).equals(7000);
       check(

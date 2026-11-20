@@ -13,6 +13,7 @@ import 'package:user_app/features/ride/view/widgets/cancel_ride_sheet.dart';
 import 'package:user_app/features/ride/view/widgets/receipt_card.dart';
 import 'package:user_app/features/ride/view/widgets/star_rating.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -33,7 +34,13 @@ Future<void> _pump(
         bookingRepositoryProvider.overrideWithValue(repo),
         myBookingsViewModelProvider.overrideWith((ref) => bookings),
       ],
-      child: MaterialApp(theme: SkylineTheme.light(), home: home),
+      child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: SkylineTheme.light(),
+        home: home,
+      ),
     ),
   );
   if (settle) {
@@ -287,6 +294,9 @@ void main() {
       )!;
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: SkylineTheme.light(),
           home: Scaffold(
             body: ListView(
@@ -332,6 +342,9 @@ void main() {
           myBookingsViewModelProvider.overrideWith((ref) => bookings),
         ],
         child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: SkylineTheme.light(),
           home: const RideDetailsScreen(bookingId: 'b1'),
         ),
@@ -600,6 +613,9 @@ void main() {
       String? initialReason,
     }) => tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         theme: SkylineTheme.light(),
         home: Scaffold(
           body: SingleChildScrollView(

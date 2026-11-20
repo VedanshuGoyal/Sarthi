@@ -18,6 +18,7 @@ import 'package:user_app/features/ride/view/widgets/stop_card.dart';
 import 'package:user_app/features/ride/view_model/multi_stop_planner_view_model.dart';
 import 'package:user_app/features/ride/view_model/my_bookings_view_model.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_booking_server.dart';
 
@@ -87,6 +88,9 @@ Future<void> _pump(
         ),
       ],
       child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: MultiStopPlannerScreen(
           start: _start,
           onConfirmed: onOk == null ? null : (_, trip) => onOk(trip),

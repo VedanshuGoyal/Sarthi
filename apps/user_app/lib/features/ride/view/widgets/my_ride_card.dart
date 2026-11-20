@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
+import '../../ride_labels.dart';
 import 'booking_status_pill.dart';
 import 'driver_row.dart';
 import 'ride_format.dart';
@@ -152,7 +154,8 @@ class MyRideCard extends StatelessWidget {
               ),
           ] else if (b.status == BookingStatus.cancelled) ...[
             Text(
-              b.cancellationSummary ?? 'This ride was cancelled.',
+              b.cancellationSummaryIn(context.l10n) ??
+                  'This ride was cancelled.',
               style: t.body(size: 13),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

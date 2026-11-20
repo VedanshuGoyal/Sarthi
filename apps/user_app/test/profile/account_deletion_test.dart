@@ -11,6 +11,7 @@ import 'package:user_app/features/auth/data/auth_repository.dart';
 import 'package:user_app/features/profile/profile_providers.dart';
 import 'package:user_app/features/profile/view/widgets/delete_account_button.dart';
 import 'package:user_app/features/profile/view_model/account_deletion_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 /// A server answering `DELETE /me/account` with [status] and [body],
 /// recording what it was sent.
@@ -138,6 +139,9 @@ void main() {
             ),
           ],
           child: MaterialApp(
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             theme: SkylineTheme.light(),
             home: const Scaffold(body: Center(child: DeleteAccountButton())),
           ),

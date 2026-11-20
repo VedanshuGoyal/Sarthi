@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
+import '../../ride_labels.dart';
 import 'ride_format.dart';
 
 /// The receipt of a paid ride: the fare (with its base and night parts when
@@ -64,10 +66,14 @@ class ReceiptCard extends StatelessWidget {
       ],
       if (together != null && payment != null) ...[
         for (final line in b.paidTogetherWith)
-          (line.label, RideFormat.rupees(line.amountPaise), null),
+          (
+            line.labelIn(context.l10n),
+            RideFormat.rupees(line.amountPaise),
+            null,
+          ),
         ('Total paid', RideFormat.rupees(payment.paidPaise), t.title(16)),
       ],
-      ('Paid via', payment?.modeLabel ?? 'UPI', null),
+      ('Paid via', payment?.modeLabelIn(context.l10n) ?? 'UPI', null),
       if (payment?.reference case final reference?)
         ('Reference', reference, mono),
       if (payment?.merchantOrderId case final order?) ('Order', order, mono),

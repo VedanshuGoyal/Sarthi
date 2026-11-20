@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/domain/scheduling.dart' as scheduling;
 import 'package:user_app/features/ride/view/widgets/time_slot_picker.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 void main() {
   group('snapToQuarterHour', () {
@@ -62,6 +63,9 @@ void main() {
     TimeOfDay? selected;
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: TimeSlotPicker(
             selected: const TimeOfDay(hour: 9, minute: 15),
@@ -87,6 +91,9 @@ void main() {
     TimeOfDay? result;
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(

@@ -7,23 +7,21 @@ import 'transmission.dart';
 import 'trip_type.dart';
 
 /// Where one of the customer's bookings stands, as the backend reports it.
+/// What the customer sees for each is `labelIn` in `ride_labels.dart`.
 enum BookingStatus {
-  requested('requested', 'Finding a driver'),
-  accepted('accepted', 'Driver assigned'),
-  arrived('arrived', 'Driver at pickup'),
-  inProgress('in_progress', 'On trip'),
-  completed('completed', 'Completed'),
-  cancelled('cancelled', 'Cancelled'),
+  requested('requested'),
+  accepted('accepted'),
+  arrived('arrived'),
+  inProgress('in_progress'),
+  completed('completed'),
+  cancelled('cancelled'),
 
   /// No driver took it before it closed, 30 minutes before the start.
-  expired('expired', 'No driver found');
+  expired('expired');
 
-  const BookingStatus(this.wireName, this.label);
+  const BookingStatus(this.wireName);
 
   final String wireName;
-
-  /// What the customer sees on the card.
-  final String label;
 
   static BookingStatus fromWire(String? value) => BookingStatus.values
       .firstWhere((s) => s.wireName == value, orElse: () => requested);
@@ -133,18 +131,20 @@ class PaymentLine {
   const PaymentLine({
     required this.bookingId,
     required this.kind,
-    required this.label,
+    this.label,
     required this.amountPaise,
   });
 
   final String bookingId;
   final PaymentLineKind kind;
-  final String label;
+
+  /// The server's label, as sent; null when it sent none (the receipt then
+  /// names the line by its [kind]).
+  final String? label;
   final int amountPaise;
 
   /// Reads one entry of a payment's `lines`, or null when it names no
-  /// booking or no positive amount. A missing label reads as what it was
-  /// for.
+  /// booking or no positive amount.
   static PaymentLine? tryParse(Object? json) {
     if (json is! Map) return null;
     final id = json['bookingId'];
@@ -157,11 +157,7 @@ class PaymentLine {
     return PaymentLine(
       bookingId: id,
       kind: kind,
-      label: label is String && label.trim().isNotEmpty
-          ? label.trim()
-          : kind == PaymentLineKind.cancellationFee
-          ? 'Cancellation fee'
-          : 'Ride',
+      label: label is String && label.trim().isNotEmpty ? label.trim() : null,
       amountPaise: amount.toInt(),
     );
   }
@@ -211,19 +207,6 @@ class RidePayment {
   /// up.
   int get paidPaise =>
       totalPaise ?? lines.fold(0, (sum, line) => sum + line.amountPaise);
-
-  /// How the customer paid, in words: "UPI", "Cash", "Waived by MOJUD", or
-  /// the gateway's mode made readable ("NET_BANKING" → "Net Banking").
-  String get modeLabel {
-    final m = mode.trim().toUpperCase();
-    if (m.isEmpty || m.startsWith('UPI')) return 'UPI';
-    if (m == 'CASH') return 'Cash';
-    if (m == 'WAIVED') return 'Waived by MOJUD';
-    return [
-      for (final word in m.split('_'))
-        if (word.isNotEmpty) '${word[0]}${word.substring(1).toLowerCase()}',
-    ].join(' ');
-  }
 
   /// The bank's UTR, else the gateway's transaction id; null when neither.
   String? get reference => utr ?? transactionId;
@@ -552,22 +535,6 @@ class MyBooking {
     if (hours case final hours?) return Duration(hours: hours);
     if (estimatedMinutes case final minutes?) return Duration(minutes: minutes);
     return endsAt?.difference(scheduledAt);
-  }
-
-  /// "Cancelled by you" and the like, or null when the server didn't say.
-  String? get cancelledByLabel => switch (cancelledBy) {
-    null || '' => null,
-    'customer' => 'Cancelled by you',
-    'driver' => 'Cancelled by your driver',
-    // The driver waited at the pickup and the customer never came.
-    'no_show' => 'Closed as a no-show',
-    _ => 'Cancelled',
-  };
-
-  /// Who cancelled and why, on one line — "Cancelled by you · Plans changed".
-  String? get cancellationSummary {
-    final parts = [?cancelledByLabel, ?_nonEmpty(cancelReason)];
-    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   static String? _nonEmpty(String? value) =>

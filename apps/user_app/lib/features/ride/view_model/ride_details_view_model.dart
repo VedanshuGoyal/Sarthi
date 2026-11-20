@@ -4,11 +4,13 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show ImageProvider;
 
+import '../../../l10n/l10n.dart';
 import '../data/booking_repository.dart';
 import '../data/upi_checkout.dart';
 import '../domain/driver_location.dart';
 import '../domain/my_booking.dart';
 import '../domain/payment_checkout.dart';
+import '../ride_labels.dart';
 import 'my_bookings_view_model.dart';
 
 /// How far one step of a ride's timeline has got.
@@ -88,7 +90,7 @@ List<RideMilestone> rideTimeline(MyBooking b) {
         ),
     if (b.status == BookingStatus.cancelled)
       RideMilestone(
-        label: b.cancelledByLabel ?? 'Cancelled',
+        label: b.cancelledByLabelIn(L10n.current) ?? 'Cancelled',
         at: b.cancelledAt,
         detail: b.cancelReason,
         state: MilestoneState.ended,

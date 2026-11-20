@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../l10n/l10n.dart';
 import '../domain/my_booking.dart';
 import '../domain/trip_type.dart';
+import '../ride_labels.dart';
 import '../ride_providers.dart';
 import '../view_model/ride_details_view_model.dart';
 import 'widgets/booking_status_pill.dart';
@@ -155,7 +157,7 @@ class _RideDetailsScreenState extends ConsumerState<RideDetailsScreen> {
     final live = <Widget>[
       _StatusHeader(booking: booking),
       if (vm.isPastBookedTime)
-        const RideNote(
+        RideNote(
           text: RideFormat.pastBookedTime,
           icon: Icons.schedule_rounded,
         ),
@@ -323,7 +325,7 @@ class _StatusHeader extends StatelessWidget {
       ),
       BookingStatus.cancelled => (
         'Ride cancelled',
-        b.cancellationSummary ?? 'This ride was cancelled.',
+        b.cancellationSummaryIn(context.l10n) ?? 'This ride was cancelled.',
       ),
       BookingStatus.expired => (
         'No driver found',

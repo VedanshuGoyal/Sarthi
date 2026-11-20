@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user_app/features/ride/domain/trip_type.dart';
 import 'package:user_app/features/ride/view/trip_type_selector.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 Future<void> _pumpSelector(
   WidgetTester tester, {
@@ -11,6 +12,9 @@ Future<void> _pumpSelector(
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: SingleChildScrollView(
             child: TripTypeSelector(onSelected: onSelected),

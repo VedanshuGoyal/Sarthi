@@ -9,6 +9,7 @@ import 'package:user_app/features/ride/domain/place_suggestion.dart';
 import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/pickup_location_screen.dart';
 import 'package:user_app/features/ride/view_model/pickup_selection_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_location_repository.dart';
 
@@ -47,6 +48,9 @@ class _Harness {
           ),
         ],
         child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: PickupLocationScreen(
             onConfirmed: (_, pickup) => confirmed = pickup,
           ),
@@ -147,6 +151,9 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(

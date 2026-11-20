@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 
+import '../../../../l10n/l10n.dart';
 import '../../domain/my_booking.dart';
+import '../../ride_labels.dart';
 
 /// A booking's status as a small rounded tag — solid while the driver is at
 /// the pickup or on the trip, muted once it's over.
@@ -28,7 +30,10 @@ class BookingStatusPill extends StatelessWidget {
         color: fill,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(status.label, style: t.label(size: 12, color: ink)),
+      child: Text(
+        status.labelIn(context.l10n),
+        style: t.label(size: 12, color: ink),
+      ),
     );
   }
 }

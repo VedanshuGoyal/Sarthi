@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
 import 'package:user_app/core/brand/mojud_logo.dart';
 import 'package:user_app/features/splash/view/splash_screen.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 /// Coverage for the launch screen. Its signal bar animates forever, so these
 /// pump fixed frames rather than settling — `pumpAndSettle` would hang.
@@ -24,6 +25,9 @@ void main() {
       MediaQuery(
         data: MediaQueryData(size: size, disableAnimations: reduceMotion),
         child: MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: DeepSignalTheme.of(brightness),
           home: const SplashScreen(),
         ),

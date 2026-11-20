@@ -12,6 +12,7 @@ import 'package:user_app/features/ride/ride_providers.dart';
 import 'package:user_app/features/ride/view/booking_details_screen.dart';
 import 'package:user_app/features/ride/view_model/saved_cars_view_model.dart';
 import 'package:user_app/features/ride/view_model/trip_start_view_model.dart';
+import 'package:user_app/l10n/l10n.dart';
 
 import '../support/fake_location_repository.dart';
 
@@ -70,7 +71,12 @@ Future<void> _pump(WidgetTester tester, _FakeCarsRepository repo) {
           ),
         ),
       ],
-      child: const MaterialApp(home: BookingDetailsScreen()),
+      child: const MaterialApp(
+        locale: Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: BookingDetailsScreen(),
+      ),
     ),
   );
 }
