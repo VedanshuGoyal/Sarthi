@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/refresh_throttle.dart';
 import '../data/rides_repository.dart';
 import '../domain/ride.dart';
 
@@ -9,9 +10,11 @@ import '../domain/ride.dart';
 /// The backend is the source of truth: every action answers with the ride's
 /// new state, which replaces the local copy rather than being guessed at.
 class MyRidesViewModel extends ChangeNotifier {
-  MyRidesViewModel({required this._repository, this._onCompleted});
+  MyRidesViewModel({required this._repository, this._onCompleted, Clock? now})
+    : _fetched = RefreshThrottle(now: now);
 
   final RidesRepository _repository;
+  final RefreshThrottle _fetched;
 
   /// Called when one of the driver's rides finishes with money in it, so
   /// earnings can refresh: completed here, or found on a reload to have
@@ -91,6 +94,7 @@ class MyRidesViewModel extends ChangeNotifier {
   /// (see [_onCompleted]) refreshes earnings.
   Future<void> load() async {
     final seq = ++_loadSeq;
+    _fetched.mark();
     _isLoading = true;
     _notify();
     try {
@@ -118,6 +122,15 @@ class MyRidesViewModel extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  /// Re-reads the rides unless they were read within the last
+  /// [RefreshThrottle.defaultGap] or a read is in flight — for the app
+  /// coming back to the foreground, where pushes that arrived meanwhile only
+  /// reached the tray.
+  Future<void> refreshIfStale() async {
+    if (_isLoading || !_fetched.isStale) return;
+    await load();
   }
 
   /// Adds or replaces [ride] — e.g. one just accepted from the requests feed.

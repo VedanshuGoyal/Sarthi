@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/refresh_throttle.dart';
 import '../data/document_file_store.dart';
 import '../data/driver_kyc_repository.dart';
 import '../data/kyc_status_store.dart';
@@ -40,9 +41,11 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     String? driverId,
     this._lostCaptures,
     this._permissionGrants,
+    Clock? now,
   }) : _files = files ?? DocumentFileStore(),
        _statusStore = statusStore,
-       _driverId = driverId {
+       _driverId = driverId,
+       _fetched = RefreshThrottle(now: now) {
     if (statusStore != null && driverId != null) {
       _isRestoring = true;
       unawaited(_restoreStatus(statusStore, driverId));
@@ -59,6 +62,16 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
   /// The OS's current permission grants; null where they can't be read.
   final PermissionGrantsSource? _permissionGrants;
+
+  /// When the record was last read, so a resume doesn't read it again.
+  final RefreshThrottle _fetched;
+
+  /// Numbers each load, so only the latest one's answer is used.
+  int _loadSeq = 0;
+
+  /// Counts the steps saved; a load that saw one land while it was in
+  /// flight drops its own answer, which may predate it.
+  int _writes = 0;
 
   DriverDocuments _data = const DriverDocuments();
   DriverKyc _kyc = const DriverKyc();
@@ -109,12 +122,19 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
 
   /// Loads the driver's saved progress, re-attaches any captures still on
   /// the device and re-reads the OS permission grants. Safe to call more
-  /// than once.
+  /// than once, and alongside a step being saved: only the latest load's
+  /// answer is used, and not even that if a step's reply (newer than the
+  /// read may be) landed while it was in flight.
   Future<void> load() async {
+    final seq = ++_loadSeq;
+    final writes = _writes;
+    _fetched.mark();
     _isLoading = true;
     _notify();
     try {
-      _setKyc(await _repository.load());
+      final kyc = await _repository.load();
+      if (seq != _loadSeq) return;
+      if (writes == _writes) _setKyc(kyc);
       await _restoreCaptures();
       await _readPermissionGrants();
       _error = null;
@@ -123,12 +143,27 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
         unawaited(_recoverLostCapture(source));
       }
     } on KycException catch (e) {
+      if (seq != _loadSeq) return;
       _error = e.message;
       _loadFailed = true;
     } finally {
-      _isLoading = false;
-      _notify();
+      if (seq == _loadSeq) {
+        _isLoading = false;
+        _notify();
+      }
     }
+  }
+
+  /// Re-reads the record unless it was read within the last
+  /// [RefreshThrottle.defaultGap], a read is in flight, or the driver is in
+  /// the middle of a step (saving one, or a photo still being stored or
+  /// uploaded) — for the app coming back to the foreground, where a
+  /// reviewer's decision or a revoked clearance may be waiting.
+  Future<void> refreshIfStale() async {
+    if (_isLoading || _isSaving || _capturing.isNotEmpty || !_fetched.isStale) {
+      return;
+    }
+    await load();
   }
 
   bool isComplete(DocumentStep step) => switch (step) {
@@ -227,7 +262,7 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
     _notify();
 
     try {
-      _setKyc(await _repository.uploadDocument(kind, path));
+      _setWrittenKyc(await _repository.uploadDocument(kind, path));
       await _files.discard(kind);
       _data = _data
           .withoutCapture(kind)
@@ -345,9 +380,15 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   Future<bool> _save(Future<DriverKyc> Function() write) async {
     final kyc = await _run(write);
     if (kyc == null) return false;
-    _setKyc(kyc);
+    _setWrittenKyc(kyc);
     _notify();
     return true;
+  }
+
+  /// [_setKyc] for a step's reply, which outranks a load still in flight.
+  void _setWrittenKyc(DriverKyc kyc) {
+    _writes++;
+    _setKyc(kyc);
   }
 
   /// Takes [kyc] from the backend as the truth, and stores its status on
@@ -410,11 +451,19 @@ class DocumentRegistrationViewModel extends ChangeNotifier {
   }
 
   /// Re-attaches captures left on disk by an earlier run, so reopening a step
-  /// shows the photo already taken instead of an empty tile.
+  /// shows the photo already taken instead of an empty tile. A photo being
+  /// stored or uploaded right now keeps its tile as it is — a reload landing
+  /// mid-upload mustn't reset it.
   Future<void> _restoreCaptures() async {
     final paths = <DocumentKind, String>{};
     final states = <DocumentKind, DocumentUploadState>{};
     for (final kind in DocumentKind.values) {
+      if (_capturing.contains(kind)) {
+        final path = _data.capturePathFor(kind);
+        if (path != null) paths[kind] = path;
+        states[kind] = _data.uploadStateFor(kind);
+        continue;
+      }
       final path = await _files.pathFor(kind);
       if (path != null) paths[kind] = path;
       if (_kyc.hasUploaded(kind)) states[kind] = DocumentUploadState.uploaded;

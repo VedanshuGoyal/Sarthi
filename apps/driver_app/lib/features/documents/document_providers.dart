@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/refresh_throttle.dart';
 import '../auth/driver_auth_controller.dart';
 import 'data/driver_kyc_repository.dart';
 import 'data/kyc_status_store.dart';
@@ -46,5 +47,6 @@ final documentRegistrationViewModelProvider =
         driverId: driverId,
         lostCaptures: retrieveLostCameraPhoto,
         permissionGrants: readPermissionGrants,
+        now: ref.watch(clockProvider),
       );
     });

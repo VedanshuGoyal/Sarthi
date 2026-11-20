@@ -79,13 +79,24 @@ class _DocumentViewScreenState extends ConsumerState<DocumentViewScreen> {
   void _reload() => ref.read(documentRegistrationViewModelProvider).load();
 
   /// Coming back to the app — often from system settings, where the
-  /// permissions may just have been turned on — re-reads the OS grants. And
-  /// while under review the decision may have landed without a push
-  /// (notifications off).
+  /// permissions may just have been turned on — re-reads the OS grants
+  /// (local, so every time).
+  ///
+  /// The KYC record is re-read (unless it's fresh) only where the change
+  /// would be someone else's: a reviewer deciding while the driver waits (a
+  /// decision may land without a push, with notifications off), a cleared
+  /// driver's status changing, a status this build doesn't know being
+  /// sorted out. Mid-flow the driver's own steps are the only changes, and
+  /// leaving for the camera or DigiLocker is part of them.
   void _onResume() {
     final vm = ref.read(documentRegistrationViewModelProvider);
     unawaited(vm.refreshPermissionGrants());
-    if (vm.kyc.status == KycStatus.submitted && !vm.isLoading) _reload();
+    switch (vm.kyc.status) {
+      case KycStatus.submitted || KycStatus.verified || KycStatus.unknown:
+        unawaited(vm.refreshIfStale());
+      case KycStatus.incomplete || KycStatus.rejected:
+        break;
+    }
   }
 
   Future<void> _submit() async {

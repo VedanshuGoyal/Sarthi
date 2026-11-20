@@ -101,11 +101,24 @@ class _DriverHomeShellState extends ConsumerState<DriverHomeShell> {
   }
 
   /// Back in the app (often from Maps, mid-trip): pushes that arrived
-  /// meanwhile only showed in the tray, so a held ride may have moved on —
-  /// the customer cancelled it or ended the trip. Re-read the rides then.
+  /// meanwhile only showed in the tray. A held ride may have moved on (the
+  /// customer cancelled it or ended the trip) or MOJUD assigned a new one;
+  /// on duty, the feed and the driver's presence may be stale (a sleeping
+  /// phone pauses the poll); a reviewer may have revoked the clearance,
+  /// which main.dart's gate then acts on; and on Earnings, a customer may
+  /// have paid.
+  ///
+  /// Each view model skips its read while its data is fresh or a read is
+  /// in flight, so flipping in and out of the app doesn't hit the API every
+  /// time, and the Document View — also listening when opened from Account
+  /// — doesn't read the KYC a second time.
   void _onResume() {
-    final rides = ref.read(myRidesViewModelProvider);
-    if (rides.current != null) rides.load();
+    ref.read(myRidesViewModelProvider).refreshIfStale();
+    ref.read(dutyViewModelProvider).refreshIfStale();
+    ref.read(documentRegistrationViewModelProvider).refreshIfStale();
+    if (_index == _earningsTab) {
+      ref.read(earningsViewModelProvider).refreshIfStale();
+    }
   }
 
   /// Re-reads the open requests now rather than on the next poll. A no-op

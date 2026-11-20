@@ -70,17 +70,36 @@ const PermissionGrants _noneGranted = (
 void main() {
   late _KycRepository repository;
   late PermissionGrants? grants;
+  late DateTime now;
 
   setUp(() {
     repository = _KycRepository();
     grants = _noneGranted;
+    now = DateTime(2026, 11, 21, 9);
   });
 
   DocumentRegistrationViewModel viewModel() => DocumentRegistrationViewModel(
     repository: repository,
     files: _NoCaptures(),
     permissionGrants: () async => grants,
+    now: () => now,
   );
+
+  /// Backgrounds the app and brings it back, as the platform reports it.
+  Future<void> leaveAndReturn(WidgetTester tester) async {
+    for (final state in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+  }
 
   group('OS permission grants', () {
     test('already granted, they tick the permissions step on load', () async {
@@ -244,18 +263,7 @@ void main() {
       check(locks()).isEmpty();
 
       grants = _allGranted;
-      for (final state in const [
-        AppLifecycleState.inactive,
-        AppLifecycleState.hidden,
-        AppLifecycleState.paused,
-        AppLifecycleState.hidden,
-        AppLifecycleState.inactive,
-        AppLifecycleState.resumed,
-      ]) {
-        tester.binding.handleAppLifecycleStateChanged(state);
-        await tester.pump();
-      }
-      await tester.pumpAndSettle();
+      await leaveAndReturn(tester);
 
       check(text('6/6')).isNotEmpty();
     });
@@ -274,6 +282,40 @@ void main() {
       check(text('Sent back by a reviewer')).isNotEmpty();
       check(text('The selfie is blurred.')).isNotEmpty();
       check(text('Submit for verification')).isNotEmpty();
+    });
+
+    testWidgets('mid-flow, coming back re-reads only the OS grants', (
+      tester,
+    ) async {
+      repository.kyc = _kyc(KycStatus.incomplete, bankVerified: false);
+      await pump(tester);
+      final loads = repository.loads;
+      now = now.add(const Duration(minutes: 1));
+
+      await leaveAndReturn(tester);
+
+      check(repository.loads).equals(loads);
+    });
+
+    testWidgets('waiting on a reviewer, coming back re-reads the record — '
+        'not again straight after', (tester) async {
+      repository.kyc = _kyc(KycStatus.submitted);
+      await pump(tester);
+      final loads = repository.loads;
+
+      // Just opened: the record is fresh.
+      await leaveAndReturn(tester);
+      check(repository.loads).equals(loads);
+
+      now = now.add(const Duration(minutes: 1));
+      repository.kyc = _kyc(KycStatus.verified);
+      await leaveAndReturn(tester);
+      check(repository.loads).equals(loads + 1);
+      check(find.text("You're verified").evaluate()).isNotEmpty();
+
+      now = now.add(const Duration(seconds: 3));
+      await leaveAndReturn(tester);
+      check(repository.loads).equals(loads + 1);
     });
 
     testWidgets('a status from a newer server asks to check again instead of '
