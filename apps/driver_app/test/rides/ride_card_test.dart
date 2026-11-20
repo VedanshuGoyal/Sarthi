@@ -1,6 +1,7 @@
 import 'package:checks/checks.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/view/widgets/ride_widgets.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarthi_shared/sarthi_shared.dart';
@@ -11,6 +12,9 @@ void main() {
   Future<void> pump(WidgetTester tester, Ride ride) => tester.pumpWidget(
     MaterialApp(
       theme: SkylineTheme.light(),
+      locale: const Locale('en'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: SingleChildScrollView(child: RideCard(ride: ride)),
       ),

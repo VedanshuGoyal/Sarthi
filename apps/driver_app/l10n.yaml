@@ -1,0 +1,9 @@
+# gen-l10n: English is the template; Hindi (app_hi.arb) must carry every key.
+# Generated Dart lands next to the ARB files and is checked in.
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false
+required-resource-attributes: false
+untranslated-messages-file: build/untranslated_messages.json

@@ -1,0 +1,227 @@
+{
+  "@@locale": "en",
+  "appTitle": "MOJUD Driver",
+  "@appTitle": {
+    "description": "App name in the OS task switcher. Brand name: never translated."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Button that dismisses a dialog without doing anything."
+  },
+  "commonOk": "OK",
+  "@commonOk": {
+    "description": "Button that acknowledges a dialog."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Button or tooltip that closes a sheet or screen."
+  },
+  "commonContinue": "Continue",
+  "@commonContinue": {
+    "description": "Button that moves on to the next step."
+  },
+  "commonTryAgain": "Try again",
+  "@commonTryAgain": {
+    "description": "Button that retries a failed load or action."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Button that saves a form."
+  },
+  "commonNotAdded": "Not added",
+  "@commonNotAdded": {
+    "description": "Shown in place of a detail (licence, Aadhaar) the driver hasn't given yet."
+  },
+  "commonNotSet": "Not set",
+  "@commonNotSet": {
+    "description": "Shown in place of a setting the driver hasn't chosen yet."
+  },
+  "errorNoConnection": "Can't reach the server. Check your connection and try again.",
+  "@errorNoConnection": {
+    "description": "Shown when the phone can't reach the backend (no internet, timeout)."
+  },
+  "errorUnexpectedReply": "The server sent an unexpected reply. Please try again.",
+  "@errorUnexpectedReply": {
+    "description": "Shown when the backend's reply can't be read."
+  },
+  "errorGeneric": "Something went wrong. Please try again.",
+  "@errorGeneric": {
+    "description": "Fallback error when the backend gives no reason."
+  },
+  "languageTitle": "Language · भाषा",
+  "@languageTitle": {
+    "description": "Heading of the app-language setting. Bilingual on purpose, so a driver can find it in either language: put the current language first."
+  },
+  "languageFollowsPhone": "Same as your phone. Pick one to change it.",
+  "@languageFollowsPhone": {
+    "description": "Under the language switch while the app follows the phone language."
+  },
+  "languageEnglish": "English",
+  "@languageEnglish": {
+    "description": "Language option. Always shown in English, whatever the app language."
+  },
+  "languageHindi": "हिंदी",
+  "@languageHindi": {
+    "description": "Language option. Always shown in Hindi script, whatever the app language."
+  },
+  "rideStatusRequested": "New request",
+  "@rideStatusRequested": {
+    "description": "Ride status chip: an open ride the driver can take."
+  },
+  "rideStatusAccepted": "Upcoming",
+  "@rideStatusAccepted": {
+    "description": "Ride status chip: the driver's ride, not started yet."
+  },
+  "rideStatusArrived": "At pickup",
+  "@rideStatusArrived": {
+    "description": "Ride status chip: the driver is waiting at the pickup."
+  },
+  "rideStatusInProgress": "On trip",
+  "@rideStatusInProgress": {
+    "description": "Ride status chip: the trip is underway."
+  },
+  "rideStatusCompleted": "Completed",
+  "@rideStatusCompleted": {
+    "description": "Ride status chip: the trip is done."
+  },
+  "rideStatusCancelled": "Cancelled",
+  "@rideStatusCancelled": {
+    "description": "Ride status chip / cancel reason: the ride was cancelled."
+  },
+  "rideStatusUnknown": "Status unknown",
+  "@rideStatusUnknown": {
+    "description": "Ride status chip for a status this app version doesn't know."
+  },
+  "tripKindRoundTrip": "Round trip",
+  "@tripKindRoundTrip": {
+    "description": "Trip type: driver hired by the hour, ends back at the pickup. Same words as the customer app."
+  },
+  "tripKindOneWay": "One way",
+  "@tripKindOneWay": {
+    "description": "Trip type: pickup to a destination."
+  },
+  "tripKindMultiStop": "Multi-stop",
+  "@tripKindMultiStop": {
+    "description": "Trip type: a trip with several errands/stops."
+  },
+  "tripKindOther": "Trip",
+  "@tripKindOther": {
+    "description": "Trip type this app version doesn't know."
+  },
+  "ridePaymentDue": "Awaiting payment",
+  "@ridePaymentDue": {
+    "description": "The customer hasn't paid for the ride yet."
+  },
+  "ridePaymentPaid": "Paid",
+  "@ridePaymentPaid": {
+    "description": "The customer paid MOJUD; the driver's share comes in the next payout."
+  },
+  "ridePaymentPaidOut": "Paid out",
+  "@ridePaymentPaidOut": {
+    "description": "The driver's share has been sent to their bank."
+  },
+  "rideCancelledAtPickup": "Customer cancelled at the pickup",
+  "@rideCancelledAtPickup": {
+    "description": "Cancel reason: the customer cancelled after the driver reached the pickup (a fee applies)."
+  },
+  "rideCancelledByCustomer": "Cancelled by customer",
+  "@rideCancelledByCustomer": {
+    "description": "Cancel reason."
+  },
+  "rideCancelledNoShow": "Customer didn't come",
+  "@rideCancelledNoShow": {
+    "description": "Cancel reason: the driver closed the ride because the customer never came to the pickup."
+  },
+  "carTypeHatchback": "Hatchback",
+  "@carTypeHatchback": {
+    "description": "Customer's car type."
+  },
+  "carTypeSedan": "Sedan",
+  "@carTypeSedan": {
+    "description": "Customer's car type."
+  },
+  "carTypeSuv": "SUV",
+  "@carTypeSuv": {
+    "description": "Customer's car type."
+  },
+  "carTypeLuxury": "Luxury",
+  "@carTypeLuxury": {
+    "description": "Customer's car type."
+  },
+  "carTypeUnknown": "Car",
+  "@carTypeUnknown": {
+    "description": "Customer's car when its type isn't known."
+  },
+  "transmissionManual": "Manual",
+  "@transmissionManual": {
+    "description": "Gearbox: manual (stick shift)."
+  },
+  "transmissionAutomatic": "Automatic",
+  "@transmissionAutomatic": {
+    "description": "Gearbox: automatic."
+  },
+  "transmissionBoth": "Manual and Automatic Both",
+  "@transmissionBoth": {
+    "description": "The driver drives both manual and automatic cars."
+  },
+  "genderMale": "Male",
+  "@genderMale": {
+    "description": "Gender option."
+  },
+  "genderFemale": "Female",
+  "@genderFemale": {
+    "description": "Gender option."
+  },
+  "genderOther": "Other",
+  "@genderOther": {
+    "description": "Gender option."
+  },
+  "docStepVehicleTypeTitle": "Type of Vehicle",
+  "@docStepVehicleTypeTitle": {
+    "description": "KYC step title: which gearbox(es) the driver can drive."
+  },
+  "docStepVehicleTypeSubtitle": "Manual, automatic, or both",
+  "@docStepVehicleTypeSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepPhotoAndNameTitle": "Photo and Name",
+  "@docStepPhotoAndNameTitle": {
+    "description": "KYC step title."
+  },
+  "docStepPhotoAndNameSubtitle": "Selfie, full name, date of birth, gender",
+  "@docStepPhotoAndNameSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepAadhaarTitle": "Aadhaar Card",
+  "@docStepAadhaarTitle": {
+    "description": "KYC step title."
+  },
+  "docStepAadhaarSubtitle": "Verify with DigiLocker",
+  "@docStepAadhaarSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepLicenseTitle": "Driving License",
+  "@docStepLicenseTitle": {
+    "description": "KYC step title."
+  },
+  "docStepLicenseSubtitle": "License number, checked instantly",
+  "@docStepLicenseSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepPermissionsTitle": "Permissions",
+  "@docStepPermissionsTitle": {
+    "description": "KYC step title: phone permissions the app needs."
+  },
+  "docStepPermissionsSubtitle": "Display over other apps, background location, battery usage",
+  "@docStepPermissionsSubtitle": {
+    "description": "KYC step subtitle."
+  },
+  "docStepBankTitle": "Bank Details",
+  "@docStepBankTitle": {
+    "description": "KYC step title."
+  },
+  "docStepBankSubtitle": "Where your earnings are paid, verified with your bank",
+  "@docStepBankSubtitle": {
+    "description": "KYC step subtitle."
+  }
+}

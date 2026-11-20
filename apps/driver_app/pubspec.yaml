@@ -9,6 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # --- Localization ---
+  # English (template) + Hindi via gen-l10n; ARB files in lib/l10n.
+  flutter_localizations:
+    sdk: flutter
+  intl: any
   cupertino_icons: ^1.0.8
 
   # --- Shared design system ---
@@ -78,3 +83,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true

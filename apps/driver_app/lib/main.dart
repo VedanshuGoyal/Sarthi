@@ -11,7 +11,9 @@ import 'features/documents/document_providers.dart';
 import 'features/documents/view/document_view_screen.dart';
 import 'features/home/view/driver_home_shell.dart';
 import 'features/home/view/start_driving_screen.dart';
+import 'features/language/language_providers.dart';
 import 'features/update/view/update_gate.dart';
+import 'l10n/l10n.dart';
 
 /// Entry point for the Sarthi driver app.
 ///
@@ -28,17 +30,22 @@ Future<void> main() async {
   );
 }
 
-class SarthiDriverApp extends StatelessWidget {
+class SarthiDriverApp extends ConsumerWidget {
   const SarthiDriverApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
-      title: 'MOJUD Driver',
+      onGenerateTitle: (context) => context.l10n.appTitle,
       theme: SkylineTheme.light(),
+      // English or Hindi: the driver's pick, else the phone's language.
+      locale: ref.watch(languageViewModelProvider.select((vm) => vm.locale)),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       // Above the navigator, so a build the backend no longer serves is
       // stopped whichever screen is open.
-      builder: (context, child) => UpdateGate(child: child!),
+      builder: (context, child) =>
+          L10nBinding(child: UpdateGate(child: child!)),
       home: const _AppRoot(),
     );
   }

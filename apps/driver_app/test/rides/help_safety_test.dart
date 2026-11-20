@@ -9,6 +9,7 @@ import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
 import 'package:driver_app/features/rides/view/ride_detail_screen.dart';
 import 'package:driver_app/features/rides/view/widgets/help_safety_row.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +100,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: SkylineTheme.light(),
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: HelpSafetyRow(
               ride: _ride(),
@@ -183,6 +187,9 @@ void main() {
           ],
           child: MaterialApp(
             theme: SkylineTheme.light(),
+            locale: const Locale('en'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: RideDetailScreen(ride: ride),
           ),
         ),

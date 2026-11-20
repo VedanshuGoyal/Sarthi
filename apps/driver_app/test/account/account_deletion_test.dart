@@ -4,6 +4,7 @@ import 'package:checks/checks.dart';
 import 'package:driver_app/features/account/view/delete_account_button.dart';
 import 'package:driver_app/features/account/view_model/account_deletion_view_model.dart';
 import 'package:driver_app/features/auth/data/driver_auth_repository.dart';
+import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -156,6 +157,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: SkylineTheme.light(),
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () async => answer = await showDialog<bool>(
