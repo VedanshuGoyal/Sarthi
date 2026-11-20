@@ -90,18 +90,26 @@ func (f fakeDeclines) DeclinedBy(_ context.Context, rideID string) ([]string, er
 	return f[rideID], nil
 }
 
-// fakeSender records messages; tokens in gone answer ErrUnregistered.
+// fakeSender records messages; tokens in gone answer ErrUnregistered, and
+// the next flaky sends answer ErrTemporary.
 type fakeSender struct {
-	mu   sync.Mutex
-	sent []push.Message
-	gone map[string]bool
+	mu    sync.Mutex
+	sent  []push.Message
+	gone  map[string]bool
+	flaky int
+	tries int
 }
 
 func (f *fakeSender) Send(_ context.Context, m push.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.tries++
 	if f.gone[m.Token] {
 		return push.ErrUnregistered
+	}
+	if f.flaky > 0 {
+		f.flaky--
+		return push.ErrTemporary
 	}
 	f.sent = append(f.sent, m)
 	return nil
@@ -466,5 +474,28 @@ func TestRideCancelled_tellsTheDriver(t *testing.T) {
 	svc.Wait()
 	if n := len(sender.byToken()); n != 1 {
 		t.Errorf("sent %d messages after an unassigned cancel, want still 1", n)
+	}
+}
+
+// A push the provider couldn't take for a moment is tried again, up to
+// three tries in all; one it refused outright is not.
+func TestNotifySend_retriesTemporaryFailures(t *testing.T) {
+	saved := pushRetryWaits
+	pushRetryWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { pushRetryWaits = saved })
+	svc, _, sender, _ := newNotifyTest(t)
+	ctx := context.Background()
+
+	sender.flaky = 2
+	if !svc.send(ctx, push.Message{Token: "t1"}) || sender.tries != 3 {
+		t.Errorf("two temporary failures: delivered after %d tries, want 3 and delivered", sender.tries)
+	}
+	sender.tries, sender.flaky = 0, 3
+	if svc.send(ctx, push.Message{Token: "t2"}) || sender.tries != 3 {
+		t.Errorf("three temporary failures: %d tries, want 3 and not delivered", sender.tries)
+	}
+	sender.tries, sender.gone = 0, map[string]bool{"t3": true}
+	if svc.send(ctx, push.Message{Token: "t3"}) || sender.tries != 1 {
+		t.Errorf("a gone token: %d tries, want 1", sender.tries)
 	}
 }

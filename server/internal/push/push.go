@@ -12,6 +12,10 @@ import (
 // app was uninstalled or signed out — so the caller should forget it.
 var ErrUnregistered = errors.New("push token is no longer registered")
 
+// ErrTemporary marks a failure worth trying again shortly: the network, or
+// the provider saying it's overloaded or down for a moment.
+var ErrTemporary = errors.New("push provider temporarily unavailable")
+
 // Message is one notification for one app install.
 type Message struct {
 	// Token is the install's registration token.

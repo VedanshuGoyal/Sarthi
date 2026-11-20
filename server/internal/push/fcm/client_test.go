@@ -101,16 +101,19 @@ func TestSendBuildsAndAuthorizesMessage(t *testing.T) {
 	}
 }
 
-func TestSendMapsGoneTokensToErrUnregistered(t *testing.T) {
+func TestSendMapsGoneTokensAndTemporaryFailures(t *testing.T) {
 	cases := map[string]struct {
-		status int
-		body   string
-		gone   bool
+		status    int
+		body      string
+		gone      bool
+		temporary bool
 	}{
-		"unregistered":    {404, `{"error":{"code":404,"status":"NOT_FOUND","message":"Requested entity was not found.","details":[{"errorCode":"UNREGISTERED"}]}}`, true},
-		"other project":   {403, `{"error":{"code":403,"status":"PERMISSION_DENIED","message":"SenderId mismatch","details":[{"errorCode":"SENDER_ID_MISMATCH"}]}}`, true},
-		"malformed token": {400, `{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"The registration token is not a valid FCM registration token"}}`, true},
-		"server error":    {503, `{"error":{"code":503,"status":"UNAVAILABLE","message":"try later"}}`, false},
+		"unregistered":    {404, `{"error":{"code":404,"status":"NOT_FOUND","message":"Requested entity was not found.","details":[{"errorCode":"UNREGISTERED"}]}}`, true, false},
+		"other project":   {403, `{"error":{"code":403,"status":"PERMISSION_DENIED","message":"SenderId mismatch","details":[{"errorCode":"SENDER_ID_MISMATCH"}]}}`, true, false},
+		"malformed token": {400, `{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"The registration token is not a valid FCM registration token"}}`, true, false},
+		"server error":    {503, `{"error":{"code":503,"status":"UNAVAILABLE","message":"try later"}}`, false, true},
+		"quota":           {429, `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"slow down"}}`, false, true},
+		"bad request":     {400, `{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"bad field"}}`, false, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -125,6 +128,9 @@ func TestSendMapsGoneTokensToErrUnregistered(t *testing.T) {
 			err = c.Send(context.Background(), push.Message{Token: "x"})
 			if errors.Is(err, push.ErrUnregistered) != tc.gone {
 				t.Fatalf("err = %v, want unregistered=%v", err, tc.gone)
+			}
+			if errors.Is(err, push.ErrTemporary) != tc.temporary {
+				t.Fatalf("err = %v, want temporary=%v", err, tc.temporary)
 			}
 			if err == nil {
 				t.Fatal("want an error")

@@ -726,9 +726,26 @@ func (s *NotifyService) background(ctx context.Context, fn func(context.Context)
 	}()
 }
 
-// send delivers m, forgetting its token if FCM says the install is gone.
+// pushRetryWaits are the pauses before a second and third try at a push the
+// provider couldn't take for a moment (FCM asks for backoff on 429 and 5xx).
+var pushRetryWaits = []time.Duration{time.Second, 4 * time.Second}
+
+// send delivers m, forgetting its token if FCM says the install is gone and
+// trying again (see pushRetryWaits) after a temporary failure.
 func (s *NotifyService) send(ctx context.Context, m push.Message) bool {
 	err := s.sender.Send(ctx, m)
+	for _, wait := range pushRetryWaits {
+		if !errors.Is(err, push.ErrTemporary) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			slog.WarnContext(ctx, "push: send failed", "channel", m.Channel, "error", err)
+			return false
+		case <-time.After(wait):
+		}
+		err = s.sender.Send(ctx, m)
+	}
 	if errors.Is(err, push.ErrUnregistered) {
 		if err := s.tokens.Delete(ctx, m.Token); err != nil {
 			slog.WarnContext(ctx, "push: dropping dead token failed", "error", err)

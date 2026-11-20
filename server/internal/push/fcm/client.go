@@ -176,7 +176,10 @@ func (c *Client) Send(ctx context.Context, m push.Message) error {
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("fcm: sending: %w", err)
+		if ctx.Err() != nil {
+			return fmt.Errorf("fcm: sending: %w", err)
+		}
+		return fmt.Errorf("fcm: sending: %w: %w", push.ErrTemporary, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
@@ -195,6 +198,10 @@ func (c *Client) Send(ctx context.Context, m push.Message) error {
 	// A token that was never valid comes back as a plain bad argument.
 	if e.Error.Status == "INVALID_ARGUMENT" && strings.Contains(strings.ToLower(e.Error.Message), "registration token") {
 		return push.ErrUnregistered
+	}
+	// FCM asks for a retry with backoff on 429 and 5xx.
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return fmt.Errorf("fcm: %d %s: %s: %w", resp.StatusCode, e.Error.Status, e.Error.Message, push.ErrTemporary)
 	}
 	return fmt.Errorf("fcm: %d %s: %s", resp.StatusCode, e.Error.Status, e.Error.Message)
 }
