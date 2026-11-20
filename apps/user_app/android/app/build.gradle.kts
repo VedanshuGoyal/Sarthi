@@ -115,9 +115,12 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
-// Push notifications (Firebase Cloud Messaging) need android/app/
-// google-services.json, downloaded from the Firebase console. It's
-// git-ignored; without it the app still builds and just runs without push.
+// Push notifications (Firebase Cloud Messaging) and crash reports (Firebase
+// Crashlytics) need android/app/google-services.json, downloaded from the
+// Firebase console. It's git-ignored; without it the app still builds and
+// just runs without push or crash reporting. The two plugins go together:
+// Crashlytics needs the build id its plugin adds whenever Firebase starts.
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
