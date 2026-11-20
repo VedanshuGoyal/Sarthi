@@ -75,14 +75,17 @@ func TestRecordPayout_checksWhatTheListShowed(t *testing.T) {
 	}
 }
 
-func TestRecordPayout_oldCallerWithoutTotals(t *testing.T) {
+// A payout without the amount the list showed is refused: the server
+// couldn't tell a ride paid after the list was read from one the transfer
+// covered.
+func TestRecordPayout_refusedWithoutTotals(t *testing.T) {
 	store := &fakePayoutStore{}
 	rec := postPayout(adminPayouts(store), `{"driverId":"d1","reference":"UTR1","asOf":"2026-11-10T12:00:00Z"}`)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status %d, want 201: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400: %s", rec.Code, rec.Body)
 	}
-	if e := store.gotExpect; e == nil || e.AmountPaise != nil || e.Rides != nil {
-		t.Errorf("expectation = %+v, want none checked", e)
+	if store.gotExpect != nil {
+		t.Errorf("store called with %+v, want no call", store.gotExpect)
 	}
 }
 
@@ -119,7 +122,8 @@ func TestDuePayouts_csvIsSafeAndUncached(t *testing.T) {
 			}
 			continue
 		}
-		if !strings.Contains(body, `"onHold":true`) || strings.Contains(body, "999") {
+		// Quoted, so a timestamp's fraction (…59.999…) doesn't match.
+		if !strings.Contains(body, `"onHold":true`) || strings.Contains(body, `"999"`) {
 			t.Errorf("json should list the held driver without the number:\n%s", body)
 		}
 	}

@@ -239,7 +239,13 @@ func (p tripPlan) billedHours() int {
 func hourlyCharge(p tripPlan, started, ended time.Time) int64 {
 	minutes := max(int(ended.Sub(started)/time.Minute), 0)
 	hours := min(max((minutes+59)/60, 1), maxHireHours)
-	return int64(roundTripFareRupees(started, hours, p.luxury())) * 100
+	// The night surcharge follows the booked start, as the quote did, so a
+	// start a few minutes either side of midnight doesn't change it.
+	from := p.ScheduledAt
+	if from.IsZero() {
+		from = started
+	}
+	return int64(roundTripFareRupees(from, hours, p.luxury())) * 100
 }
 
 // finalFare is what a trip that ran from started to ended costs, booked

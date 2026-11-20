@@ -98,14 +98,21 @@ func TestPaymentRepository_OrderItems_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := 0
+	var listed []domain.AttentionOrder
 	for _, o := range att.PaidTwice {
 		if o.MerchantOrderID == both.MerchantOrderID {
-			listed++
+			listed = append(listed, o)
 		}
 	}
-	if listed != 1 {
-		t.Errorf("the partly double-paid order is listed %d times, want once: %+v", listed, att.PaidTwice)
+	// Listed once, for the booking paid twice and its part of the order: the
+	// refund is ₹139, not the whole ₹379.
+	if len(listed) != 1 || listed[0].BookingID != old || listed[0].AmountPaise != 13900 || listed[0].PaidBy != "cash" {
+		t.Errorf("paid-twice rows for the order = %+v; want one for %s, 13900, paid by cash", listed, old)
+	}
+	// A new order can't take in a booking that's paid already.
+	again := order("MOJUD_items_again", domain.PaymentItem{BookingID: old, AmountPaise: 13900})
+	if err := payments.InsertOrder(ctx, again); !errors.Is(err, ErrOrderItemPaid) {
+		t.Errorf("InsertOrder with a paid booking: err = %v, want ErrOrderItemPaid", err)
 	}
 	// Recorded already: a second call changes nothing.
 	if res, err := payments.CompleteOrder(ctx, both, domain.GatewayOrderStatus{State: domain.PaymentCompleted,
@@ -191,7 +198,7 @@ func TestPaymentRepository_SettleByHand_Integration(t *testing.T) {
 		t.Fatalf("no rides: dues %v", got)
 	}
 	// Below the gateway's minimum on its own, but still owed: it is carried.
-	small := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 50)
+	small := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday.Add(-time.Minute), 50)
 	ride := rideIn(t, ctx, tx, user, driver, domain.RideStatusCompleted, yesterday, 24000)
 	open := rideIn(t, ctx, tx, user, "", domain.RideStatusRequested, time.Now().Add(48*time.Hour), 24000)
 	if got := dueIDs(t, ctx, bookings, user); !slices.Equal(got, []string{small, ride}) {

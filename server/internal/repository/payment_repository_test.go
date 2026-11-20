@@ -40,6 +40,26 @@ func paidRide(t *testing.T, ctx context.Context, db DB, userID, driverID string,
 	return id
 }
 
+// orderForPaidRide stores order o for a ride paidRide marked paid, as if the
+// order had been opened before the payment landed (InsertOrder itself
+// refuses a booking that's paid already).
+func orderForPaidRide(t *testing.T, ctx context.Context, db DB, o domain.PaymentOrder) {
+	t.Helper()
+	var paidAt time.Time
+	if err := db.QueryRow(ctx, `SELECT paid_at FROM bookings WHERE id = $1`, o.BookingID).Scan(&paidAt); err != nil {
+		t.Fatalf("reading paid_at: %v", err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE bookings SET paid_at = NULL WHERE id = $1`, o.BookingID); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewPaymentRepository(db).InsertOrder(ctx, o); err != nil {
+		t.Fatalf("InsertOrder: %v", err)
+	}
+	if _, err := db.Exec(ctx, `UPDATE bookings SET paid_at = $2 WHERE id = $1`, o.BookingID, paidAt); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func payoutOf(t *testing.T, ctx context.Context, db DB, bookingID string) string {
 	t.Helper()
 	var payout string
@@ -62,9 +82,7 @@ func TestPaymentRepository_OrderKeepsItsCheckoutToken_Integration(t *testing.T) 
 		{MerchantOrderID: "MOJUD_test_old"}, // opened before tokens were kept
 	} {
 		o.BookingID, o.UserID, o.AmountPaise, o.ProviderOrderID, o.ExpiresAt = booking, user, 30000, "OMO1", expires
-		if err := repo.InsertOrder(ctx, o); err != nil {
-			t.Fatalf("InsertOrder: %v", err)
-		}
+		orderForPaidRide(t, ctx, tx, o)
 	}
 	pending, err := repo.PendingForBooking(ctx, booking)
 	if err != nil || len(pending) != 2 {

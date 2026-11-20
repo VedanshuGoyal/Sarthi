@@ -301,7 +301,7 @@ func TestAdminBookingsAndAttention(t *testing.T) {
 // A recorded payout is audited with what it covered.
 func TestRecordPayout_isAudited(t *testing.T) {
 	h, _, audit := opsHandler(&fakePayoutStore{})
-	rec := postPayout(h, `{"driverId":"d1","reference":"UTR9","asOf":"2026-11-10T12:00:00Z"}`)
+	rec := postPayout(h, `{"driverId":"d1","reference":"UTR9","asOf":"2026-11-10T12:00:00Z","amountPaise":13050,"rides":2}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}

@@ -13,7 +13,7 @@ import (
 
 // ErrInvalidPayout is returned when a payout names no driver or no bank
 // reference.
-var ErrInvalidPayout = errors.New("a payout needs the driverId and the bank's transfer reference")
+var ErrInvalidPayout = errors.New("a payout needs the driverId, the bank's transfer reference and the amount the payouts list showed")
 
 // PayoutStore lists what drivers are owed and records transfers
 // (repository.PaymentRepository).
@@ -108,7 +108,9 @@ func (s *PayoutService) Record(
 	ctx context.Context, driverID, reference string, asOf time.Time, expect repository.ExpectedPayout,
 ) (domain.DriverPayout, error) {
 	driverID, reference = strings.TrimSpace(driverID), strings.TrimSpace(reference)
-	if driverID == "" || reference == "" {
+	// Without the amount it showed, a ride paid after the list was read
+	// could be swept into a transfer that didn't include it.
+	if driverID == "" || reference == "" || expect.AmountPaise == nil {
 		return domain.DriverPayout{}, ErrInvalidPayout
 	}
 	now := s.now()

@@ -37,7 +37,19 @@ import (
 func (r *PaymentRepository) SettleByHand(
 	ctx context.Context, id string, mode domain.SettleMode, note string, commissionBP int64, at time.Time,
 ) (domain.Booking, error) {
-	b, err := scanBooking(r.db.QueryRow(ctx, `
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return domain.Booking{}, fmt.Errorf("settling booking: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Lock the row before looking for orders: InsertOrder takes the same
+	// lock, and the UPDATE below (a new statement) then sees any order
+	// committed while this waited.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM bookings WHERE id = $1 FOR UPDATE`, id); err != nil {
+		_ = tx.Rollback(ctx)
+		return domain.Booking{}, bookingExplain(ctx, r.db, err, id, "settling booking")
+	}
+	b, err := scanBooking(tx.QueryRow(ctx, `
 		UPDATE bookings
 		SET paid_at = $2, paid_mode = $3, paid_note = nullif($4, ''),
 		    paid_paise       = CASE WHEN $3 = 'waived' THEN `+owedPaise+` ELSE 0 END,
@@ -51,7 +63,11 @@ func (r *PaymentRepository) SettleByHand(
 		                                                     WHERE booking_id = bookings.id)))
 		RETURNING `+bookingColumns,
 		id, at, string(mode), note, commissionBP))
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
 	if err != nil {
+		_ = tx.Rollback(ctx)
 		err = bookingExplain(ctx, r.db, err, id, "settling booking")
 		if errors.Is(err, ErrBookingStateConflict) {
 			var open bool
@@ -95,19 +111,17 @@ func (r *PaymentRepository) PaymentAttention(ctx context.Context, pendingBefore 
 		out domain.PaymentAttention
 		err error
 	)
-	// An order paying several bookings is listed once, for the first of
-	// them something else had paid.
+	// One row per booking a completed order paid for that something else
+	// had paid: that booking's part of the order is what goes back.
 	out.PaidTwice, err = r.attentionOrders(ctx, `
-		SELECT * FROM (
-		    SELECT DISTINCT ON (po.merchant_order_id) `+attentionColumns+`
-		    FROM payment_orders po JOIN bookings b
-		      ON b.id = po.booking_id
-		      OR b.id IN (SELECT booking_id FROM payment_order_items i
-		                  WHERE i.merchant_order_id = po.merchant_order_id)
-		    WHERE po.state = 'completed' AND po.merchant_order_id IS DISTINCT FROM b.payment_order_id
-		    ORDER BY po.merchant_order_id, b.id
-		) twice
-		ORDER BY updated_at DESC
+		SELECT po.merchant_order_id, b.id::text, po.user_id::text, coalesce(i.amount_paise, po.amount_paise),
+		       po.state, coalesce(po.transaction_id, ''), coalesce(po.payment_mode, ''), coalesce(po.utr, ''),
+		       po.created_at, po.updated_at, coalesce(b.payment_order_id, b.paid_mode, '')
+		FROM payment_orders po
+		LEFT JOIN payment_order_items i ON i.merchant_order_id = po.merchant_order_id
+		JOIN bookings b ON b.id = coalesce(i.booking_id, po.booking_id)
+		WHERE po.state = 'completed' AND po.merchant_order_id IS DISTINCT FROM b.payment_order_id
+		ORDER BY po.updated_at DESC, b.id
 		LIMIT $1`, limit)
 	if err != nil {
 		return domain.PaymentAttention{}, err

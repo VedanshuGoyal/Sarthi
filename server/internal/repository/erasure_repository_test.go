@@ -50,12 +50,10 @@ func TestErasureRepository_EraseUser_Integration(t *testing.T) {
 	}
 	// Everything a customer leaves behind, and money records that must stay.
 	paid := paidRide(t, ctx, tx, user, driver, time.Now(), 30000, 3900)
-	if err := NewPaymentRepository(tx).InsertOrder(ctx, domain.PaymentOrder{
+	orderForPaidRide(t, ctx, tx, domain.PaymentOrder{
 		MerchantOrderID: "MOJUD_erase_" + user, BookingID: paid, UserID: user, AmountPaise: 30000,
 		ProviderOrderID: "OMO1", ExpiresAt: time.Now().Add(time.Hour),
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	open := insertRide(t, ctx, tx, user, nil, "requested")
 	for _, q := range []string{
 		`INSERT INTO sessions (token, user_id, expires_at) VALUES ('erase-test-' || $1::text, $1::uuid, now() + interval '1 day')`,
