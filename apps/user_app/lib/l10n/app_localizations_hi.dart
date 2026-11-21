@@ -1622,12 +1622,12 @@ class AppLocalizationsHi extends AppLocalizations {
 
   @override
   String cancelSheetFeeWarningNamed(String name) {
-    return 'यह चार्ज आप अगली बुकिंग से पहले, राइड की तरह UPI से देंगे। $name को बताया जाएगा कि आपने कैंसल किया।';
+    return 'यह चार्ज अभी UPI से दें, या यह आपकी अगली राइड के पेमेंट में जुड़ जाएगा। $name को बताया जाएगा कि आपने कैंसल किया।';
   }
 
   @override
   String get cancelSheetFeeWarning =>
-      'यह चार्ज आप अगली बुकिंग से पहले, राइड की तरह UPI से देंगे। आपके ड्राइवर को बताया जाएगा कि आपने कैंसल किया।';
+      'यह चार्ज अभी UPI से दें, या यह आपकी अगली राइड के पेमेंट में जुड़ जाएगा। आपके ड्राइवर को बताया जाएगा कि आपने कैंसल किया।';
 
   @override
   String cancelSheetWaitingNamed(String name) {

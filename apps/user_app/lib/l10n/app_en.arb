@@ -2255,7 +2255,7 @@
       }
     }
   },
-  "cancelSheetFeeWarningNamed": "You'll pay the fee by UPI, like a ride, before your next booking. {name} will be told you cancelled.",
+  "cancelSheetFeeWarningNamed": "Pay it by UPI now, or it's added when you pay for your next ride. {name} will be told you cancelled.",
   "@cancelSheetFeeWarningNamed": {
     "description": "Cancel sheet note when cancelling costs a fee. name is the driver's first name.",
     "placeholders": {
@@ -2264,7 +2264,7 @@
       }
     }
   },
-  "cancelSheetFeeWarning": "You'll pay the fee by UPI, like a ride, before your next booking. Your driver will be told you cancelled.",
+  "cancelSheetFeeWarning": "Pay it by UPI now, or it's added when you pay for your next ride. Your driver will be told you cancelled.",
   "@cancelSheetFeeWarning": {
     "description": "As cancelSheetFeeWarningNamed when the driver's name isn't known."
   },

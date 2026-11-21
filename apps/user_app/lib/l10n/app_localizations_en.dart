@@ -1649,12 +1649,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String cancelSheetFeeWarningNamed(String name) {
-    return 'You\'ll pay the fee by UPI, like a ride, before your next booking. $name will be told you cancelled.';
+    return 'Pay it by UPI now, or it\'s added when you pay for your next ride. $name will be told you cancelled.';
   }
 
   @override
   String get cancelSheetFeeWarning =>
-      'You\'ll pay the fee by UPI, like a ride, before your next booking. Your driver will be told you cancelled.';
+      'Pay it by UPI now, or it\'s added when you pay for your next ride. Your driver will be told you cancelled.';
 
   @override
   String cancelSheetWaitingNamed(String name) {

@@ -2693,13 +2693,13 @@ abstract class AppLocalizations {
   /// Cancel sheet note when cancelling costs a fee. name is the driver's first name.
   ///
   /// In en, this message translates to:
-  /// **'You\'ll pay the fee by UPI, like a ride, before your next booking. {name} will be told you cancelled.'**
+  /// **'Pay it by UPI now, or it\'s added when you pay for your next ride. {name} will be told you cancelled.'**
   String cancelSheetFeeWarningNamed(String name);
 
   /// As cancelSheetFeeWarningNamed when the driver's name isn't known.
   ///
   /// In en, this message translates to:
-  /// **'You\'ll pay the fee by UPI, like a ride, before your next booking. Your driver will be told you cancelled.'**
+  /// **'Pay it by UPI now, or it\'s added when you pay for your next ride. Your driver will be told you cancelled.'**
   String get cancelSheetFeeWarning;
 
   /// Cancel sheet note, driver at the pickup, no fee. name is the driver's first name.
