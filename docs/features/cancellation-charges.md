@@ -46,7 +46,7 @@ Customer booking JSON (`GET /me/bookings`, `GET /me/bookings/{id}`, cancel/end r
 
 Checkout (`POST /me/bookings/{id}/payment`) and sync (`…/payment/sync`) also take a cancelled booking whose `paymentStatus` is `due`; the amount is the fee.
 New bookings are never refused for money owed (no more 409 `payment_due`); checkout `amountPaise` includes `carriedPaise`.
-A booking is never in two open orders: Pay on a booking an open order already collects reopens that order, and dues another open order collects stay out of a new one (21 Nov, after the Fable review).
+A booking is never in two orders that can still be opened. Pay replaces any open order for the customer's dues with a new one that collects them all, because PhonePe's page won't reopen an order the customer has left (phone test, 21 Nov). The exception is a payment under way on the open order (its latest attempt is pending at PhonePe): then checkout answers 409 `payment_underway` and nothing new is opened. A replaced order paid after all lands in the paid-twice list for a refund.
 
 Driver ride JSON: `cancellationFeePaise`, `paymentStatus` (`due`/`paid`/`paid_out`), `sharePaise` on a ride the customer cancelled at the pickup;
 `bookedFarePaise` on one they ended early. Earnings: fees count in "awaiting customer", "due to you" and "paid out"; ride counts and fare windows stay completed rides only.

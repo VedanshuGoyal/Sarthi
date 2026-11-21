@@ -1425,6 +1425,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ridePayUnavailable => 'Paying in the app isn\'t available yet.';
 
   @override
+  String get ridePayUnderway =>
+      'Your last payment is still going through. Check your UPI app, or try again in a few minutes.';
+
+  @override
   String get ridePayNotYet => 'This ride can\'t be paid for yet.';
 
   @override

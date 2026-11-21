@@ -16,7 +16,11 @@
 #   - multi-stop bookings name the car, required only from user app
 #     build 10 (1.6.0 is +9, so released apps are unaffected);
 #   - a push FCM couldn't take for a moment (network, 429, 5xx) is tried
-#     again after 1 s and 4 s.
+#     again after 1 s and 4 s;
+#   - Pay after leaving PhonePe's page opens a new order instead of the old
+#     one, which PhonePe's page won't reopen (phone test, 21 Nov). If a
+#     payment on the old order is still under way, the app is told to wait
+#     (409 payment_underway) instead (fix/payment-reopen).
 #
 # Steps (stops at the first failure):
 #   1. local HEAD == origin/main

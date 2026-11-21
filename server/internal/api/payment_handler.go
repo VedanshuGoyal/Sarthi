@@ -101,6 +101,8 @@ func writePaymentError(w http.ResponseWriter, err error, fallback string) {
 		writeErrorCode(w, http.StatusServiceUnavailable, "payments_not_configured", err.Error(), 0)
 	case errors.Is(err, service.ErrAlreadyPaid):
 		writeErrorCode(w, http.StatusConflict, "already_paid", err.Error(), 0)
+	case errors.Is(err, service.ErrPaymentUnderway):
+		writeErrorCode(w, http.StatusConflict, "payment_underway", err.Error(), 0)
 	case errors.Is(err, repository.ErrBookingNotFound),
 		errors.Is(err, repository.ErrBookingStateConflict):
 		writeBookingError(w, err, fallback)

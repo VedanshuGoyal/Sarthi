@@ -1410,6 +1410,10 @@ class AppLocalizationsHi extends AppLocalizations {
   String get ridePayUnavailable => 'ऐप में पेमेंट अभी शुरू नहीं हुआ है।';
 
   @override
+  String get ridePayUnderway =>
+      'आपका पिछला पेमेंट अभी प्रोसेस हो रहा है। अपना UPI ऐप देखें, या कुछ मिनट बाद फिर कोशिश करें।';
+
+  @override
   String get ridePayNotYet => 'इस राइड का पेमेंट अभी नहीं हो सकता।';
 
   @override

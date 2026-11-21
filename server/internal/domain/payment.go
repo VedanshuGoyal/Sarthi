@@ -21,9 +21,9 @@ type PaymentOrder struct {
 	UserID          string
 	AmountPaise     int64
 	ProviderOrderID string
-	// CheckoutToken is what the app's SDK opens the order with, kept so a
-	// second tap on Pay reopens the same order instead of a second one.
-	// Empty for orders opened before it was stored.
+	// CheckoutToken is what the app's SDK opens the order with. It is
+	// cleared once a new order replaces this one, so the open-order guard
+	// stops counting it. Empty for orders opened before it was stored.
 	CheckoutToken string
 	State         PaymentState
 	TransactionID string
@@ -31,6 +31,11 @@ type PaymentOrder struct {
 	UTR           string
 	ExpiresAt     time.Time
 	CreatedAt     time.Time
+
+	// Attempting says the gateway has a payment on this order under way:
+	// the customer may be in their UPI app right now. Not stored; set by the
+	// sync that asked.
+	Attempting bool
 
 	// Items are the bookings the order pays and each one's part of
 	// AmountPaise: the booking tapped (BookingID) and any other the customer
@@ -91,6 +96,9 @@ type GatewayOrderStatus struct {
 	TransactionID string
 	PaymentMode   string
 	UTR           string
+	// Attempting: the order is still open and one of its payment attempts
+	// hasn't failed, so money may yet move.
+	Attempting bool
 }
 
 // PaymentCheckout is what the customer app needs to open the gateway's

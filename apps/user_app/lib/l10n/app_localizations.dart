@@ -2330,6 +2330,12 @@ abstract class AppLocalizations {
   /// **'Paying in the app isn\'t available yet.'**
   String get ridePayUnavailable;
 
+  /// Pay tapped while a payment from an earlier attempt is still pending at the gateway.
+  ///
+  /// In en, this message translates to:
+  /// **'Your last payment is still going through. Check your UPI app, or try again in a few minutes.'**
+  String get ridePayUnderway;
+
   /// The ride isn't due for payment.
   ///
   /// In en, this message translates to:

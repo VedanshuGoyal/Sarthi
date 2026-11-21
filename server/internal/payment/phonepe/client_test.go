@@ -140,6 +140,30 @@ func TestOrderStatusReadsThePayingAttempt(t *testing.T) {
 		t.Errorf("status = %+v, want %+v", st, want)
 	}
 
+	// Open, and an attempt still going — even an earlier one, after a later
+	// one failed: a payment is under way.
+	for _, details := range []string{
+		`{"transactionId":"T1","paymentMode":"UPI_INTENT","state":"FAILED"},
+		 {"transactionId":"T2","paymentMode":"UPI_INTENT","state":"PENDING"}`,
+		`{"transactionId":"T1","paymentMode":"UPI_COLLECT","state":"PENDING"},
+		 {"transactionId":"T2","paymentMode":"UPI_INTENT","state":"FAILED"}`,
+	} {
+		f.status = `{"state":"PENDING","amount":45000,"paymentDetails":[` + details + `]}`
+		if st, err := c.OrderStatus(context.Background(), "MOJUD_abc_1"); err != nil || !st.Attempting {
+			t.Errorf("%s: attempting = %v, %v; want true", details, st.Attempting, err)
+		}
+	}
+	// Open, the customer left the page before paying: nothing under way.
+	for _, body := range []string{
+		`{"state":"PENDING","amount":45000}`,
+		`{"state":"PENDING","amount":45000,"paymentDetails":[{"transactionId":"T1","state":"FAILED"}]}`,
+	} {
+		f.status = body
+		if st, err := c.OrderStatus(context.Background(), "MOJUD_abc_1"); err != nil || st.Attempting {
+			t.Errorf("%s: attempting = %v, %v; want false", body, st.Attempting, err)
+		}
+	}
+
 	f.status = `{"state":"SOMETHING_NEW","amount":1}`
 	if _, err := c.OrderStatus(context.Background(), "MOJUD_abc_1"); err == nil {
 		t.Error("unknown state accepted")
