@@ -432,11 +432,13 @@ class _RequestActions extends StatelessWidget {
             onPressed: busy ? null : onDecline,
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
+              padding: const EdgeInsets.symmetric(horizontal: Skyline.s12),
             ),
-            child: Text(
-              context.l10n.dutyDecline,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            // A third of the row is narrow on a phone: shrink the word
+            // rather than cut it.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(context.l10n.dutyDecline, maxLines: 1),
             ),
           ),
         ),

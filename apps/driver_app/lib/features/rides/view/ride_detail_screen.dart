@@ -97,7 +97,10 @@ class RideDetailScreen extends ConsumerWidget {
               ],
               const SizedBox(height: Skyline.s16),
               _RouteCard(ride: current, showNavigate: !isRequest),
-              if (current.customer != null) ...[
+              // Once cancelled, the ride is over for the driver: no number
+              // to call.
+              if (current.customer != null &&
+                  current.status != RideStatus.cancelled) ...[
                 const SizedBox(height: Skyline.s16),
                 _CustomerCard(customer: current.customer!),
               ],
@@ -138,7 +141,7 @@ class _Summary extends StatelessWidget {
   final Ride ride;
 
   /// The header's time note: how soon the ride starts, or — once the driver
-  /// is on it — what has happened.
+  /// is on it, or it was cancelled — what has happened.
   static String _timing(AppLocalizations l10n, Ride ride) =>
       switch (ride.status) {
         RideStatus.arrived => l10n.rideDetailAtPickupSince(
@@ -149,6 +152,9 @@ class _Summary extends StatelessWidget {
         ),
         RideStatus.completed => l10n.rideDetailDoneAt(
           RideFormat.when(ride.completedAt ?? ride.endsAt),
+        ),
+        RideStatus.cancelled => l10n.rideDetailCancelledAt(
+          RideFormat.when(ride.cancelledAt ?? ride.scheduledAt),
         ),
         _ => RideFormat.relative(ride.scheduledAt),
       };
@@ -355,7 +361,7 @@ class _RouteCard extends StatelessWidget {
                 : null,
           ),
           RouteTimeline(ride: ride),
-          if (showNavigate && ride.status != RideStatus.completed) ...[
+          if (showNavigate && ride.status.isActive) ...[
             const SizedBox(height: Skyline.s16),
             OutlinedButton.icon(
               onPressed: () => _navigate(context, target),

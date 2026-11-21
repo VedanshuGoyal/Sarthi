@@ -309,6 +309,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String rideDetailCancelledAt(String when) {
+    return 'Cancelled $when';
+  }
+
+  @override
   String rideDetailSpanUntil(String span, String time) {
     return '$span · until ~$time';
   }

@@ -7,6 +7,7 @@ import 'package:driver_app/features/auth/driver_auth_controller.dart';
 import 'package:driver_app/features/rides/domain/ride.dart';
 import 'package:driver_app/features/rides/rides_providers.dart';
 import 'package:driver_app/features/rides/view/ride_detail_screen.dart';
+import 'package:driver_app/features/rides/view/ride_format.dart';
 import 'package:driver_app/l10n/l10n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -164,6 +165,49 @@ void main() {
     check(find.text('Accept ride').evaluate()).isEmpty();
     check(find.text("I've arrived at pickup").evaluate()).isEmpty();
     check(find.text('Complete trip').evaluate()).isEmpty();
+  });
+
+  testWidgets('a cancelled ride says when, with no countdown, no way to '
+      'the pickup and no customer to call', (tester) async {
+    final cancelledRide = Ride.tryParse(
+      rideJson(
+        id: 'r',
+        status: 'cancelled',
+        scheduledAt: DateTime.now()
+            .add(const Duration(hours: 1))
+            .toIso8601String(),
+        cancelledAt: '2026-10-25T08:00:00+05:30',
+        cancelledBy: 'customer',
+        withCustomer: true,
+      ),
+    )!;
+    repo.mine = [cancelledRide];
+
+    await pump(tester, cancelledRide);
+
+    check(
+      find
+          .text('Cancelled ${RideFormat.when(cancelledRide.cancelledAt!)}')
+          .evaluate(),
+    ).isNotEmpty();
+    check(find.textContaining(RegExp(r'^in \d')).evaluate()).isEmpty();
+    check(find.text('Navigate to pickup').evaluate()).isEmpty();
+    check(find.text('Asha Kumari').evaluate()).isEmpty();
+    check(find.byTooltip('Call customer').evaluate()).isEmpty();
+  });
+
+  testWidgets('an accepted ride still offers the way to the pickup', (
+    tester,
+  ) async {
+    final accepted = Ride.tryParse(
+      rideJson(id: 'r', status: 'accepted', withCustomer: true),
+    )!;
+    repo.mine = [accepted];
+
+    await pump(tester, accepted);
+
+    check(find.text('Navigate to pickup').evaluate()).isNotEmpty();
+    check(find.text('Asha Kumari').evaluate()).isNotEmpty();
   });
 
   testWidgets('a ride the customer cancelled at the pickup shows the fee '

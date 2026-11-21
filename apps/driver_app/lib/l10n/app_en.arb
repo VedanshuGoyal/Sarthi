@@ -408,6 +408,16 @@
       }
     }
   },
+  "rideDetailCancelledAt": "Cancelled {when}",
+  "@rideDetailCancelledAt": {
+    "description": "Ride header note on a cancelled trip.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "Today · 11:30 AM"
+      }
+    }
+  },
   "rideDetailSpanUntil": "{span} · until ~{time}",
   "@rideDetailSpanUntil": {
     "description": "Under the ride's start time: how long it books the driver for, and roughly when they're free.",

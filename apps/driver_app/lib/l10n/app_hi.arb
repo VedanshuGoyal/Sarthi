@@ -92,6 +92,7 @@
   "rideDetailAtPickupSince": "{time} से पिकअप पर",
   "rideDetailStartedAt": "{time} पर शुरू हुई",
   "rideDetailDoneAt": "पूरी हुई: {when}",
+  "rideDetailCancelledAt": "कैंसल हुई: {when}",
   "rideDetailSpanUntil": "{span} · ~{time} तक",
   "rideDetailFareEstimated": "अंदाज़न किराया",
   "rideDetailFareTrip": "ट्रिप का किराया",

@@ -650,6 +650,12 @@ abstract class AppLocalizations {
   /// **'Done {when}'**
   String rideDetailDoneAt(String when);
 
+  /// Ride header note on a cancelled trip.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled {when}'**
+  String rideDetailCancelledAt(String when);
+
   /// Under the ride's start time: how long it books the driver for, and roughly when they're free.
   ///
   /// In en, this message translates to:
