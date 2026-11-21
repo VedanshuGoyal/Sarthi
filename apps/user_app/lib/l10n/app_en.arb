@@ -1947,6 +1947,10 @@
   "@ridePayUnavailable": {
     "description": "Payments are switched off on the server."
   },
+  "ridePayUnderway": "Your last payment is still going through. Check your UPI app, or try again in a few minutes.",
+  "@ridePayUnderway": {
+    "description": "Pay tapped while a payment from an earlier attempt is still pending at the gateway."
+  },
   "ridePayNotYet": "This ride can't be paid for yet.",
   "@ridePayNotYet": {
     "description": "The ride isn't due for payment."

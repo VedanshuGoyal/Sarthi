@@ -641,6 +641,7 @@ class RideDetailsViewModel extends ChangeNotifier {
     } on BookingActionException catch (e) {
       _payError = switch (e.code) {
         BookingErrorCode.paymentsOff => L10n.current.ridePayUnavailable,
+        BookingErrorCode.paymentUnderway => L10n.current.ridePayUnderway,
         BookingErrorCode.wrongState => L10n.current.ridePayNotYet,
         BookingErrorCode.notFound => L10n.current.rideErrorNotFound,
         _ => e.message,

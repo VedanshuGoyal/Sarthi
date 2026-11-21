@@ -80,6 +80,10 @@ enum BookingErrorCode {
   /// The server couldn't reach the payment gateway.
   paymentGateway('payment_gateway'),
 
+  /// A payment from an earlier attempt is still going through at the
+  /// gateway; a new one could pay twice.
+  paymentUnderway('payment_underway'),
+
   /// Cancelling now costs more than the customer agreed to — the driver
   /// reached the pickup after the confirmation opened. Nothing changed; the
   /// fee is in [BookingActionException.feePaise].
@@ -279,7 +283,8 @@ class BookingRepository {
   /// is due (`POST /me/bookings/{id}/payment`), for the payment SDK to show;
   /// the server sets the amount. Throws [BookingActionException] —
   /// `alreadyPaid` when it's paid for, `wrongState` before it's completed,
-  /// `paymentsOff` / `paymentGateway` when payments can't be taken.
+  /// `paymentsOff` / `paymentGateway` when payments can't be taken,
+  /// `paymentUnderway` while an earlier payment is still going through.
   Future<PaymentCheckout> startPayment(String id) async {
     final reply = await _act('POST', id, 'payment');
     return PaymentCheckout.tryParse(reply['checkout']) ??

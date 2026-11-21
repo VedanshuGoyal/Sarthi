@@ -139,8 +139,18 @@ func TestPaymentRepository_NoSecondOpenOrder_Integration(t *testing.T) {
 	if err := payments.InsertOrder(ctx, order("MOJUD_open_second", "tok2", 15*time.Minute)); !errors.Is(err, ErrOrderOpen) {
 		t.Fatalf("second order beside an open one: err = %v, want ErrOrderOpen", err)
 	}
+	// Once replaced, the open order no longer stands in the way.
+	if err := payments.ReplaceOrders(ctx, []string{"MOJUD_open_first"}); err != nil {
+		t.Fatalf("ReplaceOrders: %v", err)
+	}
+	if err := payments.InsertOrder(ctx, order("MOJUD_open_second", "tok2", 15*time.Minute)); err != nil {
+		t.Fatalf("order after replacing the open one: %v", err)
+	}
+	if o, err := payments.FindOrder(ctx, "MOJUD_open_first"); err != nil || o.CheckoutToken != "" || o.State != domain.PaymentPending {
+		t.Errorf("replaced order: token %q state %q err %v; want no token, still pending", o.CheckoutToken, o.State, err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE payment_orders SET expires_at = now() + interval '1 minute'
-		WHERE merchant_order_id = 'MOJUD_open_first'`); err != nil {
+		WHERE merchant_order_id = 'MOJUD_open_second'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := payments.InsertOrder(ctx, order("MOJUD_open_replace", "tok3", 15*time.Minute)); err != nil {

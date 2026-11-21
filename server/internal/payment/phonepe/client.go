@@ -196,7 +196,9 @@ type orderStatusResponse struct {
 
 // OrderStatus asks PhonePe where merchantOrderID stands.
 func (c *Client) OrderStatus(ctx context.Context, merchantOrderID string) (domain.GatewayOrderStatus, error) {
-	path := "/checkout/v2/order/" + url.PathEscape(merchantOrderID) + "/status?details=false"
+	// Every attempt, not just the latest: an earlier one may still be
+	// going through after a later one failed.
+	path := "/checkout/v2/order/" + url.PathEscape(merchantOrderID) + "/status?details=true"
 	var out orderStatusResponse
 	if err := c.call(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return domain.GatewayOrderStatus{}, fmt.Errorf("phonepe: order status: %w", err)
@@ -211,6 +213,14 @@ func (c *Client) OrderStatus(ctx context.Context, merchantOrderID string) (domai
 		st.State = domain.PaymentPending
 	default:
 		return domain.GatewayOrderStatus{}, fmt.Errorf("phonepe: order status: unknown state %q", out.State)
+	}
+	if st.State == domain.PaymentPending {
+		// Any attempt not known to have failed may still move money.
+		for _, d := range out.PaymentDetails {
+			if d.State != "FAILED" {
+				st.Attempting = true
+			}
+		}
 	}
 	// The attempt that paid, else the latest one.
 	for i := len(out.PaymentDetails) - 1; i >= 0; i-- {

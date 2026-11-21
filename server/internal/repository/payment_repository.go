@@ -34,15 +34,15 @@ type ExpectedPayout struct {
 var ErrOrderItemPaid = fmt.Errorf("%w: a booking in this payment was paid meanwhile", ErrBookingStateConflict)
 
 // ErrOrderOpen refuses a new order for a booking another order still open
-// for payment collects (see [ReusableOrderMargin]): the checkout should hand
-// that one out instead.
+// for payment collects (see [OpenOrderMargin]): the checkout must
+// replace that one first ([PaymentRepository.ReplaceOrders]).
 var ErrOrderOpen = fmt.Errorf("%w: another payment for this booking is still open", ErrBookingStateConflict)
 
-// ReusableOrderMargin is how long an open checkout (one with its token on
-// file) must still have to run to be handed out again rather than replaced:
-// time to finish a UPI payment (my estimate). Until then, no second order
-// may collect for its bookings.
-const ReusableOrderMargin = 2 * time.Minute
+// OpenOrderMargin is how long an open checkout (one with its token on
+// file) must still have to run to count as open: time to finish a UPI
+// payment (my estimate). Until then, no second order may collect for its
+// bookings unless it is replaced.
+const OpenOrderMargin = 2 * time.Minute
 
 // PaymentRepository persists checkouts (payment_orders), the paid state of
 // bookings, and payouts to drivers.
@@ -65,6 +65,20 @@ func scanPaymentOrder(row pgx.Row) (domain.PaymentOrder, error) {
 		&o.ProviderOrderID, &o.CheckoutToken, &o.State, &o.TransactionID, &o.PaymentMode,
 		&o.UTR, &o.ExpiresAt, &o.CreatedAt)
 	return o, err
+}
+
+// ReplaceOrders clears the checkout tokens of the pending orders among
+// merchantOrderIDs: a new order is about to take their place, and
+// [PaymentRepository.InsertOrder] stops counting them as open. They stay
+// pending and are still checked with the gateway, so one paid after all is
+// recorded like any other (as paid twice, if it comes to that).
+func (r *PaymentRepository) ReplaceOrders(ctx context.Context, merchantOrderIDs []string) error {
+	if _, err := r.db.Exec(ctx, `
+		UPDATE payment_orders SET checkout_token = NULL
+		WHERE merchant_order_id = ANY($1) AND state = 'pending'`, merchantOrderIDs); err != nil {
+		return fmt.Errorf("replacing payment orders: %w", err)
+	}
+	return nil
 }
 
 // InsertOrder records a checkout the gateway just opened, as pending, with
@@ -112,7 +126,7 @@ func (r *PaymentRepository) InsertOrder(ctx context.Context, o domain.PaymentOrd
 		               JOIN payment_order_items i ON i.merchant_order_id = po.merchant_order_id
 		               WHERE i.booking_id = ANY($1::uuid[]) AND po.state = 'pending'
 		                 AND po.checkout_token IS NOT NULL AND po.expires_at > $2)`,
-		ids, time.Now().Add(ReusableOrderMargin)).Scan(&open); err != nil {
+		ids, time.Now().Add(OpenOrderMargin)).Scan(&open); err != nil {
 		return fmt.Errorf("inserting payment order: checking open orders: %w", err)
 	}
 	if open {

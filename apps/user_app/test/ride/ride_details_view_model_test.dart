@@ -497,6 +497,22 @@ void main() {
       },
     );
 
+    test(
+      'a payment still going through from an earlier attempt says so',
+      () async {
+        final server = FakeBookingServer([due()])
+          ..paymentError = (409, 'payment_underway');
+        final checkout = _FakeCheckout(CheckoutOutcome.success);
+        final vm = _vm(server, checkout: checkout);
+
+        check(await vm.pay()).isFalse();
+        check(vm.payError).equals(
+          'Your last payment is still going through. Check your UPI app, or '
+          'try again in a few minutes.',
+        );
+      },
+    );
+
     test('payments not set up on the server', () async {
       final server = FakeBookingServer([due()])
         ..paymentError = (503, 'payments_not_configured');

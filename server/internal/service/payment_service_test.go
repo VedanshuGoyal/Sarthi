@@ -88,6 +88,15 @@ func (s *fakePaymentStore) InsertOrder(_ context.Context, o domain.PaymentOrder)
 	return nil
 }
 
+func (s *fakePaymentStore) ReplaceOrders(_ context.Context, ids []string) error {
+	for _, id := range ids {
+		if o := s.orders[id]; o != nil && o.State == domain.PaymentPending {
+			o.CheckoutToken = ""
+		}
+	}
+	return nil
+}
+
 func (s *fakePaymentStore) FindOrder(_ context.Context, id string) (domain.PaymentOrder, error) {
 	o, ok := s.orders[id]
 	if !ok {
@@ -290,9 +299,11 @@ func TestCheckout_findsAnEarlierCheckoutThatWentThrough(t *testing.T) {
 	}
 }
 
-// A second tap on Pay while the first checkout is still open at the gateway
-// reopens that one, so there is never a second payable order to pay twice.
-func TestCheckout_reopensAnOpenCheckout(t *testing.T) {
+// HUMAN REVIEW REQUIRED: payments. The gateway's page won't open again
+// for an order the customer left, so a second tap on Pay replaces the open
+// order with a new one — unless a payment on it is under way, which could
+// still land: then the customer waits instead of paying twice.
+func TestCheckout_replacesAnOpenCheckoutUnlessItIsBeingPaid(t *testing.T) {
 	store := newFakePaymentStore(completedBooking("b1", 30000))
 	gw := &fakeGateway{}
 	svc := newPayments(store, gw, &recordingPaymentAlerts{}, 0)
@@ -302,40 +313,52 @@ func TestCheckout_reopensAnOpenCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Checkout: %v", err)
 	}
-	svc.now = func() time.Time { return testNow.Add(5 * time.Minute) }
-	again, err := svc.Checkout(ctx, "u1", "b1")
+	svc.now = func() time.Time { return testNow.Add(time.Minute) }
+	second, err := svc.Checkout(ctx, "u1", "b1")
 	if err != nil {
 		t.Fatalf("second Checkout: %v", err)
 	}
-	if again != first || len(gw.created) != 1 {
-		t.Fatalf("second tap = %+v (orders created %d), want the first checkout again", again, len(gw.created))
+	if second.MerchantOrderID == first.MerchantOrderID || second.AmountPaise != 30000 || len(gw.created) != 2 {
+		t.Fatalf("second tap = %s for %d (orders created %d), want a new order for 30000",
+			second.MerchantOrderID, second.AmountPaise, len(gw.created))
+	}
+	if tok := store.orders[first.MerchantOrderID].CheckoutToken; tok != "" {
+		t.Errorf("replaced order kept its token %q", tok)
 	}
 
-	// Too close to expiring to finish paying in: a fresh one.
-	svc.now = func() time.Time { return first.ExpiresAt.Add(-time.Minute) }
-	late, err := svc.Checkout(ctx, "u1", "b1")
-	if err != nil {
-		t.Fatalf("late Checkout: %v", err)
+	// The customer is in their UPI app paying the second one.
+	gw.set(second.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentPending, Attempting: true})
+	if _, err := svc.Checkout(ctx, "u1", "b1"); !errors.Is(err, ErrPaymentUnderway) {
+		t.Fatalf("Checkout while paying: err = %v, want ErrPaymentUnderway", err)
 	}
-	if late.MerchantOrderID == first.MerchantOrderID || len(gw.created) != 2 {
-		t.Errorf("near expiry reopened %s (created %d), want a new order", late.MerchantOrderID, len(gw.created))
+	if len(gw.created) != 2 || store.orders[second.MerchantOrderID].CheckoutToken == "" {
+		t.Error("a new order was opened, or the one being paid replaced, while a payment was under way")
 	}
 
-	// One the gateway failed is never handed out again.
-	gw.set(late.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentFailed})
-	svc.now = func() time.Time { return testNow.Add(6 * time.Minute) }
+	// Long past its expiry and still "under way": the gateway has lost it,
+	// and the customer can pay again.
+	svc.now = func() time.Time { return second.ExpiresAt.Add(attemptGrace + time.Second) }
+	stuck, err := svc.Checkout(ctx, "u1", "b1")
+	if err != nil || stuck.MerchantOrderID == second.MerchantOrderID {
+		t.Fatalf("Checkout past the grace = %s, %v; want a new order", stuck.MerchantOrderID, err)
+	}
+	gw.set(stuck.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentPending, Attempting: true})
+
+	// That attempt failed: a fresh order.
+	gw.set(stuck.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentFailed})
+	svc.now = func() time.Time { return second.ExpiresAt.Add(attemptGrace + time.Minute) }
 	next, err := svc.Checkout(ctx, "u1", "b1")
 	if err != nil {
 		t.Fatalf("Checkout after a failure: %v", err)
 	}
-	if next.MerchantOrderID == late.MerchantOrderID {
-		t.Error("a failed order was handed out again")
+	if next.MerchantOrderID == stuck.MerchantOrderID || len(gw.created) != 4 {
+		t.Errorf("after the failure got %s (created %d), want a new order", next.MerchantOrderID, len(gw.created))
 	}
 }
 
-// An order opened before tokens were stored can't be reopened: the customer
-// gets a new one, as before.
-func TestCheckout_orderWithoutATokenIsNotReopened(t *testing.T) {
+// An order opened before tokens were stored is replaced like any other: the
+// customer gets a new one.
+func TestCheckout_replacesAnOrderWithoutAToken(t *testing.T) {
 	store := newFakePaymentStore(completedBooking("b1", 30000))
 	_ = store.InsertOrder(context.Background(), domain.PaymentOrder{
 		MerchantOrderID: "MOJUD_old_1", BookingID: "b1", UserID: "u1", AmountPaise: 30000,
@@ -423,13 +446,14 @@ func TestCheckout_carriesOtherDues(t *testing.T) {
 	if c.AmountPaise != 24000+5000+13900 {
 		t.Fatalf("checkout amount = %d, want the ride plus what's carried (42900)", c.AmountPaise)
 	}
-	// Tapping Pay on a carried booking reopens the same order.
+	// Tapping Pay on a carried booking replaces that order with one for the
+	// same total.
 	again, err := svc.Checkout(ctx, "u1", "a-fee")
-	if err != nil || again.MerchantOrderID != c.MerchantOrderID {
-		t.Errorf("Checkout(carried) = %s, %v; want the same order %s", again.MerchantOrderID, err, c.MerchantOrderID)
+	if err != nil || again.MerchantOrderID == c.MerchantOrderID || again.AmountPaise != 42900 {
+		t.Fatalf("Checkout(carried) = %s for %d, %v; want a new order for 42900", again.MerchantOrderID, again.AmountPaise, err)
 	}
 
-	gw.set(c.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 42900})
+	gw.set(again.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 42900})
 	if err := svc.Sync(ctx, "u1", "b-ride"); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -468,9 +492,10 @@ func TestPaymentsOff(t *testing.T) {
 	}
 }
 
-// HUMAN REVIEW REQUIRED: payments. A booking already in an open order is
-// never put in a second one: a new due gets an order of its own, and tapping
-// Pay on the booking in the open order reopens that order.
+// HUMAN REVIEW REQUIRED: payments. A booking is never in two orders that
+// can still be opened: a new due joins a new order that replaces the open
+// one. If the replaced order is paid after all, each ride is still paid once
+// and the rest is left for a refund (paid twice).
 func TestCheckout_neverTwoOpenOrdersForABooking(t *testing.T) {
 	store := newFakePaymentStore(completedBooking("a-ride", 24000))
 	gw := &fakeGateway{}
@@ -489,17 +514,26 @@ func TestCheckout_neverTwoOpenOrdersForABooking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Checkout(b): %v", err)
 	}
-	if second.MerchantOrderID == first.MerchantOrderID || second.AmountPaise != 13900 {
-		t.Errorf("Checkout(b) = %s for %d; want a new order for b alone (13900)", second.MerchantOrderID, second.AmountPaise)
+	if second.MerchantOrderID == first.MerchantOrderID || second.AmountPaise != 24000+13900 {
+		t.Errorf("Checkout(b) = %s for %d; want a new order for both rides (37900)", second.MerchantOrderID, second.AmountPaise)
 	}
-	again, err := svc.Checkout(ctx, "u1", "a-ride")
-	if err != nil || again.MerchantOrderID != first.MerchantOrderID {
-		t.Errorf("Checkout(a) again = %s, %v; want the open order %s", again.MerchantOrderID, err, first.MerchantOrderID)
+	for _, id := range []string{"a-ride", "b-ride"} {
+		open := 0
+		for _, o := range store.orders {
+			if o.State == domain.PaymentPending && o.CheckoutToken != "" && slices.ContainsFunc(items(*o),
+				func(it domain.PaymentItem) bool { return it.BookingID == id }) {
+				open++
+			}
+		}
+		if open != 1 {
+			t.Errorf("%s is in %d orders that can be opened, want 1", id, open)
+		}
 	}
 
-	// Paying both orders pays each ride once.
+	// The replaced order is paid after all, and so is the new one: each
+	// ride is paid once.
 	gw.set(first.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 24000})
-	gw.set(second.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 13900})
+	gw.set(second.MerchantOrderID, domain.GatewayOrderStatus{State: domain.PaymentCompleted, AmountPaise: 37900})
 	if err := svc.Sync(ctx, "u1", "a-ride"); err != nil {
 		t.Fatalf("Sync(a): %v", err)
 	}
@@ -535,7 +569,7 @@ func TestSettle_unknownStateStaysPending(t *testing.T) {
 
 // HUMAN REVIEW REQUIRED: payments. When the database refuses a new order
 // because another process opened one for the same dues, Checkout looks again
-// and hands that one out.
+// (and replaces that one, as nobody is paying it).
 func TestCheckout_retriesWhenAnotherProcessOpenedAnOrder(t *testing.T) {
 	store := newFakePaymentStore(completedBooking("a-ride", 24000))
 	store.insertErrs = []error{repository.ErrOrderOpen}
